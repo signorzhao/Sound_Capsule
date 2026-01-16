@@ -1,0 +1,132 @@
+/* 胶囊类型卡片样式 */
+
+.capsule-card {
+  width: 200px;
+  height: 220px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+  border: 3px solid transparent;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 20px;
+}
+
+/* 3D 发光背景 */
+.capsule-card-background {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.3;
+  transition: opacity 0.3s;
+}
+
+.capsule-card:hover .capsule-card-background {
+  opacity: 0.5;
+}
+
+/* 悬停发光效果 */
+.capsule-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+.capsule-card:hover::before {
+  opacity: 1;
+}
+
+/* 悬停动画 */
+.capsule-card:hover {
+  transform: scale(1.05) translateY(-10px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* 选中状态 */
+.capsule-card.selected {
+  border-color: #fff;
+  box-shadow: 0 0 30px var(--capsule-color);
+}
+
+.capsule-card.selected .capsule-card-background {
+  opacity: 0.6;
+}
+
+/* 胶囊图标 */
+.capsule-icon {
+  font-size: 64px;
+  line-height: 1;
+  z-index: 1;
+  transition: transform 0.3s;
+}
+
+.capsule-card:hover .capsule-icon {
+  transform: scale(1.1);
+}
+
+/* 胶囊名称 */
+.capsule-name {
+  font-size: 20px;
+  font-weight: 600;
+  color: #fff;
+  z-index: 1;
+}
+
+/* 胶囊描述 */
+.capsule-description {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  text-align: center;
+  line-height: 1.4;
+  z-index: 1;
+}
+
+/* 示例标签 */
+.capsule-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+  z-index: 1;
+}
+
+.example-tag {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .capsule-card {
+    width: 100%;
+    max-width: 280px;
+    height: 200px;
+  }
+
+  .capsule-icon {
+    font-size: 56px;
+  }
+
+  .capsule-name {
+    font-size: 18px;
+  }
+}

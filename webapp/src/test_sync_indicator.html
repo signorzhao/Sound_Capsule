@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>测试同步指示器</title>
+</head>
+<body>
+  <h1>同步指示器测试</h1>
+  <p>打开浏览器控制台 (F12)，然后执行以下测试：</p>
+
+  <h2>1. 测试同步状态 API</h2>
+  <pre>
+fetch('http://localhost:5002/api/sync/status', {
+  headers: {
+    'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+  }
+}).then(r => r.json()).then(console.log);
+  </pre>
+  <button onclick="testSyncStatus()">测试</button>
+
+  <h2>2. 测试标记待同步</h2>
+  <pre>
+fetch('http://localhost:5002/api/sync/mark-pending', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+  },
+  body: JSON.stringify({
+    table_name: 'capsules',
+    record_id: 1,
+    operation: 'update'
+  })
+}).then(r => r.json()).then(console.log);
+  </pre>
+  <button onclick="testMarkPending()">测试</button>
+
+  <h2>3. 检查登录状态</h2>
+  <pre>
+console.log('Access Token:', localStorage.getItem('access_token') ? '存在' : '不存在');
+  </pre>
+  <button onclick="checkLogin()">检查</button>
+
+  <script>
+    function testSyncStatus() {
+      fetch('http://localhost:5002/api/sync/status', {
+        headers: {
+          'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        }
+      })
+      .then(r => r.json())
+      .then(data => {
+        console.log('同步状态:', data);
+        alert('同步状态: ' + JSON.stringify(data, null, 2));
+      })
+      .catch(err => {
+        console.error('错误:', err);
+        alert('错误: ' + err.message);
+      });
+    }
+
+    function testMarkPending() {
+      fetch('http://localhost:5002/api/sync/mark-pending', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + localStorage.getItem('access_token')
+        },
+        body: JSON.stringify({
+          table_name: 'capsules',
+          record_id: 1,
+          operation: 'update'
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        console.log('标记结果:', data);
+        alert('标记结果: ' + JSON.stringify(data, null, 2));
+      })
+      .catch(err => {
+        console.error('错误:', err);
+        alert('错误: ' + err.message);
+      });
+    }
+
+    function checkLogin() {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        alert('已登录，Access Token 存在');
+        console.log('Access Token (前50字符):', token.substring(0, 50) + '...');
+      } else {
+        alert('未登录，请先登录应用');
+      }
+    }
+  </script>
+</body>
+</html>

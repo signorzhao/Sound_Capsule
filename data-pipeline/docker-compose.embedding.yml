@@ -1,0 +1,53 @@
+# Phase C2: Embedding API Docker Compose 配置
+
+version: '3.8'
+
+services:
+  # Embedding API 服务
+  embedding-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedding
+    container_name: sound-capsule-embedding
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MODEL_NAME=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+      - PORT=8000
+      - HOST=0.0.0.0
+    depends_on:
+      - redis
+    volumes:
+      # 挂载模型缓存目录（避免每次重新下载）
+      - model-cache:/root/.cache/torch/sentence_transformers
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: sound-capsule-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+# 数据卷
+volumes:
+  model-cache:
+    driver: local
+  redis-data:
+    driver: local

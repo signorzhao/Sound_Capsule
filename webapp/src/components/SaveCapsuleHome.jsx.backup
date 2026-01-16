@@ -1,0 +1,191 @@
+import React, { useState } from 'react';
+import { Package } from 'lucide-react';
+import CapsuleCard from './CapsuleCard';
+import './SaveCapsuleHome.css';
+
+/**
+ * 保存胶囊首页组件 - 重新设计版
+ *
+ * 使用精美的3D胶囊卡片设计
+ * 移除渲染预览开关（默认都渲染）
+ */
+
+function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
+  const [selectedCapsule, setSelectedCapsule] = useState(null);
+  const [openCapsuleId, setOpenCapsuleId] = useState(null);
+
+  // 胶囊类型定义
+  const capsuleTypes = [
+    {
+      id: 'magic',
+      type: 'magic',
+      name: 'MAGIC',
+      nameCn: '魔法',
+      description: '神秘、梦幻、超自然'
+    },
+    {
+      id: 'impact',
+      type: 'impact',
+      name: 'IMPACT',
+      nameCn: '打击',
+      description: '强力、冲击、震撼'
+    },
+    {
+      id: 'atmosphere',
+      type: 'atmosphere',
+      name: 'ATMOSPHERE',
+      nameCn: '环境',
+      description: '空间、氛围、场景'
+    }
+  ];
+
+  const handleCapsuleClick = (id) => {
+    // 切换打开/关闭状态
+    setOpenCapsuleId(openCapsuleId === id ? null : id);
+
+    // 选中胶囊
+    if (openCapsuleId !== id) {
+      const capsule = capsuleTypes.find(c => c.id === id);
+      setSelectedCapsule(capsule);
+    }
+  };
+
+  const handleSave = () => {
+    if (!selectedCapsule) {
+      alert('请先选择一个胶囊');
+      return;
+    }
+
+    onSave({
+      capsule_type: selectedCapsule.type
+    });
+  };
+
+  const isSaving = saveStatus === 'saving';
+  const isSuccess = saveStatus === 'success';
+
+  const capsuleTypes = ['magic', 'impact', 'atmosphere'];
+
+  const handleSave = () => {
+    if (!selectedType) {
+      alert('请选择胶囊类型');
+      return;
+    }
+
+    onSave({
+      project_name: ' capsule',  // 默认值，不再使用
+      theme_name: ' capsule',     // 默认值，不再使用
+      render_preview: renderPreview,
+      capsule_type: selectedType
+    });
+  };
+
+  const isSaving = saveStatus === 'saving';
+  const isSuccess = saveStatus === 'success';
+
+  return (
+    <div className="save-capsule-home">
+      {/* 星空背景 */}
+      <div className="starfield" />
+
+      {/* 主内容 */}
+      <div className="relative z-10 max-w-5xl mx-auto w-full">
+        {/* 标题 */}
+        <header className="mb-8 text-center">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex-1" />
+            <h1 className="text-3xl font-bold tracking-tight text-white flex items-center justify-center gap-3">
+              <Sparkles className="w-8 h-8 text-purple-400" />
+              <span>保存胶囊</span>
+            </h1>
+            <div className="flex-1 flex justify-end">
+              <button
+                className="library-button"
+                onClick={onShowLibrary}
+                disabled={isSaving}
+              >
+                <Package className="w-4 h-4" />
+                <span>胶囊库</span>
+              </button>
+            </div>
+          </div>
+          <p className="text-gray-400">
+            选择胶囊类型，一键保存
+          </p>
+        </header>
+
+        {/* 表单区域 */}
+        <div className="form-section">
+          <div className="preview-toggle">
+            <label className="toggle-label">
+              <input
+                type="checkbox"
+                checked={renderPreview}
+                onChange={(e) => setRenderPreview(e.target.checked)}
+                disabled={isSaving}
+              />
+              <span className="toggle-slider"></span>
+              <span className="toggle-text">
+                {renderPreview ? '渲染预览音频' : '不渲染预览'}
+              </span>
+            </label>
+          </div>
+        </div>
+
+        {/* 胶囊类型选择器 */}
+        <div className="capsule-types-section">
+          <h2 className="section-title">选择胶囊类型</h2>
+          <div className="capsule-types-grid">
+            {capsuleTypes.map((type) => (
+              <CapsuleTypeCard
+                key={type}
+                type={type}
+                selected={selectedType === type}
+                onClick={() => !isSaving && setSelectedType(type)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* 保存按钮 */}
+        <div className="save-button-section">
+          <button
+            className={clsx(
+              'save-button',
+              (!selectedType || isSaving) && 'disabled'
+            )}
+            onClick={handleSave}
+            disabled={!selectedType || isSaving}
+          >
+            <Save className="w-5 h-5" />
+            <span>
+              {isSaving ? '保存中...' : isSuccess ? '保存成功！' : '保存胶囊'}
+            </span>
+          </button>
+
+          {/* 进度条 */}
+          {isSaving && (
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${saveProgress}%` }}
+                />
+              </div>
+              <div className="progress-text">{saveProgress}%</div>
+            </div>
+          )}
+
+          {/* 成功提示 */}
+          {isSuccess && (
+            <div className="success-message">
+              ✅ 保存成功！正在跳转到语义标签页面...
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default SaveCapsuleHome;

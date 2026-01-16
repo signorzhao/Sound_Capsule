@@ -1,0 +1,314 @@
+/* 胶囊卡片样式 - 3D效果 */
+
+/* 主容器 */
+.capsule-card-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  perspective: 1000px;
+}
+
+/* 底部悬浮光 */
+.capsule-glow {
+  position: absolute;
+  bottom: -20px;
+  width: 112px;
+  height: 40px;
+  blur: 40px;
+  opacity: 0.8;
+  border-radius: 9999px;
+  transition: all 0.7s ease;
+  pointer-events: none;
+}
+
+.capsule-card-container:hover .capsule-glow {
+  opacity: 1;
+  filter: blur(50px);
+}
+
+/* 胶囊主容器 */
+.capsule-main {
+  position: relative;
+  width: 160px;
+  height: 320px;
+  transition: transform 0.5s ease;
+}
+
+.capsule-card-container:hover .capsule-main {
+  transform: scale(1.05);
+}
+
+/* 上半部分 (The Cap) */
+.capsule-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  top: 0;
+  width: 100%;
+  height: 52%;
+  border-radius: 100px 100px 4px 4px;
+  z-index: 30;
+  overflow: hidden;
+  transition: all 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: 50% 100%;
+}
+
+.capsule-cap-open {
+  transform: translateY(-70px) rotate(-5deg);
+}
+
+/* 体积感阴影层 */
+.capsule-shadow-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.4), transparent, rgba(0, 0, 0, 0.3));
+  pointer-events: none;
+}
+
+/* 高光层 */
+.capsule-highlight-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.3), transparent);
+  opacity: 0.5;
+  background-size: 200% 100%;
+  background-position: 30% 0;
+  pointer-events: none;
+}
+
+/* 边缘轮廓光 */
+.capsule-rim-light {
+  position: absolute;
+  inset: 0;
+  border-radius: 100px 100px 4px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  pointer-events: none;
+}
+
+.capsule-rim-light-right {
+  position: absolute;
+  top: 40px;
+  right: 12px;
+  width: 1px;
+  height: 60%;
+  background: rgba(255, 255, 255, 0.6);
+  blur: 2px;
+}
+
+.capsule-rim-light-left {
+  position: absolute;
+  top: 40px;
+  left: 12px;
+  width: 2px;
+  height: 60%;
+  background: rgba(0, 0, 0, 0.5);
+  blur: 2px;
+}
+
+/* 顶部强高光 */
+.capsule-specular {
+  position: absolute;
+  top: 24px;
+  left: 20px;
+  width: 30%;
+  height: 40%;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8), transparent);
+  border-radius: 9999px;
+  blur: 6px;
+}
+
+/* 内部机械结构 */
+.capsule-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30%;
+  bottom: 30%;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.75);
+  transition: all 0.5s ease 75ms;
+  pointer-events: none;
+}
+
+.capsule-inner-visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* 连接杆 */
+.capsule-rod {
+  width: 8px;
+  height: 140%;
+  background: #27272a;
+  position: absolute;
+}
+
+/* 按钮 */
+.capsule-button {
+  position: relative;
+  background: #000;
+  border: 1px solid #3f3f46;
+  padding: 12px 24px;
+  border-radius: 12px;
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transform: scale(1);
+  transition: all 0.3s ease;
+  cursor: pointer;
+  z-index: 20;
+}
+
+.capsule-button:hover {
+  transform: scale(1.1);
+}
+
+.capsule-button:active {
+  transform: scale(0.95);
+}
+
+.capsule-button-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.capsule-button:hover .capsule-button-bg {
+  opacity: 1;
+}
+
+.capsule-button-icon {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.capsule-button-text {
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.25em;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* 下半部分 (The Body) */
+.capsule-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  bottom: 0;
+  width: 92%;
+  height: 50%;
+  border-radius: 4px 4px 100px 100px;
+  z-index: 20;
+  overflow: hidden;
+  transition: all 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: 50% 0%;
+}
+
+.capsule-body-open {
+  transform: translateY(70px) rotate(5deg);
+}
+
+/* 顶部遮挡阴影 */
+.capsule-top-shadow {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 32px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent);
+  z-index: 10;
+}
+
+/* 底部强烈反光 */
+.capsule-bounce-light {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 40%;
+  height: 30%;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  blur: 8px;
+}
+
+.capsule-bottom-rim {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px 4px 100px 100px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+/* 标签文字 */
+.capsule-label {
+  margin-top: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.5s ease;
+}
+
+.capsule-label-hidden {
+  opacity: 0;
+  transform: translateY(32px);
+}
+
+.capsule-label-type {
+  font-size: 10px;
+  color: #52525b;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  margin-bottom: 4px;
+}
+
+.capsule-label-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: #d4d4d8;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.07));
+}
+
+/* 动画 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .capsule-main {
+    width: 120px;
+    height: 240px;
+  }
+
+  .capsule-glow {
+    width: 84px;
+    height: 30px;
+  }
+
+  .capsule-label-name {
+    font-size: 14px;
+  }
+}

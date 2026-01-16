@@ -1,0 +1,82 @@
+{
+  "texture": {
+    "name": "Texture / Timbre (质感)",
+    "description": "声音的质感和情绪色彩",
+    "lexicon_file": "lexicon_texture.csv",
+    "axes": {
+      "x_label": {
+        "neg": "Dark / 黑暗恐惧",
+        "pos": "Light / 光明治愈"
+      },
+      "y_label": {
+        "neg": "Realistic / 写实严肃",
+        "pos": "Playful / 趣味活跃"
+      }
+    },
+    "axis_x_neg": "dark horror scary fear terror nightmare death blood murder crime violence war destruction pain suffering torture evil demon monster ghost sinister menacing threatening dangerous",
+    "axis_x_pos": "light bright beautiful lovely peaceful serene tranquil calm soothing healing therapeutic pure clean fresh gentle soft warm comforting relaxing meditation zen spiritual divine sacred holy angelic heaven",
+    "axis_y_neg": "realistic serious dramatic cinematic documentary film movie authentic genuine raw organic natural acoustic real professional studio high-fidelity serious tense suspense thriller",
+    "axis_y_pos": "playful fun cartoon game arcade toy child kid cute adorable silly goofy funny comic humorous whimsical bouncy springy bubble candy sweet colorful rainbow magical fantasy fairy unicorn nintendo 8-bit retro pixel",
+    "active": true
+  },
+  "source": {
+    "name": "Source & Physics (源场)",
+    "description": "声音的物理特征与来源属性",
+    "lexicon_file": "lexicon_source.csv",
+    "axes": {
+      "x_label": {
+        "neg": "Static / 静态铺底",
+        "pos": "Transient / 瞬态冲击"
+      },
+      "y_label": {
+        "neg": "Organic / 有机自然",
+        "pos": "Sci-Fi / 科幻合成"
+      }
+    },
+    "axis_x_neg": "static drone pad ambient sustained continuous endless loop humming droning steady constant background bed layer texture atmosphere evolving",
+    "axis_x_pos": "transient impact hit punch attack burst snap crack pop click bang boom smash crash instant sudden sharp percussive one-shot",
+    "axis_y_neg": "organic natural real acoustic foley field-recording authentic earthy wooden animal human nature creature wildlife bird insect water wind fire rain forest",
+    "axis_y_pos": "synthetic digital electronic sci-fi futuristic robotic mechanical artificial processed cyber tech laser plasma energy beam glitch data computer spaceship robot",
+    "active": true
+  },
+  "materiality": {
+    "name": "Materiality / Room (材质)",
+    "description": "声音的空间材质与距离特征",
+    "lexicon_file": "lexicon_materiality.csv",
+    "axes": {
+      "x_label": {
+        "neg": "Close / 贴耳干涩",
+        "pos": "Distant / 遥远湿润"
+      },
+      "y_label": {
+        "neg": "Cold / 冷硬反射",
+        "pos": "Warm / 暖软吸音"
+      }
+    },
+    "axis_x_neg": "close proximity near intimate whisper ear direct dry anechoic booth studio recording isolation upfront present focused tight small-room confined no-reverb dead-room",
+    "axis_x_pos": "distant far away reverb reverberation echo long-reverb hall cathedral canyon cave vast spacious open wide diffused atmospheric immersive long-tail large-space stadium arena",
+    "axis_y_neg": "cold frozen ice metallic metal glass tile ceramic steel concrete stone marble clinical surgical sterile industrial reflective hard bright harsh sharp ringing high-frequency tinny bathroom hospital",
+    "axis_y_pos": "warm cozy soft fabric blanket carpet wood wooden cabin forest cloth cotton velvet muffled muted dull dampened absorbed absorptive low-frequency bass underwater mud muddy dark bedroom living-room",
+    "active": true
+  },
+  "temperament": {
+    "name": "Temperament / 性情",
+    "description": "声音的性情与气质特征",
+    "lexicon_file": "lexicon_temperament.csv",
+    "axes": {
+      "x_label": {
+        "neg": "Cold / 数字冷静",
+        "pos": "Hot / 模拟热烈"
+      },
+      "y_label": {
+        "neg": "Relaxed / 松弛平滑",
+        "pos": "Tense / 紧张躁动"
+      }
+    },
+    "axis_x_neg": "cold digital clean minimal sterile precise clinical pure crystal clear electronic calculated controlled",
+    "axis_x_pos": "hot analog warm saturated distorted overdriven tube vintage fuzzy gritty dirty crunchy organic",
+    "axis_y_neg": "relaxed smooth calm peaceful serene flowing gentle soft slow lazy ambient chill mellow",
+    "axis_y_pos": "tense chaotic nervous anxious aggressive intense energetic fast harsh noisy restless agitated",
+    "active": true
+  }
+}

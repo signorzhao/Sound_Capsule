@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-01-11 14:37:42",
+  "summary": {
+    "total": 9,
+    "passed": 8,
+    "failed": 1,
+    "duration": 0.01324605941772461,
+    "success_rate": 88.88888888888889
+  },
+  "results": [
+    {
+      "name": "API \u5065\u5eb7\u68c0\u67e5",
+      "passed": true,
+      "duration": 0.005976676940917969,
+      "error": null
+    },
+    {
+      "name": "API \u5065\u5eb7\u68c0\u67e5",
+      "passed": true,
+      "duration": 0.001329183578491211,
+      "error": null
+    },
+    {
+      "name": "\u6570\u636e\u5e93\u7d22\u5f15\u68c0\u67e5",
+      "passed": true,
+      "duration": 0.0005092620849609375,
+      "error": null
+    },
+    {
+      "name": "\u6570\u636e\u5e93\u8868\u7ed3\u6784\u68c0\u67e5",
+      "passed": true,
+      "duration": 0.0002810955047607422,
+      "error": null
+    },
+    {
+      "name": "\u80f6\u56ca\u8868\u5b57\u6bb5\u68c0\u67e5",
+      "passed": true,
+      "duration": 0.00024127960205078125,
+      "error": null
+    },
+    {
+      "name": "\u540c\u6b65\u670d\u52a1\u5bfc\u5165",
+      "passed": true,
+      "duration": 0.00021004676818847656,
+      "error": null
+    },
+    {
+      "name": "\u4e0b\u8f7d\u961f\u5217\u5bfc\u5165",
+      "passed": true,
+      "duration": 0.001522064208984375,
+      "error": null
+    },
+    {
+      "name": "\u7f13\u5b58\u7ba1\u7406\u5668\u5bfc\u5165",
+      "passed": true,
+      "duration": 0.0016989707946777344,
+      "error": null
+    },
+    {
+      "name": "\u7f13\u5b58\u7edf\u8ba1 API",
+      "passed": false,
+      "duration": 0.0013659000396728516,
+      "error": "\u72b6\u6001\u7801: 500"
+    }
+  ]
+}

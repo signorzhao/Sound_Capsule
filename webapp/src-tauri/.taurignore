@@ -1,0 +1,6 @@
+capsules.db
+capsules.db-journal
+config.json
+logs/**
+output/**
+data-pipeline/output/**

@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================
+   Project Synesth - 深空主题样式
+   ========================================== */
+
+:root {
+  --color-accent: #7c3aed;
+  --color-accent-glow: rgba(124, 58, 237, 0.4);
+}
+
+/* 基础样式重置 */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: linear-gradient(135deg, #0a0a0b 0%, #0f0f12 50%, #0a0a0b 100%);
+  background-attachment: fixed;
+}
+
+/* 星空背景效果 */
+.starfield {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: 
+    radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.15), transparent),
+    radial-gradient(2px 2px at 80% 70%, rgba(255,255,255,0.1), transparent),
+    radial-gradient(1px 1px at 40% 60%, rgba(255,255,255,0.12), transparent),
+    radial-gradient(1px 1px at 60% 20%, rgba(255,255,255,0.08), transparent),
+    radial-gradient(1px 1px at 90% 50%, rgba(255,255,255,0.1), transparent);
+  background-size: 200px 200px, 300px 300px, 150px 150px, 250px 250px, 180px 180px;
+  animation: stars-drift 120s linear infinite;
+  opacity: 0.6;
+  z-index: 0;
+}
+
+@keyframes stars-drift {
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0; }
+  to { background-position: 200px 200px, 300px 300px, 150px 150px, 250px 250px, 180px 180px; }
+}
+
+/* 向量空间网格 */
+.vector-grid {
+  background-image: 
+    linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* 光晕效果 */
+.glow-cursor {
+  box-shadow: 
+    0 0 20px var(--color-accent-glow),
+    0 0 40px var(--color-accent-glow),
+    0 0 60px var(--color-accent-glow);
+}
+
+/* 标签样式 */
+.tag-chip {
+  @apply px-3 py-1.5 rounded-full text-sm font-medium 
+         transition-all duration-200 cursor-pointer select-none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tag-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.tag-chip.selected {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: white;
+  box-shadow: 0 0 12px var(--color-accent-glow);
+}
+
+/* 透镜切换 Tab */
+.lens-tab {
+  @apply flex items-center justify-center gap-2 py-3 px-4 rounded-lg
+         text-sm font-semibold transition-all duration-200;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lens-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.lens-tab.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* 动画 */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* 词汇点样式 */
+.word-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  transition: all 0.15s ease;
+  pointer-events: none;
+}
+
+.word-dot.highlighted {
+  width: 10px;
+  height: 10px;
+  background: var(--color-accent);
+  box-shadow: 0 0 8px var(--color-accent-glow);
+}
+
+/* 响应式工具类 */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+

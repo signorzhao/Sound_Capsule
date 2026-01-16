@@ -1,0 +1,795 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { 
+  Search, Filter, Edit3, Download, Trash2, 
+  User, Calendar, Activity, Layers, Music, 
+  Settings, X, Check, Command, Zap, Sparkles, 
+  Flame, Heart, Clock, Box, LayoutGrid, List as ListIcon,
+  Cpu, Hash, Play, Pause, SkipBack, SkipForward, Volume2, Maximize2,
+  Network, Share2, MousePointer2
+} from 'lucide-react';
+
+// --- 1. 工具函数：生成模拟数据 ---
+const generateCapsules = (count) => {
+  const types = [
+    { name: 'BASS', colorTop: '#ef4444', colorBottom: '#7f1d1d', icon: Flame },
+    { name: 'LEAD', colorTop: '#3b82f6', colorBottom: '#1e3a8a', icon: Zap },
+    { name: 'PAD',  colorTop: '#8b5cf6', colorBottom: '#4c1d95', icon: Sparkles },
+    { name: 'PLUCK', colorTop: '#10b981', colorBottom: '#064e3b', icon: Music },
+    { name: 'FX',    colorTop: '#f59e0b', colorBottom: '#78350f', icon: Activity },
+  ];
+  
+  const plugins = ['FabFilter Pro-Q3', 'Serum', 'ValhallaRoom', 'Ott', 'Sausage Fattener', 'Decapitator', 'EchoBoy', 'Omnisphere', 'CamelCrusher', 'Portal', 'Thermal'];
+  const users = ['NeonRider', 'AudioGod', 'GlitchMaster', 'SoundWave', 'Admin'];
+
+  return Array.from({ length: count }).map((_, i) => {
+    const type = types[Math.floor(Math.random() * types.length)];
+    const usedPlugins = Array.from({ length: Math.floor(Math.random() * 5) + 2 }).map(() => plugins[Math.floor(Math.random() * plugins.length)]);
+    
+    return {
+      id: i + 1,
+      name: `${type.name}-${Math.floor(Math.random() * 900) + 100}`,
+      type: type.name,
+      keywords: ['Analog', 'Warm', 'Distorted', 'Wide', 'Retro', 'Clean', 'Punchy', 'Ethereal'].sort(() => 0.5 - Math.random()).slice(0, 4),
+      plugins: [...new Set(usedPlugins)], // 去重
+      creator: users[Math.floor(Math.random() * users.length)],
+      createdAt: new Date(Date.now() - Math.floor(Math.random() * 10000000000)).toLocaleDateString(),
+      usageCount: Math.floor(Math.random() * 5000),
+      colorTop: type.colorTop,
+      colorBottom: type.colorBottom,
+      icon: type.icon,
+      duration: `${Math.floor(Math.random() * 3) + 1}:${Math.floor(Math.random() * 59).toString().padStart(2, '0')}` // 模拟时长
+    };
+  });
+};
+
+// --- 2. 计算相似度算法 (用于 Neural Map) ---
+const calculateSimilarity = (target, candidate) => {
+    if (target.id === candidate.id) return 0;
+    let score = 0;
+    // 1. 类型相同 +5分
+    if (target.type === candidate.type) score += 5;
+    // 2. 作者相同 +3分
+    if (target.creator === candidate.creator) score += 3;
+    // 3. 插件重合度 (每个重合 +2分)
+    const sharedPlugins = target.plugins.filter(p => candidate.plugins.includes(p));
+    score += sharedPlugins.length * 2;
+    // 4. 标签重合度 (每个重合 +1分)
+    const sharedKeywords = target.keywords.filter(k => candidate.keywords.includes(k));
+    score += sharedKeywords.length * 1;
+    
+    return { score, sharedPlugins, sharedKeywords };
+};
+
+// --- 3. 组件：Neural Map View (关联视图) ---
+const NeuralMapView = ({ data, activeTrackId, onSelect, onPlay, isPlaying }) => {
+    const [selectedNode, setSelectedNode] = useState(null);
+    const svgRef = useRef(null);
+    const [dimensions, setDimensions] = useState({ w: 1000, h: 600 });
+
+    useEffect(() => {
+        if (svgRef.current) {
+            setDimensions({ w: svgRef.current.clientWidth, h: svgRef.current.clientHeight });
+        }
+    }, []);
+
+    // 布局计算逻辑
+    const layoutData = useMemo(() => {
+        const w = dimensions.w;
+        const h = dimensions.h;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        // 场景 A: 默认概览 (按类型聚类)
+        if (!selectedNode) {
+            const groups = {};
+            data.forEach(d => {
+                if (!groups[d.type]) groups[d.type] = [];
+                groups[d.type].push(d);
+            });
+            
+            const groupNames = Object.keys(groups);
+            let nodes = [];
+            
+            groupNames.forEach((type, groupIdx) => {
+                const groupItems = groups[type];
+                const anglePerGroup = (2 * Math.PI) / groupNames.length;
+                const groupCenterAngle = groupIdx * anglePerGroup;
+                // 组中心
+                const groupCx = cx + Math.cos(groupCenterAngle) * (h * 0.35);
+                const groupCy = cy + Math.sin(groupCenterAngle) * (h * 0.35);
+
+                groupItems.forEach((item, idx) => {
+                    const r = 40 + Math.random() * 30; // 局部散布半径
+                    const a = (idx / groupItems.length) * 2 * Math.PI;
+                    nodes.push({
+                        ...item,
+                        x: groupCx + Math.cos(a) * r,
+                        y: groupCy + Math.sin(a) * r,
+                        opacity: 0.6,
+                        scale: 1,
+                        isCenter: false
+                    });
+                });
+            });
+            return { nodes, links: [] };
+        }
+
+        // 场景 B: 选中节点 (中心辐射视图)
+        // 1. 找出最相似的 Top 8
+        const similarities = data
+            .map(d => ({ ...d, ...calculateSimilarity(selectedNode, d) }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 8); // 取前8个相关
+
+        let nodes = [];
+        let links = [];
+
+        // 中心节点
+        nodes.push({
+            ...selectedNode,
+            x: cx,
+            y: cy,
+            opacity: 1,
+            scale: 1.5,
+            isCenter: true
+        });
+
+        // 周围卫星节点
+        similarities.forEach((item, idx) => {
+            const angle = (idx / similarities.length) * 2 * Math.PI;
+            const radius = 200; // 距离中心的距离
+            const nx = cx + Math.cos(angle) * radius;
+            const ny = cy + Math.sin(angle) * radius;
+            
+            nodes.push({
+                ...item,
+                x: nx,
+                y: ny,
+                opacity: 1,
+                scale: 1,
+                isCenter: false
+            });
+
+            // 生成连线描述
+            let reason = [];
+            if (item.sharedPlugins.length > 0) reason.push(item.sharedPlugins[0]); // 显示一个共同插件
+            if (item.creator === selectedNode.creator) reason.push(item.creator);
+            
+            links.push({
+                source: { x: cx, y: cy },
+                target: { x: nx, y: ny },
+                color: item.colorTop,
+                reason: reason.join(' + ') || 'Similar Vibe'
+            });
+        });
+
+        return { nodes, links };
+    }, [data, selectedNode, dimensions]);
+
+    return (
+        <div ref={svgRef} className="w-full h-[600px] bg-zinc-900/50 rounded-2xl border border-zinc-800 relative overflow-hidden animate-in fade-in zoom-in-95 duration-500">
+            {/* 交互提示 */}
+            <div className="absolute top-4 left-4 z-10 bg-black/50 backdrop-blur px-3 py-1.5 rounded-lg border border-zinc-700 text-[10px] text-zinc-400 font-mono">
+                {selectedNode 
+                    ? <button onClick={() => setSelectedNode(null)} className="flex items-center hover:text-white"><X size={12} className="mr-1"/> RESET VIEW</button>
+                    : <span className="flex items-center"><MousePointer2 size={12} className="mr-1"/> CLICK NODE TO ANALYZE RELATIONS</span>
+                }
+            </div>
+
+            <svg className="w-full h-full">
+                {/* 1. 绘制连线 (仅在选中模式) */}
+                {layoutData.links.map((link, i) => (
+                    <g key={i}>
+                        <line 
+                            x1={link.source.x} y1={link.source.y}
+                            x2={link.target.x} y2={link.target.y}
+                            stroke={link.color}
+                            strokeWidth="1"
+                            strokeOpacity="0.3"
+                        />
+                        {/* 连线上的标签 - 展示关联原因 */}
+                        <rect 
+                            x={(link.source.x + link.target.x)/2 - 30} 
+                            y={(link.source.y + link.target.y)/2 - 8} 
+                            width="60" height="16" 
+                            fill="#000" fillOpacity="0.8" rx="4"
+                        />
+                        <text
+                            x={(link.source.x + link.target.x)/2} 
+                            y={(link.source.y + link.target.y)/2}
+                            dy="3"
+                            textAnchor="middle"
+                            fill="#fff"
+                            fontSize="8"
+                            fontFamily="monospace"
+                        >
+                            {link.reason}
+                        </text>
+                    </g>
+                ))}
+
+                {/* 2. 绘制节点 */}
+                {layoutData.nodes.map((node) => {
+                    const isPlayingThis = activeTrackId === node.id && isPlaying;
+                    return (
+                        <g 
+                            key={node.id} 
+                            transform={`translate(${node.x},${node.y})`}
+                            style={{ transition: 'all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedNode(node);
+                                onSelect(node); 
+                            }}
+                            className="cursor-pointer hover:opacity-100"
+                            opacity={selectedNode && !node.isCenter && !layoutData.nodes.includes(node) ? 0.1 : node.opacity}
+                        >
+                            {/* 节点光晕 */}
+                            <circle r={node.isCenter ? 35 : 15} fill={node.colorTop} fillOpacity="0.2" className={isPlayingThis ? "animate-ping" : ""} />
+                            
+                            {/* 节点实体 */}
+                            <circle 
+                                r={node.isCenter ? 25 : 8} 
+                                fill={node.colorTop} 
+                                stroke={isPlayingThis ? "#fff" : "none"}
+                                strokeWidth="2"
+                            />
+                            
+                            {/* 节点图标 (仅大节点显示) */}
+                            {node.isCenter && (
+                                <foreignObject x="-10" y="-10" width="20" height="20">
+                                    <div className="flex items-center justify-center h-full text-white">
+                                        <node.icon size={12} />
+                                    </div>
+                                </foreignObject>
+                            )}
+
+                            {/* 节点名称 */}
+                            <text 
+                                y={node.isCenter ? 40 : 20} 
+                                textAnchor="middle" 
+                                fill={node.isCenter ? "#fff" : "#71717a"} 
+                                fontSize={node.isCenter ? "12" : "8"}
+                                fontWeight="bold"
+                                className="pointer-events-none tracking-wider"
+                            >
+                                {node.name}
+                            </text>
+                            
+                            {/* 播放按钮覆盖 (仅中心节点) */}
+                            {node.isCenter && (
+                                <g 
+                                    onClick={(e) => { e.stopPropagation(); onPlay(node); }}
+                                    className="cursor-pointer opacity-0 hover:opacity-100 transition-opacity"
+                                >
+                                    <circle r="25" fill="rgba(0,0,0,0.5)" />
+                                    {isPlayingThis 
+                                        ? <rect x="-4" y="-5" width="3" height="10" fill="white" /> 
+                                        : <polygon points="-2,-5 8,0 -2,5" fill="white" />
+                                    }
+                                    {isPlayingThis && <rect x="1" y="-5" width="3" height="10" fill="white" />}
+                                </g>
+                            )}
+                        </g>
+                    );
+                })}
+            </svg>
+        </div>
+    );
+};
+
+// --- 4. 组件：悬浮播放器 ---
+const FloatingPlayer = ({ track, isPlaying, onTogglePlay, progress, onClose }) => {
+  if (!track) return null;
+
+  return (
+    <div className="fixed bottom-10 left-6 right-6 lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[800px] z-50 animate-in slide-in-from-bottom-10 duration-500">
+      <div className="relative bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden group">
+        <div 
+            className="absolute top-0 left-0 bottom-0 w-full opacity-20 blur-3xl transition-colors duration-1000 pointer-events-none"
+            style={{ background: `linear-gradient(90deg, ${track.colorTop} 0%, transparent 100%)` }}
+        ></div>
+
+        <div className="relative flex items-center justify-between gap-6">
+            <div className="flex items-center gap-4 min-w-[180px]">
+                <div 
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center border border-white/10 shadow-lg relative overflow-hidden ${isPlaying ? 'animate-pulse' : ''}`}
+                    style={{ backgroundColor: track.colorTop }}
+                >
+                   <track.icon className="text-white relative z-10" size={20} />
+                   {isPlaying && <div className="absolute inset-0 bg-white/20 animate-ping"></div>}
+                </div>
+                <div className="flex flex-col">
+                    <span className="text-sm font-bold text-white tracking-wide truncate max-w-[120px]">{track.name}</span>
+                    <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                        <User size={10} /> {track.creator}
+                    </span>
+                </div>
+            </div>
+            <div className="flex-1 flex flex-col gap-2">
+                <div className="flex items-center justify-center gap-4">
+                    <button className="text-zinc-400 hover:text-white transition-colors"><SkipBack size={16} /></button>
+                    <button 
+                        onClick={onTogglePlay}
+                        className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg shadow-white/20"
+                    >
+                        {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
+                    </button>
+                    <button className="text-zinc-400 hover:text-white transition-colors"><SkipForward size={16} /></button>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
+                    <span>0:00</span>
+                    <div className="relative flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden cursor-pointer group/progress">
+                        <div 
+                            className="absolute top-0 left-0 h-full bg-white/90 rounded-full transition-all duration-300 ease-linear shadow-[0_0_10px_rgba(255,255,255,0.5)]"
+                            style={{ width: `${progress}%`, backgroundColor: track.colorTop }}
+                        ></div>
+                    </div>
+                    <span className="text-zinc-300">{track.duration}</span>
+                </div>
+            </div>
+            <div className="flex items-center gap-4 min-w-[100px] justify-end border-l border-white/5 pl-4">
+                 <button 
+                    onClick={onClose}
+                    className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
+                >
+                    <X size={16} />
+                 </button>
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 5. 组件：网格模式 - 单个胶囊 ---
+const CapsuleCard = ({ data, isOpen, onClick, isAdmin, onEdit, onImport, onDelete, activeTrackId, isPlaying, onPlay }) => {
+  const { name, colorTop, colorBottom, icon: Icon, usageCount, creator, keywords, plugins } = data;
+  const isActive = activeTrackId === data.id;
+
+  return (
+    <div 
+      className="group relative flex flex-col items-center justify-center z-10 hover:z-40 transition-all duration-300"
+      style={{ perspective: '1000px' }}
+    >
+      <div 
+        className={`absolute bottom-0 w-32 h-10 blur-[40px] rounded-full transition-all duration-700 ${isOpen ? 'opacity-100 blur-[60px]' : isActive ? 'opacity-80 blur-[50px]' : 'opacity-40 group-hover:opacity-80'}`}
+        style={{ backgroundColor: colorTop }}
+      ></div>
+
+      <div 
+        onClick={() => onClick(data.id)}
+        className="relative w-36 h-64 cursor-pointer transition-transform duration-500 ease-out hover:scale-105"
+      >
+        <div 
+          className="absolute left-0 right-0 mx-auto top-0 w-full h-[55%] rounded-t-full rounded-b-sm z-30 overflow-hidden transition-all duration-700 cubic-bezier(0.34, 1.56, 0.64, 1)"
+          style={{ 
+            backgroundColor: colorTop,
+            transform: isOpen ? 'translateY(-80px) rotate(-5deg)' : 'translateY(0)',
+            boxShadow: isOpen 
+              ? `0 20px 40px -10px ${colorTop}40, inset 0 -2px 5px rgba(0,0,0,0.3)` 
+              : '0 4px 15px rgba(0,0,0,0.5)' 
+          }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-tr from-black/40 via-transparent to-white/10 pointer-events-none"></div>
+          <div 
+            className={`absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-sm transition-all duration-300 ${isActive || 'opacity-0 group-hover:opacity-100'}`}
+            onClick={(e) => { e.stopPropagation(); onPlay(data); }}
+          >
+             <div className="w-12 h-12 rounded-full border border-white/30 bg-black/30 flex items-center justify-center backdrop-blur-md hover:scale-110 hover:bg-white hover:text-black transition-all text-white shadow-xl">
+                 {isActive && isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="ml-1" />}
+             </div>
+          </div>
+          <div className={`absolute bottom-4 w-full text-center transition-opacity duration-300 ${isActive || 'group-hover:opacity-0'}`}>
+            <Icon className="w-6 h-6 text-white/90 mx-auto mb-2 drop-shadow-md" />
+            <span className="text-[10px] font-bold text-white/60 tracking-widest">{data.type}</span>
+          </div>
+        </div>
+
+        <div 
+          className={`absolute left-[-20%] right-[-20%] top-[25%] bottom-[25%] z-20 flex flex-col items-center justify-center gap-3 transition-all duration-500 ${
+            isOpen ? 'opacity-100 scale-100 pointer-events-auto' : 'opacity-0 scale-75 pointer-events-none'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="absolute w-[2px] h-[150%] bg-zinc-800 -z-10"></div>
+          <div className="bg-zinc-900/90 backdrop-blur-md border border-zinc-700 p-3 rounded-xl shadow-2xl flex flex-col gap-2 w-full max-w-[180px]">
+            <button onClick={() => onEdit(data)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-colors">
+              <Edit3 size={14} className="text-blue-400" /> <span>EDIT</span>
+            </button>
+            <button onClick={() => onImport(data)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-indigo-900/50 hover:bg-indigo-600 text-xs text-white font-bold transition-all border border-indigo-500/30">
+              <Download size={14} className="text-indigo-300" /> <span>IMPORT</span>
+            </button>
+            {isAdmin && (
+              <button onClick={() => onDelete(data.id)} className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-red-900/20 hover:bg-red-900/60 text-xs text-red-400 transition-colors">
+                <Trash2 size={14} /> <span>DELETE</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div 
+          className="absolute left-0 right-0 mx-auto bottom-0 w-[92%] h-[48%] rounded-b-full rounded-t-lg z-10 overflow-hidden transition-all duration-700 cubic-bezier(0.34, 1.56, 0.64, 1)"
+          style={{ 
+            backgroundColor: colorBottom,
+            transform: isOpen ? 'translateY(90px) rotate(5deg)' : 'translateY(0)',
+            boxShadow: isOpen 
+              ? `0 -20px 40px -10px ${colorBottom}40, inset 0 2px 5px rgba(255,255,255,0.1)` 
+              : 'inset 0 10px 20px rgba(0,0,0,0.6)' 
+          }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-transparent to-black/20 pointer-events-none"></div>
+          {isActive && isPlaying && (
+             <div className="absolute inset-0 flex items-end justify-center gap-1 pb-4 px-6 opacity-30">
+                {[1,2,3,4,5].map(i => (
+                    <div key={i} className="w-2 bg-white animate-pulse" style={{ height: `${Math.random() * 60 + 20}%`, animationDuration: `${Math.random() * 0.5 + 0.2}s` }}></div>
+                ))}
+             </div>
+          )}
+          <div className="absolute top-4 w-full px-4">
+             <div className="flex justify-between items-center text-[9px] text-white/50 mb-1">
+                <span>USAGE</span>
+                <span className="font-mono text-white/90">{usageCount}</span>
+             </div>
+             <div className="w-full bg-black/30 h-1 rounded-full overflow-hidden">
+                <div className="h-full bg-white/40" style={{ width: `${Math.min(usageCount / 50, 100)}%` }}></div>
+             </div>
+          </div>
+          <div className="absolute bottom-4 left-0 right-0 flex justify-center opacity-40">
+            <User size={12} className="text-white" />
+            <span className="text-[9px] ml-1 text-white font-mono uppercase">{creator}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className={`mt-6 text-center transition-all duration-500 ${isOpen ? 'translate-y-24 opacity-100' : 'translate-y-0 opacity-100'}`}>
+        <h3 className={`text-sm font-bold tracking-wider font-mono transition-colors ${isActive ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : 'text-zinc-100'}`}>
+            {name}
+        </h3>
+        {isOpen && (
+          <div className="flex flex-wrap justify-center gap-1 mt-2 max-w-[150px]">
+            {keywords.slice(0, 3).map(k => (
+              <span key={k} className="text-[8px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded border border-zinc-700">{k}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- 6. 组件：列表模式 - 单行展示 ---
+const CapsuleListItem = ({ data, isAdmin, onEdit, onImport, onDelete, activeTrackId, isPlaying, onPlay }) => {
+  const { name, colorTop, icon: Icon, usageCount, creator, createdAt, keywords, plugins } = data;
+  const isActive = activeTrackId === data.id;
+
+  return (
+    <div 
+        className={`group relative flex items-center gap-4 p-4 border rounded-xl transition-all duration-200 backdrop-blur-sm overflow-hidden mb-3 cursor-pointer
+        ${isActive 
+            ? 'bg-zinc-800/80 border-zinc-600 shadow-[0_0_20px_rgba(0,0,0,0.5)]' 
+            : 'bg-zinc-900/40 border-zinc-800/50 hover:bg-zinc-800/60 hover:border-zinc-700'
+        }`}
+        onClick={() => onPlay(data)}
+    >
+      <div className={`absolute left-0 top-0 bottom-0 w-1 transition-all duration-500 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`} style={{ backgroundColor: colorTop }}></div>
+      
+      <div className="flex items-center gap-4 min-w-[220px]">
+        <div className="relative w-12 h-12 flex items-center justify-center">
+            <div className={`absolute inset-0 rounded-lg opacity-20 border border-white/10 transition-all ${isActive ? 'scale-110 opacity-40' : ''}`} style={{ backgroundColor: colorTop }}></div>
+            {isActive && isPlaying ? (
+                <div className="relative z-10 text-white animate-pulse">
+                     <div className="flex gap-[2px] items-end h-4">
+                        <div className="w-1 bg-white h-full animate-[bounce_0.5s_infinite]"></div>
+                        <div className="w-1 bg-white h-[60%] animate-[bounce_0.7s_infinite]"></div>
+                        <div className="w-1 bg-white h-[80%] animate-[bounce_0.6s_infinite]"></div>
+                     </div>
+                </div>
+            ) : (
+                <div className={`relative z-10 transition-all ${isActive ? 'text-white' : 'text-zinc-500 group-hover:text-white'}`}>
+                    {isActive ? <Play size={20} fill="currentColor" /> : <Icon size={20} style={{ color: isActive ? '#fff' : colorTop }} />}
+                </div>
+            )}
+        </div>
+
+        <div>
+          <h3 className={`font-bold text-sm tracking-wide transition-colors ${isActive ? 'text-white' : 'text-zinc-200'}`}>{name}</h3>
+          <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
+             <span className="px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-400 font-mono">{data.type}</span>
+             <span className="flex items-center gap-1"><User size={10}/> {creator}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 hidden md:flex flex-col justify-center gap-2 px-4 border-l border-zinc-800/50">
+        <div className="flex flex-wrap items-center gap-1.5">
+           <Cpu size={12} className="text-zinc-600 mr-1" />
+           {plugins.map((p, i) => (
+             <span key={i} className="text-[10px] px-2 py-0.5 bg-blue-900/10 text-blue-300/80 border border-blue-900/20 rounded-full truncate max-w-[100px]">
+               {p}
+             </span>
+           ))}
+        </div>
+      </div>
+
+      <div className="w-32 hidden lg:flex flex-col items-end justify-center text-right text-xs gap-1 border-l border-zinc-800/50 pl-4 h-full">
+         <div className="text-zinc-400 font-mono">{usageCount.toLocaleString()} <span className="text-zinc-600 text-[9px]">CALLS</span></div>
+         <div className="text-zinc-600 text-[10px]">{data.duration}</div>
+      </div>
+
+      <div className="flex items-center gap-2 pl-4 ml-auto lg:ml-0 border-l border-zinc-800/50 h-full" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onEdit(data)} className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors" title="Edit">
+            <Edit3 size={16} />
+        </button>
+        <button onClick={() => onImport(data)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-lg shadow-indigo-900/20">
+            <Download size={14} />
+        </button>
+        {isAdmin && (
+            <button onClick={() => onDelete(data.id)} className="p-2 rounded-lg bg-red-900/10 hover:bg-red-900/40 text-red-500/50 hover:text-red-400 border border-transparent hover:border-red-900/50 transition-colors" title="Delete">
+                <Trash2 size={16} />
+            </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- 7. 主应用组件 ---
+const App = () => {
+  const [capsules, setCapsules] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('ALL');
+  const [viewMode, setViewMode] = useState('grid');
+  const [activeTrack, setActiveTrack] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    setCapsules(generateCapsules(108));
+  }, []);
+
+  useEffect(() => {
+    let interval;
+    if (isPlaying && activeTrack) {
+        interval = setInterval(() => {
+            setProgress(prev => {
+                if (prev >= 100) {
+                    setIsPlaying(false);
+                    return 0;
+                }
+                return prev + 0.5;
+            });
+        }, 100);
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying, activeTrack]);
+
+  const handlePlay = (track) => {
+    if (activeTrack?.id === track.id) {
+        setIsPlaying(!isPlaying);
+    } else {
+        setActiveTrack(track);
+        setIsPlaying(true);
+        setProgress(0);
+    }
+  };
+
+  const filteredCapsules = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return capsules.filter(cap => {
+      if (activeFilter !== 'ALL' && cap.type !== activeFilter) return false;
+      if (!query) return true;
+      const matchName = cap.name.toLowerCase().includes(query);
+      const matchCreator = cap.creator.toLowerCase().includes(query);
+      const matchKeyword = cap.keywords.some(k => k.toLowerCase().includes(query));
+      const matchPlugin = cap.plugins.some(p => p.toLowerCase().includes(query));
+      return matchName || matchCreator || matchKeyword || matchPlugin;
+    });
+  }, [capsules, searchQuery, activeFilter]);
+
+  const handleEdit = (data) => console.log(`Edit ${data.name}`);
+  const handleImport = (data) => alert(`Importing ${data.name} to Reaper...`);
+  const handleDelete = (id) => {
+    if (window.confirm('Delete this capsule?')) {
+      setCapsules(prev => prev.filter(c => c.id !== id));
+      if (activeTrack?.id === id) {
+          setActiveTrack(null);
+          setIsPlaying(false);
+      }
+      setOpenId(null);
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen w-full bg-zinc-950 text-zinc-200 font-sans selection:bg-indigo-500/30 overflow-x-hidden pb-32">
+      
+      {/* Environment */}
+      <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute top-[-10%] left-[20%] w-[800px] h-[800px] bg-indigo-900/10 blur-[120px] rounded-full"></div>
+          <div className="absolute bottom-[-10%] right-[10%] w-[600px] h-[600px] bg-blue-900/10 blur-[100px] rounded-full"></div>
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-150"></div>
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_100%)]"></div>
+      </div>
+
+      {/* Top Bar */}
+      <div className="sticky top-0 z-50 w-full backdrop-blur-xl border-b border-white/5 bg-black/40 pt-4 pb-6 px-6 lg:px-12 transition-all">
+        <div className="max-w-7xl mx-auto flex flex-col gap-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Box className="text-indigo-500" />
+              <h1 className="text-xl font-bold tracking-[0.2em] text-white">SOUND<span className="text-indigo-400">CAPSULE</span>_VAULT</h1>
+              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700 font-mono">
+                v2.2 NEURAL
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+                <button 
+                  onClick={() => setViewMode('grid')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'grid' ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Grid View"
+                >
+                  <LayoutGrid size={16} />
+                </button>
+                <button 
+                  onClick={() => setViewMode('list')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'list' ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="List View"
+                >
+                  <ListIcon size={16} />
+                </button>
+                <button 
+                  onClick={() => setViewMode('network')}
+                  className={`p-2 rounded-md transition-all ${viewMode === 'network' ? 'bg-zinc-700 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}
+                  title="Neural Map View"
+                >
+                  <Network size={16} />
+                </button>
+              </div>
+
+              <span className="h-4 w-[1px] bg-zinc-800 mx-2 hidden sm:block"></span>
+
+              <button 
+                onClick={() => setIsAdmin(!isAdmin)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all ${
+                  isAdmin ? 'bg-red-500/20 text-red-400 border border-red-500/50' : 'bg-zinc-800 text-zinc-500 border border-zinc-700'
+                }`}
+              >
+                <User size={12} />
+                {isAdmin ? 'ADMIN' : 'USER'}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+            <div className="relative w-full lg:max-w-xl group">
+                <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-r from-indigo-500/50 to-purple-500/50 opacity-0 group-focus-within:opacity-100 blur transition duration-500"></div>
+                <div className="relative flex items-center bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-sm">
+                <div className="pl-4 text-zinc-500"><Search size={18} /></div>
+                <input 
+                    type="text" 
+                    placeholder="Search capsules, plugins, tags..." 
+                    className="w-full bg-transparent border-none outline-none py-3 px-4 text-zinc-200 placeholder-zinc-500 font-mono text-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                />
+                </div>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2">
+                {['ALL', 'BASS', 'LEAD', 'PAD', 'PLUCK', 'FX'].map(type => (
+                <button
+                    key={type}
+                    onClick={() => setActiveFilter(type)}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider border transition-all ${
+                    activeFilter === type 
+                        ? 'bg-zinc-100 text-black border-zinc-100 shadow-[0_0_10px_rgba(255,255,255,0.2)]' 
+                        : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:border-zinc-600 hover:text-zinc-300'
+                    }`}
+                >
+                    {type}
+                </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="relative z-10 max-w-[1600px] mx-auto p-4 lg:p-8">
+        {filteredCapsules.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[40vh] text-zinc-600">
+            <Search size={48} className="mb-4 opacity-20" />
+            <p className="tracking-widest text-sm">NO CAPSULES FOUND</p>
+          </div>
+        ) : (
+          <>
+            {viewMode === 'grid' && (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-8 gap-y-20 justify-items-center pb-20 animate-in fade-in zoom-in-95 duration-500">
+                    {filteredCapsules.map((capsule) => (
+                    <CapsuleCard 
+                        key={capsule.id}
+                        data={capsule}
+                        isOpen={openId === capsule.id}
+                        onClick={(id) => setOpenId(openId === id ? null : id)}
+                        isAdmin={isAdmin}
+                        onEdit={handleEdit}
+                        onImport={handleImport}
+                        onDelete={handleDelete}
+                        activeTrackId={activeTrack?.id}
+                        isPlaying={isPlaying}
+                        onPlay={handlePlay}
+                    />
+                    ))}
+                </div>
+            )}
+
+            {viewMode === 'list' && (
+                <div className="flex flex-col gap-2 max-w-6xl mx-auto pb-20 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className="grid grid-cols-[240px_1fr_130px_120px] gap-4 px-6 py-2 text-[10px] font-mono text-zinc-600 tracking-widest uppercase border-b border-zinc-800/50 mb-2 hidden md:grid">
+                        <div>Identity</div>
+                        <div>Specs</div>
+                        <div className="text-right">Statistics</div>
+                        <div className="pl-4">Actions</div>
+                    </div>
+                    {filteredCapsules.map((capsule) => (
+                    <CapsuleListItem 
+                        key={capsule.id}
+                        data={capsule}
+                        isAdmin={isAdmin}
+                        onEdit={handleEdit}
+                        onImport={handleImport}
+                        onDelete={handleDelete}
+                        activeTrackId={activeTrack?.id}
+                        isPlaying={isPlaying}
+                        onPlay={handlePlay}
+                    />
+                    ))}
+                </div>
+            )}
+
+            {viewMode === 'network' && (
+                <NeuralMapView 
+                    data={filteredCapsules}
+                    activeTrackId={activeTrack?.id}
+                    onSelect={(node) => {
+                         // 点击节点时不做复杂操作，主要是高亮
+                    }}
+                    onPlay={handlePlay}
+                    isPlaying={isPlaying}
+                />
+            )}
+          </>
+        )}
+      </div>
+      
+      <FloatingPlayer 
+        track={activeTrack} 
+        isPlaying={isPlaying} 
+        onTogglePlay={() => setIsPlaying(!isPlaying)}
+        progress={progress}
+        onClose={() => {
+            setActiveTrack(null);
+            setIsPlaying(false);
+        }}
+      />
+
+      <div className="fixed bottom-0 w-full h-8 bg-black/90 backdrop-blur border-t border-zinc-800 flex items-center justify-between px-6 z-40 text-[10px] text-zinc-600 font-mono">
+        <span className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full ${viewMode === 'network' ? 'bg-pink-500' : viewMode === 'grid' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
+            MODE: {viewMode.toUpperCase()}
+        </span>
+        <div className="flex items-center gap-4">
+          <span>{filteredCapsules.length} CAPSULES LOADED</span>
+          <span>REAPER_BRIDGE: V1.4.2</span>
+        </div>
+      </div>
+
+    </div>
+  );
+};
+
+export default App;

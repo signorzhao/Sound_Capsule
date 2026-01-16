@@ -1,0 +1,723 @@
+word_cn,word_en,semantic_hint
+# ========== 质感透镜 (Texture/Timbre) ==========
+# X轴: Dark/Fear(黑暗恐惧) ← → Light/Healing(光明治愈)
+# Y轴: Realistic/Serious(写实严肃) ← → Playful/Fun(趣味活跃)
+
+# ============================================
+# 左上象限: 电影惊悚 (Cinematic Tension)
+# 黑暗恐惧 + 写实严肃
+# ============================================
+刺骨,Bone,chilling
+沉重,Heavy,dark
+血腥,Bloody,horror
+压抑,Oppressive,dark
+阴森,Sinister,dark
+恐怖,Horrific,serious
+惊悚,Thriller,tense
+紧张,Tense,suspense
+窒息,Suffocating,fear
+绝望,Desperate,dark
+冷酷,Cold,blooded cruel
+残忍,Brutal,violence
+凶狠,Vicious,attack
+阴暗,Grim,dark
+黑暗,Dark,horror
+暗淡,Dark,dim
+低沉,Deep,dark
+沉闷,Muffled,dark
+压迫,Crushing,oppressive
+令人窒息,Stifling,horror
+金属摩擦,Metal,scraping horror
+冷兵器,Cold,steel weapon
+审讯,Interrogation,dark
+犯罪,Criminal,dark
+战争废墟,War,ruins destruction
+废墟,Ruins,desolate
+荒凉,Desolate,horror
+死寂,Dead,silent horror
+腐朽,Decaying,horror
+锈蚀,Corroded,dark
+粗粝,Gritty,harsh
+嘶哑,Hoarse,harsh
+沙哑,Raspy,dark
+干裂,Cracked,harsh
+撕裂,Tearing,violence
+骨折,Bone,crack horror
+断裂,Snapping,break
+崩塌,Collapsing,destruction
+轰鸣,Rumbling,ominous
+低频,Low,rumble dark
+# 从 Core HF 补充
+令人毛骨悚然,Creepy,
+怪诞,Eerie,
+邪恶,Evil,
+惊吓,Fright,
+闹鬼,Haunted,
+突发惊吓,Jump,Scare
+噩梦,Nightmare,
+恐慌,Panic,
+超自然,Paranormal,
+悬疑,Suspense,
+恐惧,Terror,
+咬,Bite,
+骨头,Bone,
+窒息卡住,Choke,
+剁,Chop,
+破裂声,Crack,
+嘎吱碎裂,Crunch,
+刺穿,Impale,
+穿刺,Pierce,
+撕裂肉体,Rip,
+斩断,Sever,
+猛砍,Slash,
+吸血鬼,Vampire,
+狼人,Werewolf,
+丧尸,Zombie,
+恶魔,Demon,
+魔鬼,Devil,
+地穴,Crypt,
+地牢,Dungeon,
+墓地,Cemetery,
+坟场,Graveyard,
+
+# ============================================
+# 右上象限: 自然宁静 (Organic Serenity)
+# 光明治愈 + 写实严肃
+# ============================================
+通透,Crystal,clear pure
+神圣,Sacred,divine
+治愈,Healing,therapy
+有机,Organic,natural
+纯净,Pure,clean
+清澈,Crystal,clear water
+清新,Fresh,clean
+自然,Natural,organic
+原始,Pristine,pure
+真实,Authentic,real
+温暖,Warm,comforting
+柔和,Soft,gentle
+丝滑,Silky,smooth
+顺滑,Smooth,gentle
+天鹅绒,Velvety,soft
+木质,Woody,natural
+原声,Acoustic,natural
+朴实,Earthy,natural
+空灵,Ethereal,spiritual
+灵性,Spiritual,divine
+冥想,Meditative,calm
+禅意,Zen,peaceful
+宁静,Serene,peaceful
+祥和,Peaceful,calm
+安详,Tranquil,serene
+森林,Forest,nature
+晨曦,Dawn,light
+黄昏,Dusk,peaceful
+溪流,Stream,nature
+泉水,Spring,water pure
+鸟鸣,Birdsong,nature
+虫鸣,Insects,nature
+蝉鸣,Cicadas,nature
+竖琴,Harp,angelic
+钟声,Bell,sacred
+钵声,Bowl,meditation
+颂钵,Singing,bowl zen
+风铃,Wind,chime peaceful
+耳语,Whisper,gentle
+ASMR,ASMR,relaxing
+# 从 Core HF 补充
+透气,Airy,
+深沉,Deep,
+饱满,Full,
+丰富,Rich,
+光滑,Smooth,
+柔软,Soft,
+结实,Solid,
+甜美,Sweet,
+厚,Thick,
+紧致,Tight,
+有调性,Tonal,
+平静,Calm,
+电影感,Cinematic,
+戏剧性,Dramatic,
+史诗,Epic,
+英雄,Heroic,
+神圣感,Holy,
+和平安宁,Peaceful,
+放松,Relaxing,
+舒缓,Soothing,
+庄严,Solemn,
+振奋,Uplifting,
+原声/声学,Acoustic,
+干净,Clean,
+清晰,Clear,
+清脆,Crisp,
+动态,Dynamic,
+高保真,Hi,Fi
+自然感,Natural,
+纯粹,Pure,
+原始未处理,Raw,
+共鸣,Resonant,
+微妙细微,Subtle,
+
+# ============================================
+# 左下象限: 怪诞故障 (Spooky / Glitch)
+# 黑暗恐惧 + 趣味活跃
+# ============================================
+诡异,Eerie,spooky
+恶作剧,Mischievous,prank
+故障,Glitchy,error
+扭曲,Twisted,weird
+怪诞滑稽,Grotesque,bizarre
+滑稽,Comical,dark
+荒诞,Absurd,bizarre
+黑色幽默,Dark,comedy
+马戏团,Circus,creepy
+小丑,Clown,scary
+万圣节,Halloween,spooky
+南瓜,Pumpkin,halloween
+鬼魂,Ghostly,spooky
+幽灵,Spectral,ghost
+哥特,Gothic,dark
+暗黑童话,Dark,fairy tale
+酸性,Acidic,harsh
+腐蚀,Corrosive,toxic
+毒液,Venomous,toxic
+粘液,Slimy,gross
+黏糊,Gooey,gross
+数字故障,Digital,glitch
+比特碎裂,Bitcrushed,glitch
+数据损坏,Data,corrupt error
+错误,Error,glitch
+崩溃,Crash,error
+卡顿,Stuttering,glitch
+失真,Distorted,weird
+过载,Overdriven,harsh
+低保真,Lo,fi retro
+噪音,Noisy,chaotic
+嘈杂,Chaotic,noise
+疯狂,Crazy,manic
+癫狂,Manic,crazy
+神经质,Neurotic,weird
+不稳定,Unstable,glitch
+抽搐,Twitching,weird
+闪烁,Flickering,glitch
+蒂姆伯顿,Tim,Burton gothic
+诡异笑声,Creepy,laugh
+# 从 Core HF 补充
+嗡嗡作响,Boomy,
+滋滋声,Buzz,
+咔哒感,Clicky,
+嘎嘣脆,Crunchy,
+脏失真,Dirty,
+沉闷钝,Dull,
+颤动,Flutter,
+故障感,Glitchy,
+颗粒感,Grainy,
+砂砾感,Gritty,
+刺耳,Harsh,
+空洞,Hollow,
+金属感,Metallic,
+捂住模糊,Muffled,
+窄单薄,Narrow,
+嘈杂感,Noisy,
+穿透尖锐,Piercing,
+粗糙,Rough,
+振铃余音,Ringing,
+锋利尖锐,Sharp,
+粘稠,Sticky,
+口吃断续,Stutter,
+薄,Thin,
+扭曲变形,Warped,
+摇摆震荡,Wobble,
+混叠,Aliasing,
+伪影瑕疵,Artifact,
+位深破碎,Bitcrush,
+破碎断续,Breakup,
+缓冲,Buffer,
+漏洞,Bug,
+削波,Clip,
+数据损坏感,Corruption,
+切断,Cut,
+数据混流,Datamosh,
+降级,Degrade,
+冻结,Freeze,
+模糊法兹,Fuzz,
+底噪,Hiss,
+嗡嗡电流,Hum,
+干扰,Interference,
+抖动,Jitter,
+延迟,Lag,
+失灵,Malfunction,
+马赛克,Mosaic,
+像素化,Pixelate,
+爆音,Pop,
+随机,Random,
+扰频,Scramble,
+短路,Short,Circuit
+跳音,Skip,
+尖峰,Spike,
+静电雪花,Static,
+拉伸,Stretch,
+卡住,Stuck,
+滋电流声,Zap,
+
+# ============================================
+# 右下象限: 幻想电玩 (Fantasy / Arcade)
+# 光明治愈 + 趣味活跃
+# ============================================
+可爱,Cute,adorable
+弹跳,Bouncy,fun
+魔法,Magical,fantasy
+欢快,Cheerful,happy
+萌,Adorable,cute
+俏皮,Playful,fun
+活泼,Lively,energetic
+甜蜜,Sweet,lovely
+糖果,Candy,sweet
+棉花糖,Marshmallow,sweet
+泡泡,Bubbly,fun
+气泡,Fizzy,bubbly
+闪亮,Sparkly,shiny
+星光,Starry,magical
+梦幻,Dreamy,fantasy
+童话,Fairy,tale magical
+公主,Princess,fantasy
+独角兽,Unicorn,magical
+彩虹,Rainbow,colorful
+烟花,Fireworks,celebration
+庆典,Celebration,happy
+胜利,Victory,triumph
+金币,Coin,collect game
+升级,Level,up game
+奖励,Reward,game
+任天堂,Nintendo,game
+8位,8,bit retro game
+复古游戏,Retro,game arcade
+电玩,Arcade,game
+像素,Pixel,game
+卡通,Cartoon,animated
+动画,Animated,cartoon
+Q版,Chibi,cute
+蹦蹦跳跳,Hopping,bouncy
+软绵绵,Squishy,soft fun
+毛绒,Fluffy,soft
+蓬松,Puffy,soft
+果冻,Jelly,bouncy
+弹性,Springy,bouncy
+橡皮,Rubbery,bouncy
+# 从 Core HF 补充 - Magic
+吸收,Absorb,
+奥术,Arcane,
+光环,Aura,
+光束,Beam,
+祝福,Blessing,
+增益,Buff,
+施法,Cast,
+吟唱,Chant,
+魅惑,Charm,
+召唤变戏法,Conjure,
+水晶,Crystal,
+诅咒,Curse,
+减益,Debuff,
+驱散,Dispel,
+神圣,Divine,
+魔法粉尘,Dust,
+元素,Elemental,
+附魔,Enchant,
+虚无灵体,Ethereal,
+精灵仙子,Fairy,
+发光,Glow,
+治疗,Heal,
+冰,Ice,
+幻象,Illusion,
+法力,Mana,
+死灵法术,Necromancy,
+法球,Orb,
+药水,Potion,
+复活,Revival,
+仪式,Ritual,
+符文,Rune,
+暗影,Shadow,
+闪耀,Shine,
+灵魂,Soul,
+火花闪烁,Sparkle,
+咒语,Spell,
+精神灵体,Spirit,
+召唤,Summon,
+念力,Telekinesis,
+图腾,Totem,
+消失,Vanish,
+魔杖,Wand,
+结界守卫,Ward,
+奇幻怪诞,Whimsy,
+鬼火小精灵,Wisp,
+电击滋,Zap,
+# 从 Core HF 补充 - Modifier/Mood
+卡通风,Cartoon,
+滑稽搞笑,Comical,
+可爱感,Cute,
+梦幻感,Dreamy,
+有趣,Funny,
+快乐,Happy,
+魔法感,Magical,
+俏皮感,Playful,
+积极,Positive,
+复古,Retro,
+浪漫,Romantic,
+愚蠢搞怪,Silly,
+奇怪,Strange,
+怪异,Weird,
+
+# ============================================
+# 中性/过渡词汇
+# ============================================
+中性,Neutral,balanced
+平衡,Balanced,even
+模糊,Ambiguous,unclear
+过渡,Transitional,bridge
+混合,Hybrid,mixed
+融合,Fused,blend
+渐变,Gradient,fade
+层次,Layered,complex
+复杂,Complex,rich
+多维,Multi,dimensional
+丰富感,Rich,full
+饱满感,Full,rich
+圆润,Round,smooth
+立体,Dimensional,3d
+清晰感,Clear,defined
+锐利,Sharp,precise
+精确,Precise,accurate
+干净感,Clean,pure
+明亮,Bright,light
+暗沉,Dull,muted
+# 从 Core HF 补充 - Texture通用
+易碎脆,Brittle,
+啾啾声短促高音,Chirp,
+潮湿闷,Damp,
+空旷,Empty,
+快速,Fast,
+肥厚饱满,Fat,
+平坦无力,Flat,
+高频感,High,
+轻盈,Light,
+低频感,Low,
+脉冲搏动,Pulsing,
+有力冲击感强,Punchy,
+安静,Quiet,
+急促,Rapid,
+隆隆声,Rumble,
+闪烁微光感,Shimmer,
+短促,Short,
+缓慢,Slow,
+空间感迷幻,Spacey,
+吱吱作响,Squeaky,
+颤音,Tremolo,
+湿润,Wet,
+宽广,Wide,
+
+# ========================================
+# 从 Core High Frequency 自动补充
+# ========================================
+
+# --- 补充: Abstract/Design ---
+强调音,Accent,cinematic dramatic
+氛围音,Ambient,cinematic dramatic
+大气,Atmosphere,cinematic dramatic
+起音,Attack,cinematic dramatic
+衬底,Bed,cinematic dramatic
+情绪推进,Build,up cinematic dramatic
+洞穴感,Cavernous,cinematic dramatic
+高潮,Climax,cinematic dramatic
+音簇,Cluster,cinematic dramatic
+渐强,Crescendo,cinematic dramatic
+衰减,Decay,cinematic dramatic
+不协和,Discordant,cinematic dramatic
+失真,Distortion,cinematic dramatic
+下降音,Downer,cinematic dramatic
+持续低鸣,Drone,cinematic dramatic
+掉落,Drop,cinematic dramatic
+演变,Evolution,cinematic dramatic
+淡入,Fade,In cinematic dramatic
+淡出,Fade,Out cinematic dramatic
+反馈,Feedback,cinematic dramatic
+过滤,Filter,cinematic dramatic
+终章,Finale,cinematic dramatic
+镶边,Flanger,cinematic dramatic
+频率,Frequency,cinematic dramatic
+颗粒,Grain,cinematic dramatic
+泛音,Harmonic,cinematic dramatic
+打击,Hit,cinematic dramatic
+冲击,Impact,cinematic dramatic
+工业感,Industrial,cinematic dramatic
+前奏,Intro,cinematic dramatic
+层叠,Layer,cinematic dramatic
+循环,Loop,cinematic dramatic
+低频端,Low,End cinematic dramatic
+极简,Minimal,cinematic dramatic
+调制,Modulation,cinematic dramatic
+变形,Morph,cinematic dramatic
+噪音,Noise,cinematic dramatic
+单次触发,One,shot cinematic dramatic
+尾声,Outro,cinematic dramatic
+铺底,Pad,cinematic dramatic
+飞驰而过,Pass,by cinematic dramatic
+相位,Phase,cinematic dramatic
+音高,Pitch,cinematic dramatic
+经过处理,Processed,cinematic dramatic
+脉冲,Pulse,cinematic dramatic
+倒放,Reverse,cinematic dramatic
+节奏,Rhythm,cinematic dramatic
+上升,Rise,cinematic dramatic
+上升音效,Riser,cinematic dramatic
+刮擦声(设计类),Scrape,cinematic dramatic
+序列,Sequence,cinematic dramatic
+冲击波,Shockwave,cinematic dramatic
+静音,Silence,cinematic dramatic
+简单,Simple,cinematic dramatic
+猛击,Slam,cinematic dramatic
+慢动作,Slow,mo cinematic dramatic
+空间感,Space,cinematic dramatic
+跨度,Span,cinematic dramatic
+刺点,Stinger,cinematic dramatic
+超低音,Sub,cinematic dramatic
+回吸音,Suckback,cinematic dramatic
+扫频,Sweep,cinematic dramatic
+膨胀,Swell,cinematic dramatic
+挥动声,Swish,cinematic dramatic
+飞掠声,Swoosh,cinematic dramatic
+同步,Sync,cinematic dramatic
+合成音,Synth,cinematic dramatic
+尾音,Tail,cinematic dramatic
+张力,Tension,cinematic dramatic
+质感,Texture,cinematic dramatic
+沉重撞击,Thump,cinematic dramatic
+音色,Timbre,cinematic dramatic
+预告片,Trailer,cinematic dramatic
+变形,Transform,cinematic dramatic
+转场,Transition,cinematic dramatic
+背景配乐,Underscore,cinematic dramatic
+力度,Velocity,cinematic dramatic
+扭曲,Warp,cinematic dramatic
+冲刷音(长尾音),Wash,cinematic dramatic
+波形,Wave,cinematic dramatic
+呼啸,Whoosh,cinematic dramatic
+呼啸撞击,Whooshbang,cinematic dramatic
+
+# --- 补充: Audio_Process/Design ---
+衰减,Attenuate,professional studio
+自动化,Automation,professional studio
+带宽,Bandwidth,professional studio
+位深,Bit,Depth professional studio
+提升,Boost,professional studio
+旁通,Bypass,professional studio
+效果链,Chain,professional studio
+削波,Clipping,professional studio
+拼接(人声),Comping,professional studio
+压缩,Compression,professional studio
+交叉淡化,Crossfade,professional studio
+阻尼,Damping,professional studio
+衰减,Decay,professional studio
+扩散,Diffusion,professional studio
+抖动(降位深),Dither,professional studio
+干声,Dry,professional studio
+闪避,Ducking,professional studio
+动态范围,Dynamic,Range professional studio
+均衡器,Equalizer,professional studio
+激励器,Exciter,professional studio
+扩展器,Expander,professional studio
+推子,Fader,professional studio
+反馈,Feedback,professional studio
+滤波器,Filter,professional studio
+镶边,Flanger,professional studio
+增益,Gain,professional studio
+门限,Gate,professional studio
+动态余量,Headroom,professional studio
+脉冲响应,Impulse,professional studio
+插入,Insert,professional studio
+隔离,Isolation,professional studio
+延迟,Latency,professional studio
+分层,Layering,professional studio
+限制器,Limiter,professional studio
+循环,Looping,professional studio
+掩蔽效应,Masking,professional studio
+母带处理,Mastering,professional studio
+混音,Mixing,professional studio
+单声道,Mono,professional studio
+静音,Mute,professional studio
+归一化,Normalize,professional studio
+声像,Pan,professional studio
+并行处理,Parallel,professional studio
+参量(EQ),Parametric,professional studio
+相位,Phase,professional studio
+移相器,Phaser,professional studio
+变调,Pitch,Shift professional studio
+极性,Polarity,professional studio
+量化,Quantize,professional studio
+比率,Ratio,professional studio
+混响,Reverb,professional studio
+倒放,Reverse,professional studio
+采样率,Sample,Rate professional studio
+饱和度,Saturation,professional studio
+发送,Send,professional studio
+侧链,Sidechain,professional studio
+信号流,Signal,Flow professional studio
+独奏,Solo,professional studio
+频谱,Spectrum,professional studio
+立体声,Stereo,professional studio
+阈值,Threshold,professional studio
+音色,Timbre,professional studio
+瞬态,Transient,professional studio
+微调,Trim,professional studio
+颤音,Vibrato,professional studio
+宽度(立体声),Width,professional studio
+
+# --- 补充: Cinematic/Element ---
+重音,Accent,cinematic dramatic serious
+氛围,Atmosphere,cinematic dramatic serious
+铺底音效,Bed,cinematic dramatic serious
+轰鸣,Boom,cinematic dramatic serious
+布拉姆音效(盗梦空间号角声),Braaam,cinematic dramatic serious
+情绪堆叠,Build,Up cinematic dramatic serious
+高潮,Climax,cinematic dramatic serious
+下降音效,Downer,cinematic dramatic serious
+坠落,Drop,cinematic dramatic serious
+结尾,Ending,cinematic dramatic serious
+填充音,Fill,cinematic dramatic serious
+终章,Finale,cinematic dramatic serious
+打击,Hit,cinematic dramatic serious
+前奏,Intro,cinematic dramatic serious
+短乐句,Jingle,cinematic dramatic serious
+Logo展示音,Logo,cinematic dramatic serious
+尾声,Outro,cinematic dramatic serious
+乐句,Phrase,cinematic dramatic serious
+乒声,Ping,cinematic dramatic serious
+脉冲,Pulse,cinematic dramatic serious
+倒放,Reverse,cinematic dramatic serious
+上升,Rise,cinematic dramatic serious
+上升音效,Riser,cinematic dramatic serious
+配乐,Score,cinematic dramatic serious
+突发刺点,Stinger,cinematic dramatic serious
+超低频轰鸣,Sub,Boom cinematic dramatic serious
+回吸音效,Suckback,cinematic dramatic serious
+膨胀,Swell,cinematic dramatic serious
+纹理,Texture,cinematic dramatic serious
+标题音效,Title,cinematic dramatic serious
+预告片风格,Trailer,cinematic dramatic serious
+转场,Transition,cinematic dramatic serious
+呼啸,Whoosh,cinematic dramatic serious
+呼啸打击,Whoosh,Hit cinematic dramatic serious
+
+# --- 补充: Horror/Ambience ---
+氛围,Atmosphere,dark horror serious
+洞穴,Cave,dark horror serious
+合唱(诡异),Choir,dark horror serious
+教堂,Church,dark horror serious
+低鸣,Drone,dark horror serious
+医院(废弃),Hospital,dark horror serious
+实验室,Laboratory,dark horror serious
+金属嘎吱声,Metal,Creak dark horror serious
+雨(阴森),Rain,dark horror serious
+上升音(惊悚),Riser,dark horror serious
+突发音(吓人),Stinger,dark horror serious
+风暴,Storm,dark horror serious
+雷声,Thunder,dark horror serious
+木头嘎吱声,Wood,Creak dark horror serious
+
+# --- 补充: Horror/General ---
+恐怖,Horror,dark horror tense
+突发惊吓,Jump,Scare dark horror tense
+吓人,Scary,dark horror tense
+紧张感,Tension,dark horror tense
+
+# --- 补充: Modifier/Mood ---
+侵略性,Aggressive,emotional mood
+愤怒,Angry,emotional mood
+焦虑,Anxious,emotional mood
+危险,Danger,emotional mood
+压抑,Depressing,emotional mood
+情绪化,Emotional,emotional mood
+兴奋,Exciting,emotional mood
+未来感,Futuristic,emotional mood
+阴沉,Gloomy,emotional mood
+历史感,Historical,emotional mood
+激烈,Intense,emotional mood
+孤独,Lonely,emotional mood
+忧郁,Melancholic,emotional mood
+军事,Military,emotional mood
+神秘,Mysterious,emotional mood
+强大,Powerful,emotional mood
+悲伤,Sad,emotional mood
+严肃,Serious,emotional mood
+幽灵般,Spooky,emotional mood
+悬疑,Suspenseful,emotional mood
+威胁,Threatening,emotional mood
+悲剧,Tragic,emotional mood
+都市感,Urban,emotional mood
+暴力,Violent,emotional mood
+
+# --- 补充: Modifier/Sonic_Character ---
+模拟味,Analog,acoustic natural
+人工的,Artificial,acoustic natural
+重低音,Bass,Heavy acoustic natural
+压缩感,Compressed,acoustic natural
+阻尼,Dampened,acoustic natural
+直接,Direct,acoustic natural
+干声(无混响),Dry,acoustic natural
+电子,Electronic,acoustic natural
+经过均衡处理,EQed,acoustic natural
+滤波,Filtered,acoustic natural
+模糊,Fuzzy,acoustic natural
+硬,Hard,acoustic natural
+谐波,Harmonic,acoustic natural
+高保真,Hi,Fi acoustic natural
+高音调,High,Pitch acoustic natural
+不和谐,Inharmonic,acoustic natural
+低保真,Lo,Fi acoustic natural
+响亮,Loud,acoustic natural
+低音调,Low,Pitch acoustic natural
+机械感,Mechanical,acoustic natural
+调制感,Modulated,acoustic natural
+静音,Muted,acoustic natural
+变调,Pitch,Shift acoustic natural
+经过处理,Processed,acoustic natural
+混响感,Reverberant,acoustic natural
+机械化,Robotic,acoustic natural
+隆隆作响,Rumbly,acoustic natural
+饱和,Saturated,acoustic natural
+寂静,Silent,acoustic natural
+超低频,Sub,acoustic natural
+合成,Synthetic,acoustic natural
+高频,Treble,acoustic natural
+震动,Vibrating,acoustic natural
+
+# --- 补充: Sound_Word/Electronic ---
+哔声,Beep,glitchy digital fun
+短促信号音,Blip,glitchy digital fun
+电子水泡音,Bloop,glitchy digital fun
+咔嗒(鼠标,Click,glitchy digital fun
+故障音,Glitch,glitchy digital fun
+乒声(声纳,Ping,glitchy digital fun
+脉冲音,Pulse,glitchy digital fun
+滴答(钟表),Tick,glitchy digital fun
+嗒(钟表),Tock,glitchy digital fun
+
+# --- 补充: Sound_Word/Friction_Break ---
+噼里啪啦(燃烧),Crackle,harsh weird fun
+嘎吱(木头,Creak,harsh weird fun
+嘎吱(研磨),Grind,harsh weird fun
+呻吟(物体受压),Groan,harsh weird fun
+刺耳刮擦声,Rasp,harsh weird fun
+咔嗒咔嗒(震动),Rattle,harsh weird fun
+沙沙声(树叶,Rustle,harsh weird fun
+刮擦声,Scrape,harsh weird fun
+抓挠声,Scratch,harsh weird fun
+粉碎声,Shatter,harsh weird fun
+啪(折断),Snap,harsh weird fun
+吱吱声,Squeak,harsh weird fun
+尖叫声(刹车,Squeal,harsh weird fun
+
+# --- 补充: Texture/General ---
+密集,Dense,texture quality
+干,Dry,texture quality
+回声,Echo,texture quality

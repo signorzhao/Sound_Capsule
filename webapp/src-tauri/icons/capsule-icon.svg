@@ -1,0 +1,153 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- 定义渐变 -->
+  <defs>
+    <!-- 主渐变：从紫色到蓝色 -->
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#3B82F6;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- 高光渐变 -->
+    <linearGradient id="highlightGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF;stop-opacity:0.3" />
+      <stop offset="50%" style="stop-color:#FFFFFF;stop-opacity:0.1" />
+      <stop offset="100%" style="stop-color:#FFFFFF;stop-opacity:0" />
+    </linearGradient>
+
+    <!-- 阴影滤镜 -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="8" result="blur"/>
+      <feOffset in="blur" dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景：透明，只绘制胶囊 -->
+
+  <!-- 胶囊主体（旋转45度）-->
+  <g transform="translate(256, 256) rotate(45)">
+    <!-- 胶囊外壳 -->
+    <rect
+      x="-140"
+      y="-70"
+      width="280"
+      height="140"
+      rx="70"
+      ry="70"
+      fill="url(#mainGradient)"
+      filter="url(#shadow)"
+    />
+
+    <!-- 高光效果 -->
+    <rect
+      x="-140"
+      y="-70"
+      width="280"
+      height="140"
+      rx="70"
+      ry="70"
+      fill="url(#highlightGradient)"
+    />
+
+    <!-- 胶囊分割线（中间的细线）-->
+    <rect
+      x="-3"
+      y="-65"
+      width="6"
+      height="130"
+      rx="3"
+      ry="3"
+      fill="#FFFFFF"
+      opacity="0.4"
+    />
+
+    <!-- 左侧半球高光 -->
+    <ellipse
+      cx="-50"
+      cy="0"
+      rx="40"
+      ry="20"
+      fill="#FFFFFF"
+      opacity="0.2"
+    />
+
+    <!-- 右侧半球高光 -->
+    <ellipse
+      cx="50"
+      cy="-20"
+      rx="30"
+      ry="15"
+      fill="#FFFFFF"
+      opacity="0.15"
+    />
+  </g>
+
+  <!-- 内部装饰：音波线条（表示音频）-->
+  <g transform="translate(256, 256)" opacity="0.8">
+    <!-- 音波1 -->
+    <path
+      d="M -80 0 Q -70 -30 -60 0 Q -50 30 -40 0"
+      stroke="#FFFFFF"
+      stroke-width="3"
+      fill="none"
+      opacity="0.6"
+      transform="rotate(45)"
+    />
+
+    <!-- 音波2 -->
+    <path
+      d="M -40 0 Q -30 -25 -20 0 Q -10 25 0 0"
+      stroke="#FFFFFF"
+      stroke-width="3"
+      fill="none"
+      opacity="0.8"
+      transform="rotate(45)"
+    />
+
+    <!-- 音波3（中心）-->
+    <circle
+      cx="0"
+      cy="0"
+      r="6"
+      fill="#FFFFFF"
+      opacity="0.9"
+      transform="rotate(45)"
+    />
+
+    <!-- 音波4 -->
+    <path
+      d="M 0 0 Q 10 -25 20 0 Q 30 25 40 0"
+      stroke="#FFFFFF"
+      stroke-width="3"
+      fill="none"
+      opacity="0.8"
+      transform="rotate(45)"
+    />
+
+    <!-- 音波5 -->
+    <path
+      d="M 40 0 Q 50 -30 60 0 Q 70 30 80 0"
+      stroke="#FFFFFF"
+      stroke-width="3"
+      fill="none"
+      opacity="0.6"
+      transform="rotate(45)"
+    />
+  </g>
+
+  <!-- 顶部光晕效果 -->
+  <circle cx="180" cy="180" r="40" fill="#FFFFFF" opacity="0.1">
+    <animate
+      attributeName="opacity"
+      values="0.1;0.2;0.1"
+      dur="3s"
+      repeatCount="indefinite"
+    />
+  </circle>
+</svg>
