@@ -94,17 +94,8 @@ Windows 10/11 通常已预装 WebView2 Runtime。如果没有，从 [Microsoft](
 ### 1. 克隆项目
 
 ```powershell
-# 克隆仓库（会创建 Sound_Capsule 目录）
 git clone https://github.com/signorzhao/Sound_Capsule.git
-
-# 进入项目目录
-cd Sound_Capsule/synesth
-```
-
-或者使用别名克隆：
-```powershell
-git clone https://github.com/signorzhao/Sound_Capsule.git synesth
-cd synesth
+cd Sound_Capsule
 ```
 
 ### 2. 配置后端 (Python)
