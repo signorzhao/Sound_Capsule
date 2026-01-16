@@ -94,7 +94,16 @@ Windows 10/11 通常已预装 WebView2 Runtime。如果没有，从 [Microsoft](
 ### 1. 克隆项目
 
 ```powershell
+# 克隆仓库（会创建 Sound_Capsule 目录）
 git clone https://github.com/signorzhao/Sound_Capsule.git
+
+# 进入项目目录
+cd Sound_Capsule/synesth
+```
+
+或者使用别名克隆：
+```powershell
+git clone https://github.com/signorzhao/Sound_Capsule.git synesth
 cd synesth
 ```
 
@@ -326,6 +335,8 @@ synesth/
 如果需要打包分发，需要将 Python 后端编译为 Windows 可执行文件，并集成到 Tauri sidecar 中。
 
 ### 步骤 1：编译 Python 后端
+
+> **说明**：`capsules_api.spec` 文件已包含在项目中（位于 `data-pipeline/` 目录），无需手动创建。
 
 ```powershell
 cd data-pipeline
