@@ -4,11 +4,26 @@
 
 ---
 
+## 安装前须知
+
+| 项目 | 预估值 |
+|------|--------|
+| **磁盘空间** | 约 5-8 GB（含依赖和模型文件） |
+| **安装时间** | 首次安装约 15-30 分钟（取决于网络速度） |
+| **网络要求** | 需要访问 PyPI、npm、Hugging Face 等 |
+
+**主要下载内容**：
+- Python 依赖：约 1.5 GB（含 PyTorch 和 sentence-transformers 模型）
+- Node.js 依赖：约 200 MB
+- Rust/Tauri 编译缓存：约 2-3 GB（首次编译时生成）
+
+---
+
 ## 系统要求
 
 | 组件 | 版本要求 | 说明 |
 |------|----------|------|
-| Windows | 10 (1803+) / 11 (64-bit) | 需要 WebView2 Runtime 和 curl |
+| Windows | 10 (1803+) / 11 (64-bit) | 需要 WebView2 Runtime |
 | Node.js | 18+ LTS | 推荐使用 nvm-windows 管理 |
 | Python | 3.10+ | 推荐 3.11 |
 | Rust | 最新稳定版 | 通过 rustup 安装 |
@@ -20,8 +35,9 @@
 
 ### 1. 安装 Node.js
 
-推荐使用 [nvm-windows](https://github.com/coreybutler/nvm-windows) 管理 Node 版本：
+推荐使用 [nvm-windows](https://github.com/coreybutler/nvm-windows) 管理 Node 版本。
 
+**PowerShell**：
 ```powershell
 # 安装 nvm-windows 后
 nvm install 18
@@ -65,21 +81,11 @@ cargo --version
 安装时选择：
 - [x] **Desktop development with C++** 工作负载
 
-这是编译 Tauri 原生模块的必要依赖。
+这是编译 Tauri 原生模块和部分 Python 包的必要依赖。
 
 ### 5. 检查 WebView2
 
 Windows 10/11 通常已预装 WebView2 Runtime。如果没有，从 [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) 下载。
-
-### 6. 检查 curl（可选）
-
-Windows 10 (1803+) 和 Windows 11 已内置 curl。验证：
-
-```powershell
-curl --version
-```
-
-如果没有，启动脚本会跳过后端健康检查（不影响功能）。
 
 ---
 
@@ -94,6 +100,9 @@ cd synesth
 
 ### 2. 配置后端 (Python)
 
+> **注意**：以下命令在 **PowerShell** 中执行。如果使用 CMD，请参考下方的 CMD 语法。
+
+**PowerShell**：
 ```powershell
 cd data-pipeline
 
@@ -103,18 +112,35 @@ python -m venv venv
 # 激活虚拟环境
 .\venv\Scripts\activate
 
-# 安装依赖
+# 安装依赖（首次安装约 10-20 分钟）
 pip install -r requirements.txt
 ```
 
-**注意**：`sentence-transformers` 首次安装会下载约 500MB 的模型文件。
+**CMD**：
+```cmd
+cd data-pipeline
+
+:: 创建虚拟环境
+python -m venv venv
+
+:: 激活虚拟环境
+venv\Scripts\activate
+
+:: 安装依赖
+pip install -r requirements.txt
+```
+
+**安装须知**：
+- `sentence-transformers` 首次安装会自动下载 PyTorch（约 800MB）和模型文件（约 500MB）
+- 如果网络较慢，可能需要 20 分钟以上
+- 如果安装中断，可重新运行 `pip install -r requirements.txt` 继续
 
 ### 3. 配置前端 (Node.js + Tauri)
 
 ```powershell
 cd webapp
 
-# 安装 npm 依赖
+# 安装 npm 依赖（约 200MB）
 npm install
 
 # 安装 Tauri CLI（如果尚未安装）
@@ -147,7 +173,9 @@ SUPABASE_KEY=your_supabase_anon_key
 
 ### 方式二：手动启动
 
-**重要**：后端 API 需要 `--config-dir` 和 `--export-dir` 参数。
+> **重要**：后端 API 需要 `--config-dir` 和 `--export-dir` 参数。
+
+#### PowerShell 版本
 
 **终端 1 - 后端**：
 ```powershell
@@ -155,8 +183,8 @@ cd data-pipeline
 .\venv\Scripts\activate
 
 # 创建目录（如果不存在）
-mkdir $env:USERPROFILE\.soundcapsule -ErrorAction SilentlyContinue
-mkdir $env:USERPROFILE\Documents\SoundCapsule\Exports -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.soundcapsule"
+New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\Documents\SoundCapsule\Exports"
 
 # 启动 API（必须带参数）
 python capsule_api.py --config-dir "$env:USERPROFILE\.soundcapsule" --export-dir "$env:USERPROFILE\Documents\SoundCapsule\Exports"
@@ -164,6 +192,27 @@ python capsule_api.py --config-dir "$env:USERPROFILE\.soundcapsule" --export-dir
 
 **终端 2 - 前端**：
 ```powershell
+cd webapp
+npm run tauri dev
+```
+
+#### CMD 版本
+
+**终端 1 - 后端**：
+```cmd
+cd data-pipeline
+venv\Scripts\activate
+
+:: 创建目录（如果不存在）
+mkdir "%USERPROFILE%\.soundcapsule" 2>nul
+mkdir "%USERPROFILE%\Documents\SoundCapsule\Exports" 2>nul
+
+:: 启动 API（必须带参数）
+python capsule_api.py --config-dir "%USERPROFILE%\.soundcapsule" --export-dir "%USERPROFILE%\Documents\SoundCapsule\Exports"
+```
+
+**终端 2 - 前端**：
+```cmd
 cd webapp
 npm run tauri dev
 ```
@@ -180,13 +229,37 @@ npm run tauri dev
 
 **A**: `capsule_api.py` 必须通过 Tauri 启动或手动传递参数。使用 `start-all.bat` 或 `start-backend-dev.bat` 脚本，它们会自动传递参数。
 
+### Q: `pip install` 安装依赖失败
+
+**A**: 分步骤排查：
+
+1. **确保 Visual Studio Build Tools 已安装**（部分包需要 C++ 编译器）
+
+2. **单独安装失败的包**：
+   ```powershell
+   # 如果某个包安装失败，单独安装它
+   pip install package-name
+   
+   # 常见需要单独处理的包
+   pip install torch --index-url https://download.pytorch.org/whl/cpu
+   pip install sentence-transformers
+   pip install supabase
+   ```
+
+3. **使用国内镜像**（如果网络慢）：
+   ```powershell
+   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+   ```
+
+4. **清理缓存重试**：
+   ```powershell
+   pip cache purge
+   pip install -r requirements.txt
+   ```
+
 ### Q: `npm run tauri dev` 报错 "linker 'link.exe' not found"
 
 **A**: 需要安装 Visual Studio Build Tools 的 C++ 工作负载。
-
-### Q: Python 依赖安装失败
-
-**A**: 某些包（如 `sentence-transformers`）需要 C++ 编译器。确保已安装 Visual Studio Build Tools。
 
 ### Q: WebView2 相关错误
 
@@ -205,10 +278,16 @@ netstat -ano | findstr :5002
 
 ### Q: 云同步功能不工作
 
-**A**: 确保已配置 `data-pipeline/.env.supabase` 文件，并安装了 `supabase` 包：
-```powershell
-pip install supabase
-```
+**A**: 
+1. 确保已配置 `data-pipeline/.env.supabase` 文件
+2. 确保已安装 supabase 包：
+   ```powershell
+   pip install supabase
+   ```
+
+### Q: 首次运行 Tauri 编译很慢
+
+**A**: 这是正常的。Rust 首次编译会下载和编译大量依赖（约 2-3GB 缓存），后续编译会快很多。
 
 ---
 
@@ -242,9 +321,11 @@ synesth/
 
 ---
 
-## 六、编译发布版本（可选）
+## 六、编译发布版本（高级）
 
-如果需要打包分发，需要编译 Python 后端为 Windows 可执行文件：
+如果需要打包分发，需要将 Python 后端编译为 Windows 可执行文件，并集成到 Tauri sidecar 中。
+
+### 步骤 1：编译 Python 后端
 
 ```powershell
 cd data-pipeline
@@ -255,17 +336,50 @@ cd data-pipeline
 # 安装 PyInstaller
 pip install pyinstaller
 
-# 编译
+# 编译（需要几分钟）
 pyinstaller capsules_api.spec
-
-# 生成的可执行文件位于：dist\capsules_api.exe
 ```
 
-**注意**：编译后的可执行文件仍需要 `--config-dir` 和 `--export-dir` 参数。
+**输出**：生成的文件位于 `dist/capsules_api/` 目录，主程序是 `capsules_api.exe`。
+
+### 步骤 2：集成到 Tauri Sidecar
+
+1. 创建 sidecar 目录（如果不存在）：
+   ```powershell
+   mkdir ..\webapp\src-tauri\binaries -ErrorAction SilentlyContinue
+   ```
+
+2. 复制并重命名可执行文件：
+   ```powershell
+   # 文件名格式：{name}-{target-triple}
+   # Windows x64: capsules_api-x86_64-pc-windows-msvc.exe
+   Copy-Item dist\capsules_api\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_api-x86_64-pc-windows-msvc.exe
+   ```
+
+3. 确保 `tauri.conf.json` 中配置了 sidecar：
+   ```json
+   {
+     "bundle": {
+       "externalBin": ["binaries/capsules_api"]
+     }
+   }
+   ```
+
+### 步骤 3：构建 Tauri 应用
+
+```powershell
+cd webapp
+npm run tauri build
+```
+
+**输出**：安装包位于 `src-tauri/target/release/bundle/`。
+
+> **注意**：编译后的可执行文件仍需要 `--config-dir` 和 `--export-dir` 参数，这些由 Tauri Rust 代码自动传递。
 
 ---
 
 ## 更新日志
 
+- **2026-01-16**: 完善文档：添加安装须知、PowerShell/CMD 双版本语法、依赖安装故障排查、sidecar 集成说明
 - **2026-01-16**: 修复 API 启动参数说明，添加 supabase 依赖，更新启动脚本
 - **2026-01-16**: 初始版本，支持 Windows 10/11 开发环境配置
