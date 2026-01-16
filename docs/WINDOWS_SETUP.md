@@ -294,7 +294,7 @@ netstat -ano | findstr :5002
 ## 五、目录结构
 
 ```
-synesth/
+Sound_Capsule/
 ├── data-pipeline/          # Python 后端
 │   ├── venv/               # Python 虚拟环境（不提交）
 │   ├── database/           # SQLite 数据库（不提交）
@@ -315,6 +315,7 @@ synesth/
 ├── start-all.bat           # Windows 一键启动
 ├── start-backend-dev.bat   # Windows 后端启动
 ├── start-all.sh            # macOS/Linux 一键启动
+├── start-backend-dev.sh    # macOS/Linux 后端启动
 └── docs/
     └── WINDOWS_SETUP.md    # 本文档
 ```
