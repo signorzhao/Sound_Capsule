@@ -8,7 +8,7 @@
 
 | 组件 | 版本要求 | 说明 |
 |------|----------|------|
-| Windows | 10/11 (64-bit) | 需要 WebView2 Runtime |
+| Windows | 10 (1803+) / 11 (64-bit) | 需要 WebView2 Runtime 和 curl |
 | Node.js | 18+ LTS | 推荐使用 nvm-windows 管理 |
 | Python | 3.10+ | 推荐 3.11 |
 | Rust | 最新稳定版 | 通过 rustup 安装 |
@@ -71,6 +71,16 @@ cargo --version
 
 Windows 10/11 通常已预装 WebView2 Runtime。如果没有，从 [Microsoft](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) 下载。
 
+### 6. 检查 curl（可选）
+
+Windows 10 (1803+) 和 Windows 11 已内置 curl。验证：
+
+```powershell
+curl --version
+```
+
+如果没有，启动脚本会跳过后端健康检查（不影响功能）。
+
 ---
 
 ## 二、项目配置
@@ -78,7 +88,7 @@ Windows 10/11 通常已预装 WebView2 Runtime。如果没有，从 [Microsoft](
 ### 1. 克隆项目
 
 ```powershell
-git clone <repository-url>
+git clone https://github.com/signorzhao/Sound_Capsule.git
 cd synesth
 ```
 
@@ -97,6 +107,8 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
+**注意**：`sentence-transformers` 首次安装会下载约 500MB 的模型文件。
+
 ### 3. 配置前端 (Node.js + Tauri)
 
 ```powershell
@@ -109,24 +121,13 @@ npm install
 npm install -g @tauri-apps/cli
 ```
 
-### 4. 编译 Windows Sidecar（可选但推荐）
+### 4. 配置 Supabase（可选，云同步功能）
 
-如果需要打包分发，需要编译 Python 后端为 Windows 可执行文件：
+创建 `data-pipeline/.env.supabase` 文件：
 
-```powershell
-cd data-pipeline
-
-# 激活虚拟环境
-.\venv\Scripts\activate
-
-# 安装 PyInstaller
-pip install pyinstaller
-
-# 编译
-pyinstaller capsules_api.spec
-
-# 复制到 binaries 目录
-copy dist\capsules_api\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_api-x86_64-pc-windows-msvc.exe
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_KEY=your_supabase_anon_key
 ```
 
 ---
@@ -136,16 +137,29 @@ copy dist\capsules_api\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_ap
 ### 方式一：使用启动脚本（推荐）
 
 双击项目根目录的 `start-all.bat`，会自动：
-1. 启动后端 API 服务器（端口 5002）
-2. 启动 Tauri 前端开发服务器
+1. 创建必需的配置和导出目录
+2. 启动后端 API 服务器（端口 5002）
+3. 启动 Tauri 前端开发服务器
+
+**默认目录**：
+- 配置目录：`%USERPROFILE%\.soundcapsule`
+- 导出目录：`%USERPROFILE%\Documents\SoundCapsule\Exports`
 
 ### 方式二：手动启动
+
+**重要**：后端 API 需要 `--config-dir` 和 `--export-dir` 参数。
 
 **终端 1 - 后端**：
 ```powershell
 cd data-pipeline
 .\venv\Scripts\activate
-python capsule_api.py
+
+# 创建目录（如果不存在）
+mkdir $env:USERPROFILE\.soundcapsule -ErrorAction SilentlyContinue
+mkdir $env:USERPROFILE\Documents\SoundCapsule\Exports -ErrorAction SilentlyContinue
+
+# 启动 API（必须带参数）
+python capsule_api.py --config-dir "$env:USERPROFILE\.soundcapsule" --export-dir "$env:USERPROFILE\Documents\SoundCapsule\Exports"
 ```
 
 **终端 2 - 前端**：
@@ -154,9 +168,17 @@ cd webapp
 npm run tauri dev
 ```
 
+### 方式三：仅启动后端
+
+双击 `start-backend-dev.bat`，会自动配置路径并启动后端。
+
 ---
 
 ## 四、常见问题
+
+### Q: 后端启动失败，提示"缺少必需的命令行参数"
+
+**A**: `capsule_api.py` 必须通过 Tauri 启动或手动传递参数。使用 `start-all.bat` 或 `start-backend-dev.bat` 脚本，它们会自动传递参数。
 
 ### Q: `npm run tauri dev` 报错 "linker 'link.exe' not found"
 
@@ -181,6 +203,13 @@ netstat -ano | findstr :5002
 
 **A**: 确保没有其他进程正在访问 `capsules.db`，或等待几秒后重试。
 
+### Q: 云同步功能不工作
+
+**A**: 确保已配置 `data-pipeline/.env.supabase` 文件，并安装了 `supabase` 包：
+```powershell
+pip install supabase
+```
+
 ---
 
 ## 五、目录结构
@@ -194,15 +223,18 @@ synesth/
 │   │   ├── library_routes.py
 │   │   └── sync_routes.py
 │   ├── capsule_api.py      # API 入口
-│   └── requirements.txt    # Python 依赖
+│   ├── requirements.txt    # Python 依赖
+│   └── .env.supabase       # Supabase 配置（不提交）
 │
 ├── webapp/                 # 前端 + Tauri
 │   ├── src/                # React 源码
 │   ├── src-tauri/          # Tauri/Rust 源码
-│   │   └── binaries/       # Sidecar 可执行文件
+│   │   ├── src/            # Rust 源代码
+│   │   └── tauri.conf.json # Tauri 配置
 │   └── package.json
 │
 ├── start-all.bat           # Windows 一键启动
+├── start-backend-dev.bat   # Windows 后端启动
 ├── start-all.sh            # macOS/Linux 一键启动
 └── docs/
     └── WINDOWS_SETUP.md    # 本文档
@@ -210,17 +242,30 @@ synesth/
 
 ---
 
-## 六、环境变量（可选）
+## 六、编译发布版本（可选）
 
-创建 `data-pipeline/.env` 文件配置 Supabase 云同步：
+如果需要打包分发，需要编译 Python 后端为 Windows 可执行文件：
 
-```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
+```powershell
+cd data-pipeline
+
+# 激活虚拟环境
+.\venv\Scripts\activate
+
+# 安装 PyInstaller
+pip install pyinstaller
+
+# 编译
+pyinstaller capsules_api.spec
+
+# 生成的可执行文件位于：dist\capsules_api.exe
 ```
+
+**注意**：编译后的可执行文件仍需要 `--config-dir` 和 `--export-dir` 参数。
 
 ---
 
 ## 更新日志
 
+- **2026-01-16**: 修复 API 启动参数说明，添加 supabase 依赖，更新启动脚本
 - **2026-01-16**: 初始版本，支持 Windows 10/11 开发环境配置
