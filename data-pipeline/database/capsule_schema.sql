@@ -104,6 +104,9 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE,
     password_hash TEXT,
     display_name TEXT,
+    avatar_url TEXT,
+    bio TEXT,
+    preferences TEXT,  -- JSON 格式
     access_token TEXT,
     refresh_token TEXT,
     token_expires_at TIMESTAMP,
@@ -123,6 +126,48 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- ============================================
+-- 同步状态表
+-- ============================================
+CREATE TABLE IF NOT EXISTS sync_status (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    last_sync_at TIMESTAMP,
+    last_full_sync_at TIMESTAMP,
+    pending_uploads INTEGER DEFAULT 0,
+    pending_downloads INTEGER DEFAULT 0,
+    sync_in_progress INTEGER DEFAULT 0,
+    last_error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- 胶囊类型表
+-- ============================================
+CREATE TABLE IF NOT EXISTS capsule_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    display_name TEXT,
+    description TEXT,
+    icon TEXT,
+    color TEXT,
+    is_active INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 插入默认胶囊类型
+INSERT OR IGNORE INTO capsule_types (name, display_name, description, icon, color, sort_order)
+VALUES 
+    ('magic', 'Magic', '魔法音效', 'sparkles', '#8B5CF6', 1),
+    ('impact', 'Impact', '冲击音效', 'zap', '#EF4444', 2),
+    ('atmosphere', 'Atmosphere', '氛围音效', 'cloud', '#3B82F6', 3),
+    ('texture', 'Texture', '纹理音效', 'layers', '#10B981', 4),
+    ('transition', 'Transition', '过渡音效', 'arrow-right', '#F59E0B', 5),
+    ('riser', 'Riser', '上升音效', 'trending-up', '#EC4899', 6),
+    ('downer', 'Downer', '下降音效', 'trending-down', '#6366F1', 7);
 
 -- ============================================
 -- 性能优化索引
