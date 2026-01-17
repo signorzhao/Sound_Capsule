@@ -9,8 +9,28 @@ import json
 import time
 import subprocess
 import shutil
+import tempfile
+import platform
 from pathlib import Path
 from typing import Dict, Any, Optional
+
+
+def get_export_temp_dir() -> Path:
+    """
+    获取跨平台的临时导出目录
+    
+    Returns:
+        临时目录路径
+    """
+    if platform.system() == "Windows":
+        # Windows: 使用用户临时目录
+        temp_base = Path(tempfile.gettempdir()) / "synest_export"
+    else:
+        # macOS/Linux: 使用 /tmp
+        temp_base = Path("/tmp/synest_export")
+    
+    temp_base.mkdir(parents=True, exist_ok=True)
+    return temp_base
 
 
 def sanitize_path_for_lua(path: str) -> str:
@@ -84,6 +104,68 @@ class ReaperWebUIExporter:
             print(f"  错误详情: {e}")
             return False
 
+    def _find_reaper_executable(self) -> Optional[Path]:
+        """
+        查找 REAPER 可执行文件（跨平台）
+        优先使用用户配置的路径
+        
+        Returns:
+            REAPER 可执行文件路径，或 None
+        """
+        import platform
+        system = platform.system()
+        
+        # 1. 优先读取用户配置
+        try:
+            if system == "Darwin":
+                config_path = Path.home() / "Library/Application Support/com.soundcapsule.app/config.json"
+            elif system == "Windows":
+                config_path = Path.home() / "AppData/Roaming/com.soundcapsule.app/config.json"
+            else:
+                config_path = Path.home() / ".config/com.soundcapsule.app/config.json"
+            
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    reaper_path = config.get('reaper_path')
+                    if reaper_path:
+                        reaper_exe = Path(reaper_path)
+                        if reaper_exe.exists():
+                            print(f"✓ 使用用户配置的 REAPER 路径: {reaper_exe}")
+                            return reaper_exe
+                        else:
+                            print(f"⚠️ 用户配置的 REAPER 路径不存在: {reaper_path}")
+        except Exception as e:
+            print(f"⚠️ 读取 REAPER 配置失败: {e}")
+        
+        # 2. 使用默认路径
+        if system == "Darwin":
+            paths = [
+                Path("/Applications/REAPER.app/Contents/MacOS/REAPER"),
+                Path("/Applications/REAPER64.app/Contents/MacOS/REAPER"),
+                Path.home() / "Applications/REAPER.app/Contents/MacOS/REAPER"
+            ]
+        elif system == "Windows":
+            paths = [
+                Path("C:/Program Files/REAPER (x64)/reaper.exe"),
+                Path("C:/Program Files/REAPER (arm64)/reaper.exe"),
+                Path("C:/Program Files/REAPER/reaper.exe"),
+                Path("C:/Program Files (x86)/REAPER/reaper.exe"),
+                Path.home() / "AppData/Local/Programs/REAPER/reaper.exe"
+            ]
+        else:
+            reaper_in_path = shutil.which("reaper")
+            if reaper_in_path:
+                return Path(reaper_in_path)
+            paths = [Path("/usr/bin/reaper")]
+        
+        for path in paths:
+            if path.exists():
+                print(f"✓ 找到 REAPER: {path}")
+                return path
+        
+        return None
+
     def prepare_export_config(self, config: Dict[str, Any]) -> bool:
         """
         准备导出配置文件
@@ -94,8 +176,7 @@ class ReaperWebUIExporter:
         Returns:
             是否成功
         """
-        temp_dir = Path("/tmp/synest_export")
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = get_export_temp_dir()
 
         config_file = temp_dir / "webui_export_config.json"
 
@@ -164,7 +245,7 @@ class ReaperWebUIExporter:
         username = getpass.getuser()
 
         # 0. 清理旧的结果文件（避免读取到旧数据）
-        result_file = Path("/tmp/synest_export/export_result.json")
+        result_file = get_export_temp_dir() / "export_result.json"
         if result_file.exists():
             print(f"⚠️  发现旧的结果文件，删除: {result_file}")
             result_file.unlink()
@@ -200,67 +281,106 @@ class ReaperWebUIExporter:
         print(f"✓ 准备执行 Lua 脚本: {script_path}")
 
         try:
-            # 方法 1: 尝试使用 AppleScript (macOS)
-            print(f"✓ 尝试通过 AppleScript 执行脚本...")
-
-            script_content = f'''tell application "REAPER"
-    do Lua script "{script_path}"
-end tell'''
-
-            apple_script_cmd = [
-                'osascript',
-                '-e',
-                script_content
-            ]
-
-            result = subprocess.run(
-                apple_script_cmd,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-
-            print(f"✓ AppleScript 命令已发送")
-            print(f"  返回码: {result.returncode}")
-            print(f"  标准输出: {result.stdout}")
-            if result.stderr:
-                print(f"  标准错误: {result.stderr}")
-
-            # 如果 AppleScript 失败，回退到命令行方法
-            if result.returncode != 0:
-                print(f"⚠️  AppleScript 失败，尝试命令行方法...")
-
+            import platform
+            system = platform.system()
+            
+            if system == "Windows":
+                # Windows: 直接用 REAPER 命令行执行脚本
+                print(f"✓ Windows 平台，使用命令行方式执行脚本...")
+                
                 # 查找 REAPER 可执行文件
-                import shutil
-                reaper_cmd = shutil.which("reaper")
+                reaper_cmd = self._find_reaper_executable()
                 if not reaper_cmd:
-                    # 尝试 macOS 默认路径
-                    reaper_cmd = "/Applications/REAPER.app/Contents/MacOS/REAPER"
-                    if not Path(reaper_cmd).exists():
-                        return {
-                            'success': False,
-                            'error': '找不到 REAPER 可执行文件'
-                        }
-
+                    return {
+                        'success': False,
+                        'error': '找不到 REAPER 可执行文件，请在设置中配置 REAPER 路径'
+                    }
+                
                 print(f"✓ REAPER 路径: {reaper_cmd}")
-
-                # 使用 -nonewinst 参数在当前实例中执行脚本
-                cmd = [reaper_cmd, "-nonewinst", str(script_path)]
-
+                
+                # Windows 上使用 -nonewinst 在现有实例中执行脚本
+                # 注意：脚本路径需要使用 Windows 格式
+                script_path_win = str(script_path).replace('/', '\\')
+                cmd = [str(reaper_cmd), "-nonewinst", script_path_win]
+                
                 print(f"✓ 执行命令: {' '.join(cmd)}")
-
+                
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=5  # 只等待5秒，-nonewinst会立即返回
+                    timeout=10
+                )
+                
+                print(f"✓ REAPER 命令已发送")
+                print(f"  返回码: {result.returncode}")
+                if result.stdout:
+                    print(f"  标准输出: {result.stdout}")
+                if result.stderr:
+                    print(f"  标准错误: {result.stderr}")
+                    
+            else:
+                # macOS: 使用 AppleScript
+                print(f"✓ macOS 平台，使用 AppleScript 执行脚本...")
+
+                script_content = f'''tell application "REAPER"
+    do Lua script "{script_path}"
+end tell'''
+
+                apple_script_cmd = [
+                    'osascript',
+                    '-e',
+                    script_content
+                ]
+
+                result = subprocess.run(
+                    apple_script_cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
                 )
 
-                print(f"✓ REAPER 命令已发送")
+                print(f"✓ AppleScript 命令已发送")
                 print(f"  返回码: {result.returncode}")
                 print(f"  标准输出: {result.stdout}")
                 if result.stderr:
                     print(f"  标准错误: {result.stderr}")
+
+                # 如果 AppleScript 失败，回退到命令行方法
+                if result.returncode != 0:
+                    print(f"⚠️  AppleScript 失败，尝试命令行方法...")
+
+                    # 查找 REAPER 可执行文件
+                    import shutil
+                    reaper_cmd = shutil.which("reaper")
+                    if not reaper_cmd:
+                        # 尝试 macOS 默认路径
+                        reaper_cmd = "/Applications/REAPER.app/Contents/MacOS/REAPER"
+                        if not Path(reaper_cmd).exists():
+                            return {
+                                'success': False,
+                                'error': '找不到 REAPER 可执行文件'
+                            }
+
+                    print(f"✓ REAPER 路径: {reaper_cmd}")
+
+                    # 使用 -nonewinst 参数在当前实例中执行脚本
+                    cmd = [reaper_cmd, "-nonewinst", str(script_path)]
+
+                    print(f"✓ 执行命令: {' '.join(cmd)}")
+
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=5  # 只等待5秒，-nonewinst会立即返回
+                    )
+
+                    print(f"✓ REAPER 命令已发送")
+                    print(f"  返回码: {result.returncode}")
+                    print(f"  标准输出: {result.stdout}")
+                    if result.stderr:
+                        print(f"  标准错误: {result.stderr}")
 
         except subprocess.TimeoutExpired:
             return {
@@ -274,7 +394,7 @@ end tell'''
             }
 
         # 4. 等待结果文件
-        result_file = Path("/tmp/synest_export/export_result.json")
+        result_file = get_export_temp_dir() / "export_result.json"
         timeout = 180  # 3分钟
         start_time = time.time()
         check_interval = 0.5  # 每0.5秒检查一次
@@ -337,7 +457,7 @@ end tell'''
         print(f"  结果文件不存在: {result_file}")
 
         # 检查临时目录
-        temp_dir = Path("/tmp/synest_export")
+        temp_dir = get_export_temp_dir()
         if temp_dir.exists():
             print(f"  临时目录内容:")
             for file in temp_dir.iterdir():

@@ -18,9 +18,26 @@ local function Log(msg)
     end
 end
 
+-- 获取跨平台的临时目录
+local function GetTempDir()
+    local sep = package.config:sub(1,1)  -- 获取路径分隔符
+    if sep == "\\" then
+        -- Windows
+        local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Temp"
+        return temp .. "\\synest_export"
+    else
+        -- macOS/Linux
+        return "/tmp/synest_export"
+    end
+end
+
+local TEMP_DIR = GetTempDir()
+
 local function LoadConfig()
     -- 从配置文件读取导出参数
-    local config_path = "/tmp/synest_export/webui_export_config.json"
+    local config_path = TEMP_DIR .. "/webui_export_config.json"
+    -- Windows 路径需要用正斜杠或双反斜杠
+    config_path = config_path:gsub("\\", "/")
     local file = io.open(config_path, "r")
 
     if not file then
@@ -71,7 +88,8 @@ local function LoadConfig()
 end
 
 local function WriteResult(success, capsule_name, error_msg)
-    local result_path = "/tmp/synest_export/export_result.json"
+    local result_path = TEMP_DIR .. "/export_result.json"
+    result_path = result_path:gsub("\\", "/")  -- 确保使用正斜杠
     local result_file = io.open(result_path, "w")
 
     Log("=== [WriteResult] 开始写入结果文件 ===\n")
