@@ -1007,23 +1007,23 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         -- 输出文件路径（使用胶囊目录的绝对路径）
         local renderFilePath = outputDir:gsub("\\", "/") .. "/" .. capsuleName
         
-        reaper.ShowConsoleMsg("  RENDER_FILE: " .. renderFilePath .. "\n")
-        reaper.ShowConsoleMsg("  RENDER_PATTERN: " .. capsuleName .. "\n")
+        -- RENDER_FILE: 目录路径（胶囊目录）
+        -- RENDER_PATTERN: 文件名（不含扩展名）
+        local renderDir = outputDir:gsub("\\", "/")
+        
+        reaper.ShowConsoleMsg("  RENDER_FILE (目录): " .. renderDir .. "\n")
+        reaper.ShowConsoleMsg("  RENDER_PATTERN (文件名): " .. capsuleName .. "\n")
         reaper.ShowConsoleMsg("  时间范围: " .. string.format("%.6f - %.6f", startTime or 0, endTime or 0) .. "\n")
         
-        -- 更新 RENDER_FILE（输出文件路径，不含扩展名）
-        if content:match('RENDER_FILE [^\n]+') then
-            content = content:gsub('RENDER_FILE [^\n]+', 'RENDER_FILE ' .. renderFilePath)
-        else
-            content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1RENDER_FILE ' .. renderFilePath .. '\n')
-        end
+        -- 先删除所有旧的 RENDER_FILE 和 RENDER_PATTERN
+        content = content:gsub('RENDER_FILE [^\n]*\n?', '')
+        content = content:gsub('RENDER_PATTERN [^\n]*\n?', '')
         
-        -- 设置 RENDER_PATTERN
-        if content:match('RENDER_PATTERN [^\n]+') then
-            content = content:gsub('RENDER_PATTERN [^\n]+', 'RENDER_PATTERN ' .. capsuleName)
-        else
-            content = content:gsub('(RENDER_FILE [^\n]+\n)', '%1RENDER_PATTERN ' .. capsuleName .. '\n')
-        end
+        -- 在 REAPER_PROJECT 后插入新的渲染设置
+        -- RENDER_FILE = 输出目录
+        -- RENDER_PATTERN = 文件名
+        local renderSettings = string.format('RENDER_FILE %s\nRENDER_PATTERN %s\n', renderDir, capsuleName)
+        content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
         
         -- 设置 RENDER_FMT (采样率等)
         if content:match('RENDER_FMT%s+[^\n]+') then
