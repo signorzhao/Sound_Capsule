@@ -168,6 +168,13 @@ class CapsuleDatabase:
                 if 'is_deleted' not in prisms_fields or 'field_data' not in prisms_fields:
                     invalid_tables.append('prisms')
             
+            # 检查 capsule_types 表结构（必须包含 name_cn 和 gradient）
+            if 'capsule_types' in current_tables:
+                cursor.execute("PRAGMA table_info(capsule_types)")
+                capsule_types_fields = {row[1] for row in cursor.fetchall()}
+                if 'name_cn' not in capsule_types_fields or 'gradient' not in capsule_types_fields:
+                    invalid_tables.append('capsule_types')
+            
             is_valid = len(missing_fields) == 0 and len(missing_tables) == 0 and len(invalid_tables) == 0
             
             return {
