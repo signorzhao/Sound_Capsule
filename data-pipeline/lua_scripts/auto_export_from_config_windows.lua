@@ -181,8 +181,18 @@ local function Main()
 
     -- 5. 执行导出
     Log("步骤 5: 执行导出...\n")
-    main_export_func()
+    
+    -- 用 pcall 包裹脚本加载，捕获语法错误
+    local load_success, load_err = pcall(main_export_func)
+    if not load_success then
+        local error_msg = "加载脚本失败: " .. tostring(load_err)
+        Log("✗ " .. error_msg .. "\n")
+        WriteResult(false, nil, error_msg)
+        return
+    end
+    Log("✓ 脚本加载完成\n")
 
+    -- 用 pcall 执行 main 函数
     local success, result = pcall(main)
 
     if success and result == true then
