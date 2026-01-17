@@ -83,17 +83,28 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 单个胶囊上传中状态（用于提示与防重复点击）
   const [uploadingCapsules, setUploadingCapsules] = useState({});
 
+  // 默认胶囊类型（防御性降级）
+  const DEFAULT_CAPSULE_TYPES = [
+    { id: 'magic', name: 'MAGIC', name_cn: '魔法', icon: 'Sparkles', color: '#8B5CF6', gradient: 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)' },
+    { id: 'impact', name: 'IMPACT', name_cn: '打击', icon: 'Flame', color: '#EF4444', gradient: 'linear-gradient(135deg, #EF4444 0%, #F59E0B 100%)' },
+    { id: 'atmosphere', name: 'ATMOSPHERE', name_cn: '环境', icon: 'Music', color: '#10B981', gradient: 'linear-gradient(135deg, #10B981 0%, #06B6D4 100%)' }
+  ];
+
   // 加载胶囊类型数据
   const loadCapsuleTypes = async () => {
     try {
       const response = await fetch('http://localhost:5002/api/capsule-types');
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.types && data.types.length > 0) {
         setCapsuleTypes(data.types);
         console.log('加载胶囊类型:', data.types.length, '个');
+      } else {
+        console.warn('胶囊类型数据为空，使用默认类型');
+        setCapsuleTypes(DEFAULT_CAPSULE_TYPES);
       }
     } catch (error) {
-      console.error('加载胶囊类型失败:', error);
+      console.error('加载胶囊类型失败，使用默认类型:', error);
+      setCapsuleTypes(DEFAULT_CAPSULE_TYPES);
     }
   };
 
