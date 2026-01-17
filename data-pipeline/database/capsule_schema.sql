@@ -107,6 +107,8 @@ CREATE TABLE IF NOT EXISTS users (
     refresh_token TEXT,
     token_expires_at TIMESTAMP,
     supabase_user_id TEXT UNIQUE,
+    is_active INTEGER DEFAULT 1,
+    last_login TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
