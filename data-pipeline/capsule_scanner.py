@@ -80,8 +80,8 @@ def import_capsule_from_output(capsule_info):
         'project_name': metadata.get('project_name'),
         'theme_name': metadata.get('theme_name'),
         'file_path': str(relative_path),  # 使用相对路径
-        'preview_audio': metadata.get('files', {}).get('preview'),
-        'rpp_file': metadata.get('files', {}).get('project'),
+        'preview_audio': metadata.get('preview_audio') or metadata.get('files', {}).get('preview'),
+        'rpp_file': metadata.get('rpp_file') or metadata.get('files', {}).get('project'),
         'capsule_type': capsule_type,  # 新增：胶囊类型
         'metadata': {
             'bpm': metadata.get('info', {}).get('bpm'),
