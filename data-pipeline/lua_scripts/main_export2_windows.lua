@@ -817,7 +817,7 @@ function CopyMediaFiles(mediaFiles, audioDir)
 end
 
 -- 生成新的 RPP 文件（不切换工程）
-function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
+function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, startTime, endTime)
     reaper.ShowConsoleMsg("\n=== 生成胶囊 RPP ===\n")
     
     -- 获取当前工程路径
@@ -840,7 +840,73 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
     local content = sourceFile:read("*all")
     sourceFile:close()
     
-    -- 删除未选中的 ITEM 块（保留只有选中媒体的 items）
+    -- ============================================================
+    -- 步骤 1：收集需要保留的轨道（依赖追踪）
+    -- ============================================================
+    reaper.ShowConsoleMsg("收集需要保留的轨道...\n")
+    
+    local keepTrackNumbers = {}
+    local numItems = reaper.CountSelectedMediaItems(0)
+    for i = 0, numItems - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        if item then
+            -- 获取 item 所在轨道及相关轨道
+            local relatedTracks = GetRelatedTracks(item)
+            for track, _ in pairs(relatedTracks) do
+                local trackNum = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
+                keepTrackNumbers[trackNum] = true
+                local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+                reaper.ShowConsoleMsg("  保留轨道 " .. trackNum .. ": " .. (trackName or "未命名") .. "\n")
+            end
+        end
+    end
+    
+    -- ============================================================
+    -- 步骤 2：删除不相关的 TRACK 块
+    -- ============================================================
+    reaper.ShowConsoleMsg("清理不相关的轨道...\n")
+    
+    local newContent = ""
+    local inTrack = false
+    local trackContent = ""
+    local trackDepth = 0
+    local currentTrackNum = 0
+    local removedTrackCount = 0
+    
+    for line in content:gmatch("([^\r\n]*)\r?\n?") do
+        if line:match("^%s*<TRACK") then
+            inTrack = true
+            trackDepth = 1
+            currentTrackNum = currentTrackNum + 1
+            trackContent = line .. "\n"
+        elseif inTrack then
+            trackContent = trackContent .. line .. "\n"
+            if line:match("^%s*<") and not line:match("^%s*<[^>]*>%s*$") then
+                trackDepth = trackDepth + 1
+            end
+            if line:match("^%s*>%s*$") then
+                trackDepth = trackDepth - 1
+                if trackDepth == 0 then
+                    -- TRACK 块结束，检查是否保留
+                    if keepTrackNumbers[currentTrackNum] then
+                        newContent = newContent .. trackContent
+                    else
+                        removedTrackCount = removedTrackCount + 1
+                    end
+                    inTrack = false
+                    trackContent = ""
+                end
+            end
+        else
+            newContent = newContent .. line .. "\n"
+        end
+    end
+    content = newContent
+    reaper.ShowConsoleMsg("  删除了 " .. removedTrackCount .. " 个不相关的轨道\n")
+    
+    -- ============================================================
+    -- 步骤 3：删除未选中的 ITEM 块
+    -- ============================================================
     reaper.ShowConsoleMsg("清理未选中的 Items...\n")
     
     -- 获取选中媒体的文件名列表
@@ -934,42 +1000,66 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
     end
     reaper.ShowConsoleMsg("共替换 " .. replacedCount .. " 处路径\n")
     
-    -- 设置渲染参数（OGG 格式）
+    -- 设置渲染参数（OGG 格式，按时间选区渲染）
     if renderPreview then
         reaper.ShowConsoleMsg("设置渲染参数 (OGG)...\n")
-        local renderFile = capsuleName .. ".ogg"
         
-        -- 更新 RENDER_FILE（输出文件名，不含路径）
-        if content:match('RENDER_FILE "[^"]*"') then
-            content = content:gsub('RENDER_FILE "[^"]*"', 'RENDER_FILE "' .. renderFile .. '"')
+        -- 输出文件路径（使用胶囊目录的绝对路径）
+        local renderFilePath = outputDir:gsub("\\", "/") .. "/" .. capsuleName
+        
+        reaper.ShowConsoleMsg("  RENDER_FILE: " .. renderFilePath .. "\n")
+        reaper.ShowConsoleMsg("  RENDER_PATTERN: " .. capsuleName .. "\n")
+        reaper.ShowConsoleMsg("  时间范围: " .. string.format("%.6f - %.6f", startTime or 0, endTime or 0) .. "\n")
+        
+        -- 更新 RENDER_FILE（输出文件路径，不含扩展名）
+        if content:match('RENDER_FILE [^\n]+') then
+            content = content:gsub('RENDER_FILE [^\n]+', 'RENDER_FILE ' .. renderFilePath)
         else
-            -- 如果不存在，在 REAPER_PROJECT 后面添加
-            content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1  RENDER_FILE "' .. renderFile .. '"\n')
+            content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1RENDER_FILE ' .. renderFilePath .. '\n')
         end
         
-        -- 设置 RENDER_PATTERN (渲染到项目目录)
-        if content:match('RENDER_PATTERN "[^"]*"') then
-            content = content:gsub('RENDER_PATTERN "[^"]*"', 'RENDER_PATTERN ""')
+        -- 设置 RENDER_PATTERN
+        if content:match('RENDER_PATTERN [^\n]+') then
+            content = content:gsub('RENDER_PATTERN [^\n]+', 'RENDER_PATTERN ' .. capsuleName)
+        else
+            content = content:gsub('(RENDER_FILE [^\n]+\n)', '%1RENDER_PATTERN ' .. capsuleName .. '\n')
         end
         
-        -- 设置渲染格式为 OGG Vorbis
-        -- RENDER_FMT 格式: 字符串表示编码器
-        if content:match('RENDER_FMT%s+') then
-            -- OGG Vorbis 格式设置
-            content = content:gsub('RENDER_FMT%s+[^\n]+', 'RENDER_FMT vggo')
+        -- 设置 RENDER_FMT (采样率等)
+        if content:match('RENDER_FMT%s+[^\n]+') then
+            content = content:gsub('RENDER_FMT%s+[^\n]+', 'RENDER_FMT 0 2 44100')
         end
         
-        -- 设置渲染范围为整个项目
-        if content:match('RENDER_RANGE%s+') then
-            content = content:gsub('RENDER_RANGE%s+[^\n]+', 'RENDER_RANGE 1 0 0 18 1000')
+        -- 设置 RENDER_RANGE（按时间选区渲染）
+        -- 格式: RENDER_RANGE 2 startTime endTime 0 1000
+        -- 2 = 渲染模式（时间选区）
+        local renderRange = string.format('RENDER_RANGE 2 %.6f %.6f 0 1000', startTime or 0, endTime or 0)
+        if content:match('RENDER_RANGE%s+[^\n]+') then
+            content = content:gsub('RENDER_RANGE%s+[^\n]+', renderRange)
+        else
+            content = content:gsub('(RENDER_PATTERN [^\n]+\n)', '%1' .. renderRange .. '\n')
         end
         
-        -- 设置 RECORD_PATH 为空（渲染到项目目录）
+        -- 设置 RECORD_PATH 为 Audio
         if content:match('RECORD_PATH "[^"]*"') then
-            content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH ""')
+            content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH "Audio"')
         end
         
-        reaper.ShowConsoleMsg("  RENDER_FILE: " .. renderFile .. "\n")
+        -- 设置 RENDER_CFG（OGG Vorbis 编码器配置 Base64）
+        local oggRenderCfg = [[  <RENDER_CFG
+    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
+  >]]
+        
+        if content:match('<RENDER_CFG[^>]*>.-</RENDER_CFG>') then
+            content = content:gsub('<RENDER_CFG[^>]*>.-</RENDER_CFG>', oggRenderCfg)
+        elseif content:match('<RENDER_CFG[^>]*>\n.-\n%s*>') then
+            content = content:gsub('<RENDER_CFG[^>]*>\n.-\n%s*>', oggRenderCfg)
+        else
+            -- 在 RENDER_RANGE 后添加
+            content = content:gsub('(RENDER_RANGE [^\n]+\n)', '%1' .. oggRenderCfg .. '\n')
+        end
+        
+        reaper.ShowConsoleMsg("  ✓ 渲染参数设置完成\n")
     end
     
     -- 写入新 RPP
@@ -2268,7 +2358,8 @@ function ExportCapsule()
     local pathMapping, failedFiles = CopyMediaFiles(mediaFiles, audioDir)
     
     -- 步骤 3：生成新的 RPP 文件（不切换工程）
-    local rppPath = GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, exportPreview)
+    -- 传递选中 items 的时间范围用于渲染
+    local rppPath = GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, exportPreview, startTime, endTime)
     
     if not rppPath then
         reaper.ShowConsoleMsg("✗ RPP 生成失败\n")
