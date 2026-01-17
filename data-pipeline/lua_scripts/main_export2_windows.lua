@@ -1020,23 +1020,31 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
         -- 构建完整的渲染设置块
-        -- RENDER_RANGE 0 = 使用自定义时间边界
-        -- RENDER_STARTPOS 和 RENDER_ENDPOS 指定精确的开始和结束时间
+        -- RENDER_RANGE 1 = 使用时间选择（SELECTION）
+        -- SELECTION 和 SELECTION2 定义时间选择范围
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
-RENDER_RANGE 0 0 0 18 1000
-RENDER_STARTPOS %.6f
-RENDER_ENDPOS %.6f
+RENDER_RANGE 1 0 0 0 1000
 RENDER_STEMS 0
   <RENDER_CFG
     dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
   >
-]], renderDir, capsuleName, actualStartTime, actualEndTime)
+]], renderDir, capsuleName)
 
-        -- 删除旧的 RENDER_STARTPOS 和 RENDER_ENDPOS
-        content = content:gsub('RENDER_STARTPOS%s+[^\n]*\n?', '')
-        content = content:gsub('RENDER_ENDPOS%s+[^\n]*\n?', '')
+        -- 设置时间选择范围（SELECTION 和 SELECTION2）
+        local selectionStr = string.format("SELECTION %.6f %.6f", actualStartTime, actualEndTime)
+        local selection2Str = string.format("SELECTION2 %.6f %.6f", actualStartTime, actualEndTime)
+        
+        -- 替换或添加 SELECTION
+        if content:match("SELECTION%s+[%d%.]+%s+[%d%.]+") then
+            content = content:gsub("SELECTION%s+[%d%.]+%s+[%d%.]+", selectionStr)
+        end
+        if content:match("SELECTION2%s+[%d%.]+%s+[%d%.]+") then
+            content = content:gsub("SELECTION2%s+[%d%.]+%s+[%d%.]+", selection2Str)
+        end
+        
+        reaper.ShowConsoleMsg("  时间选择: " .. selectionStr .. "\n")
         
         -- 在 REAPER_PROJECT 行后插入所有渲染设置
         content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
@@ -2360,13 +2368,8 @@ function ExportCapsule()
     if exportPreview then
         reaper.ShowConsoleMsg("\n=== 渲染预览音频 ===\n")
         
-        -- 注意：OGG 渲染需要 RPP 文件中已经配置好渲染设置
-        -- 这里我们已经在 GenerateCapsuleRPP 中设置了 RENDER_FILE
-        -- 可以使用命令行渲染：reaper.exe -renderproject "path/to/project.rpp"
-        
         local reaperPath = nil
         if IsWindows() then
-            -- 尝试从配置或常见路径获取 REAPER 路径
             local possiblePaths = {
                 "C:\\Program Files\\REAPER (x64)\\reaper.exe",
                 "C:\\Program Files\\REAPER (arm64)\\reaper.exe",
@@ -2384,23 +2387,13 @@ function ExportCapsule()
         end
         
         if reaperPath then
-            -- 确保路径使用正确的分隔符
             local winRppPath = rppPath:gsub("/", "\\")
-            
-            -- 使用 start /B 异步执行渲染，避免阻塞脚本
             local renderCmd = string.format('start /B "" "%s" -renderproject "%s"', reaperPath, winRppPath)
             reaper.ShowConsoleMsg("渲染命令: " .. renderCmd .. "\n")
-            
-            -- 异步执行渲染（不等待完成）
-            reaper.ShowConsoleMsg("启动后台渲染...\n")
             os.execute(renderCmd)
-            
-            -- 等待一小段时间让渲染开始
-            -- 注意：渲染在后台进行，OGG 文件会在渲染完成后生成
             reaper.ShowConsoleMsg("✓ 渲染已在后台启动\n")
-            reaper.ShowConsoleMsg("  OGG 文件将在渲染完成后生成\n")
         else
-            reaper.ShowConsoleMsg("⚠ 未找到 REAPER 可执行文件，请手动渲染\n")
+            reaper.ShowConsoleMsg("⚠ 未找到 REAPER，请手动渲染\n")
         end
     end
     
