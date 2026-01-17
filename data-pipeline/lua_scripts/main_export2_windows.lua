@@ -592,18 +592,18 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 -- 尝试多种可能的路径
                 local testPaths = {}
                 
-                -- 如果提供了源项目目录，优先使用
+                -- 如果提供了源项目目录，优先使用（使用跨平台 JoinPath）
                 if sourceProjectDir and sourceProjectDir ~= "" then
-                    table.insert(testPaths, sourceProjectDir .. "/audio/" .. relativeFileName)
-                    table.insert(testPaths, sourceProjectDir .. "/Audio/" .. relativeFileName)
-                    table.insert(testPaths, sourceProjectDir .. "/" .. relativeFileName)
+                    table.insert(testPaths, JoinPath(sourceProjectDir, "audio", relativeFileName))
+                    table.insert(testPaths, JoinPath(sourceProjectDir, "Audio", relativeFileName))
+                    table.insert(testPaths, JoinPath(sourceProjectDir, relativeFileName))
                 end
                 
                 -- 也尝试RPP文件所在目录
                 if rppDir ~= "" then
-                    table.insert(testPaths, rppDir .. "/audio/" .. relativeFileName)
-                    table.insert(testPaths, rppDir .. "/Audio/" .. relativeFileName)
-                    table.insert(testPaths, rppDir .. "/" .. relativeFileName)
+                    table.insert(testPaths, JoinPath(rppDir, "audio", relativeFileName))
+                    table.insert(testPaths, JoinPath(rppDir, "Audio", relativeFileName))
+                    table.insert(testPaths, JoinPath(rppDir, relativeFileName))
                 end
                 
                 -- 尝试原始工程目录
@@ -611,9 +611,9 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 if origProj ~= "" then
                     local origDir = GetDirectoryPath(origProj)
                     if origDir ~= "" then
-                        table.insert(testPaths, origDir .. "/audio/" .. relativeFileName)
-                        table.insert(testPaths, origDir .. "/Audio/" .. relativeFileName)
-                        table.insert(testPaths, origDir .. "/" .. relativeFileName)
+                        table.insert(testPaths, JoinPath(origDir, "audio", relativeFileName))
+                        table.insert(testPaths, JoinPath(origDir, "Audio", relativeFileName))
+                        table.insert(testPaths, JoinPath(origDir, relativeFileName))
                     end
                 end
                 
@@ -766,23 +766,23 @@ function SaveProjectWithMedia(targetPath)
                                 -- 尝试多种路径解析方式
                                 local fullPath = nil
                                 
-                                -- 方式1: 如果是绝对路径，直接使用
-                                if string.match(fileName, "^/") then
+                                -- 方式1: 如果是绝对路径，直接使用（支持 Unix 和 Windows）
+                                if string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") then
                                     fullPath = fileName
                                     reaper.ShowConsoleMsg("  绝对路径: " .. fullPath .. "\n")
                                 else
-                                    -- 方式2: 尝试从项目目录解析（包括audio子文件夹）
+                                    -- 方式2: 尝试从项目目录解析（包括audio子文件夹，使用跨平台 JoinPath）
                                     local testPaths = {
-                                        currentProjDir .. "/" .. fileName,
-                                        currentProjDir .. "/audio/" .. fileName,
-                                        currentProjDir .. "/Audio/" .. fileName,
+                                        JoinPath(currentProjDir, fileName),
+                                        JoinPath(currentProjDir, "audio", fileName),
+                                        JoinPath(currentProjDir, "Audio", fileName),
                                     }
                                     
-                                    -- 也尝试从项目根目录解析
-                                    local projBaseDir = string.match(currentProjPath, "(.+)/[^/]+%.rpp") or currentProjDir
-                                    table.insert(testPaths, projBaseDir .. "/" .. fileName)
-                                    table.insert(testPaths, projBaseDir .. "/audio/" .. fileName)
-                                    table.insert(testPaths, projBaseDir .. "/Audio/" .. fileName)
+                                    -- 也尝试从项目根目录解析（跨平台正则匹配）
+                                    local projBaseDir = GetDirectoryPath(currentProjPath)
+                                    table.insert(testPaths, JoinPath(projBaseDir, fileName))
+                                    table.insert(testPaths, JoinPath(projBaseDir, "audio", fileName))
+                                    table.insert(testPaths, JoinPath(projBaseDir, "Audio", fileName))
                                     
                                     for _, testPath in ipairs(testPaths) do
                                         local file = io.open(testPath, "r")
@@ -1045,12 +1045,19 @@ function GenerateMetadata(itemName, startTime, endTime, plugins, routingInfo, ou
     for _, item in ipairs(possibleNames) do
         local name = item.name
         local subdir = item.subdir
-        local testPath = outputDir .. "/" .. (subdir ~= "" and subdir .. "/" or "") .. name
+        -- 使用跨平台 JoinPath
+        local testPath
+        if subdir ~= "" then
+            testPath = JoinPath(outputDir, subdir, name)
+        else
+            testPath = JoinPath(outputDir, name)
+        end
         local testFile = io.open(testPath, "r")
         if testFile then
             testFile:close()
-            -- 如果文件在子目录中，保存相对路径
-            previewFileName = (subdir ~= "" and subdir .. "/" or "") .. name
+            -- 如果文件在子目录中，保存相对路径（使用跨平台分隔符）
+            local sep = IsWindows() and "\\" or "/"
+            previewFileName = (subdir ~= "" and subdir .. sep or "") .. name
             reaper.ShowConsoleMsg("  找到预览文件: " .. previewFileName .. "\n")
             break
         end
@@ -1778,7 +1785,7 @@ function ExportCapsule()
         outputBaseDir = _SYNEST_AUTO_EXPORT.export_dir
         reaper.ShowConsoleMsg("✓ 使用配置的导出目录:\n")
         reaper.ShowConsoleMsg("  路径: " .. outputBaseDir .. "\n")
-        reaper.ShowConsoleMsg("  类型: " .. (outputBaseDir:match("^/") and "绝对路径" or "相对路径") .. "\n")
+        reaper.ShowConsoleMsg("  类型: " .. ((outputBaseDir:match("^/") or outputBaseDir:match("^[A-Za-z]:")) and "绝对路径" or "相对路径") .. "\n")
     end
 
     -- 2. 如果没有配置，尝试环境变量和其他路径
@@ -2058,12 +2065,12 @@ function ExportCapsule()
     end
     
     -- 5. 最终保存：保存修剪后的工程（包含媒体文件和渲染设置）
-    local sourceRppPath = outputDir .. "/" .. capsuleName .. ".rpp"
+    local sourceRppPath = JoinPath(outputDir, capsuleName .. ".rpp")
     reaper.ShowConsoleMsg("保存最终工程（包含媒体文件和渲染设置）: " .. sourceRppPath .. "\n")
     
     -- 在保存前再次确认渲染设置（因为 SaveProjectWithMedia 可能会覆盖设置）
     if exportPreview then
-        local tempPreviewPath = outputDir .. "/preview_temp.wav"
+        local tempPreviewPath = JoinPath(outputDir, "preview_temp.wav")
         reaper.ShowConsoleMsg("保存前再次确认渲染设置...\n")
         -- 确保时间选择范围正确
         reaper.GetSet_LoopTimeRange(true, false, startTime, endTime, false)
@@ -2083,7 +2090,7 @@ function ExportCapsule()
     
     -- 保存后再次设置渲染参数并保存（因为 SaveProjectWithMedia 可能会改变设置）
     if exportPreview then
-        local tempPreviewPath = outputDir .. "/preview_temp.wav"
+        local tempPreviewPath = JoinPath(outputDir, "preview_temp.wav")
         -- 重新设置时间选择范围
         reaper.GetSet_LoopTimeRange(true, false, startTime, endTime, false)
         -- 重新设置渲染输出路径
@@ -2102,8 +2109,8 @@ function ExportCapsule()
     
     -- 6. 渲染预览音频（如果用户选择了导出预览）
     if exportPreview then
-        local previewPath = outputDir .. "/" .. capsuleName .. ".ogg"  -- 最终输出路径（胶囊目录/胶囊名.ogg）
-        local tempPreviewPath = outputDir .. "/" .. capsuleName .. "_temp.wav"  -- 临时 WAV（避免创建子目录）
+        local previewPath = JoinPath(outputDir, capsuleName .. ".ogg")  -- 最终输出路径（胶囊目录/胶囊名.ogg）
+        local tempPreviewPath = JoinPath(outputDir, capsuleName .. "_temp.wav")  -- 临时 WAV（避免创建子目录）
 
         reaper.ShowConsoleMsg("\n========== 开始预览渲染 ==========\n")
         reaper.ShowConsoleMsg("预览文件路径: " .. previewPath .. "\n")
