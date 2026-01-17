@@ -1020,22 +1020,32 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
         -- 删除所有旧的 RENDER_CFG 块（避免格式冲突）
-        -- 只匹配 <RENDER_CFG 到它自己的结束 >（通常是2-3行）
         content = content:gsub('%s*<RENDER_CFG%s*\n%s*[%w%+%/=]+%s*\n%s*>', '')
         
-        -- 构建顶部渲染设置块（不包含 SELECTION）
+        -- 删除旧的渲染设置（可能散布在文件中）
+        content = content:gsub('RENDER_1X%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_RESAMPLE%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_ADDTOPROJ%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_DITHER%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_TRIM%s+[^\n]*\n?', '')
+        
+        -- 构建顶部渲染设置块（不包含 RENDER_CFG，那个放在 SAMPLERATE 后面）
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
-RENDER_RANGE 1 0 0 0 1000
+RENDER_RANGE 2 0 0 0 1000
 RENDER_STEMS 0
-  <RENDER_CFG
-    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
-  >
 ]], renderDir, capsuleName)
         
         -- 在 REAPER_PROJECT 行后插入渲染设置
         content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
+        
+        -- 在 SAMPLERATE 行后插入 RENDER_CFG 块
+        local renderCfgBlock = [[
+  <RENDER_CFG
+    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
+  >]]
+        content = content:gsub('(SAMPLERATE%s+[^\n]+\n)', '%1' .. renderCfgBlock .. '\n')
         
         -- 替换 SELECTION 和 SELECTION2（在 PLAYRATE 之后的位置）
         local selectionStr = string.format("SELECTION %.6f %.6f", actualStartTime, actualEndTime)
