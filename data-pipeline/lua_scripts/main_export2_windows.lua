@@ -5,7 +5,7 @@
 -- 包含：精简的 RPP 工程、预览音频、JSON 元数据
 
 -- 全局变量：控制控制台输出
-local ENABLE_CONSOLE = false  -- 设为 false 关闭所有控制台输出
+local ENABLE_CONSOLE = true  -- 设为 true 开启调试输出
 
 -- 保存原始的 ShowConsoleMsg 函数
 local _original_ShowConsoleMsg = reaper.ShowConsoleMsg
@@ -87,17 +87,40 @@ end
 -- 跨平台复制文件
 local function CopyFile(src, dst)
     if not src or not dst then
+        Log("  CopyFile: 参数为空\n")
         return false
     end
     
-    if IsWindows() then
-        local winSrc = src:gsub("/", "\\")
-        local winDst = dst:gsub("/", "\\")
-        local cmd = string.format('copy /Y "%s" "%s" >nul 2>&1', winSrc, winDst)
-        return os.execute(cmd) == 0
+    -- 使用 Lua 原生 IO 复制文件（比 os.execute 更可靠）
+    local srcFile, srcErr = io.open(src, "rb")
+    if not srcFile then
+        Log("  CopyFile: 无法打开源文件: " .. tostring(srcErr) .. "\n")
+        return false
+    end
+    
+    local content = srcFile:read("*a")
+    srcFile:close()
+    
+    if not content then
+        Log("  CopyFile: 无法读取源文件内容\n")
+        return false
+    end
+    
+    local dstFile, dstErr = io.open(dst, "wb")
+    if not dstFile then
+        Log("  CopyFile: 无法创建目标文件: " .. tostring(dstErr) .. "\n")
+        return false
+    end
+    
+    local success = dstFile:write(content)
+    dstFile:close()
+    
+    if success then
+        Log("  CopyFile: 成功复制 " .. #content .. " 字节\n")
+        return true
     else
-        local cmd = string.format('cp "%s" "%s"', src, dst)
-        return os.execute(cmd) == 0
+        Log("  CopyFile: 写入失败\n")
+        return false
     end
 end
 
@@ -672,14 +695,25 @@ function CollectSelectedItemsMedia()
     
     for i = 0, numItems - 1 do
         local item = reaper.GetSelectedMediaItem(0, i)
-        local take = reaper.GetActiveTake(item)
+        reaper.ShowConsoleMsg("Item " .. (i+1) .. ":\n")
         
-        if take then
-            local source = reaper.GetMediaItemTake_Source(take)
-            if source then
-                local retval, fileName = reaper.GetMediaSourceFileName(source, "")
+        if not item then
+            reaper.ShowConsoleMsg("  ⚠ item 为 nil\n")
+        else
+            local take = reaper.GetActiveTake(item)
+            
+            if not take then
+                reaper.ShowConsoleMsg("  ⚠ take 为 nil (可能是空 item 或 MIDI)\n")
+            else
+                local source = reaper.GetMediaItemTake_Source(take)
                 
-                if retval and fileName and fileName ~= "" and fileName ~= "?" then
+                if not source then
+                    reaper.ShowConsoleMsg("  ⚠ source 为 nil\n")
+                else
+                    local fileName = reaper.GetMediaSourceFileName(source)
+                    reaper.ShowConsoleMsg("  fileName: " .. tostring(fileName) .. "\n")
+                    
+                    if fileName and fileName ~= "" and fileName ~= "?" then
                     -- 解析完整路径
                     local isAbsolute = string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") or string.match(fileName, "^\\\\")
                     local fullPath = nil
@@ -730,10 +764,11 @@ function CollectSelectedItemsMedia()
                         trackNum = track and reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0,
                         mediaFile = fullPath
                     })
-                end
-            end
-        end
-    end
+                    end  -- if fileName
+                end  -- else (source)
+            end  -- else (take)
+        end  -- else (item)
+    end  -- for
     
     local count = 0
     for _ in pairs(mediaFiles) do count = count + 1 end
@@ -807,19 +842,58 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
     
     -- 替换媒体路径
     reaper.ShowConsoleMsg("替换媒体路径...\n")
+    
+    -- 调试：显示 RPP 中的 FILE 引用
+    reaper.ShowConsoleMsg("RPP 中的 FILE 引用:\n")
+    local fileCount = 0
+    for line in content:gmatch("[^\r\n]+") do
+        if line:match("^%s*FILE%s+") then
+            fileCount = fileCount + 1
+            if fileCount <= 5 then  -- 只显示前5个
+                reaper.ShowConsoleMsg("  " .. line:sub(1, 100) .. "\n")
+            end
+        end
+    end
+    reaper.ShowConsoleMsg("  共 " .. fileCount .. " 个 FILE 引用\n")
+    
     local replacedCount = 0
+    
+    -- 显示 pathMapping 内容
+    reaper.ShowConsoleMsg("\npathMapping 内容:\n")
     for origPath, newPath in pairs(pathMapping) do
-        -- 转义特殊字符
-        local escapedOrig = origPath:gsub("([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
-        escapedOrig = escapedOrig:gsub("\\", "\\\\")
+        reaper.ShowConsoleMsg("  " .. origPath:sub(1, 60) .. "...\n")
+        reaper.ShowConsoleMsg("    -> " .. newPath .. "\n")
+    end
+    
+    reaper.ShowConsoleMsg("\n开始替换:\n")
+    for origPath, newPath in pairs(pathMapping) do
+        local baseName = string.match(origPath, "([^/\\]+)$")
+        reaper.ShowConsoleMsg("  处理: " .. baseName .. "\n")
         
-        -- 替换
-        local newContent, count = string.gsub(content, escapedOrig, newPath)
-        if count > 0 then
-            content = newContent
-            replacedCount = replacedCount + count
-            local baseName = string.match(origPath, "([^/\\]+)$")
-            reaper.ShowConsoleMsg("  ✓ " .. baseName .. " -> " .. newPath .. "\n")
+        -- RPP 文件中的路径可能有多种格式，尝试多种匹配
+        local pathVariants = {
+            origPath,                           -- 原始绝对路径
+            origPath:gsub("\\", "/"),           -- 反斜杠转斜杠
+            origPath:gsub("/", "\\"),           -- 斜杠转反斜杠
+            "Audio\\" .. baseName,              -- 相对路径 (Windows)
+            "Audio/" .. baseName,               -- 相对路径 (Unix)
+            baseName,                           -- 只有文件名
+        }
+        
+        for _, variant in ipairs(pathVariants) do
+            -- 转义正则特殊字符
+            local escaped = variant:gsub("([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+            escaped = escaped:gsub("\\", "\\\\")
+            
+            -- 在 FILE 引用中查找并替换
+            local pattern = '(FILE%s+")' .. escaped .. '(")'
+            local newContent, count = string.gsub(content, pattern, '%1' .. newPath .. '%2')
+            
+            if count > 0 then
+                content = newContent
+                replacedCount = replacedCount + count
+                reaper.ShowConsoleMsg("    ✓ 匹配: " .. variant .. " -> " .. newPath .. " (x" .. count .. ")\n")
+            end
         end
     end
     reaper.ShowConsoleMsg("共替换 " .. replacedCount .. " 处路径\n")
@@ -2157,13 +2231,25 @@ function ExportCapsule()
         end
         
         if reaperPath then
-            local renderCmd = string.format('"%s" -renderproject "%s"', reaperPath, rppPath)
+            -- 确保路径使用正确的分隔符
+            local winRppPath = rppPath:gsub("/", "\\")
+            local renderCmd = string.format('"%s" -renderproject "%s"', reaperPath, winRppPath)
             reaper.ShowConsoleMsg("渲染命令: " .. renderCmd .. "\n")
-            reaper.ShowConsoleMsg("注意: 渲染将在后台进行\n")
-            -- 使用 os.execute 执行渲染（会在后台运行）
-            -- os.execute(renderCmd)
-            -- 暂时不执行，因为需要确保 RPP 中的渲染设置正确
-            reaper.ShowConsoleMsg("⚠ 渲染功能待完善，请手动打开 RPP 渲染\n")
+            
+            -- 执行渲染
+            reaper.ShowConsoleMsg("开始渲染...\n")
+            local result = os.execute(renderCmd)
+            
+            -- 检查渲染结果
+            local oggPath = JoinPath(outputDir, capsuleName .. ".ogg")
+            local oggFile = io.open(oggPath, "r")
+            if oggFile then
+                oggFile:close()
+                reaper.ShowConsoleMsg("✓ OGG 渲染成功: " .. oggPath .. "\n")
+            else
+                reaper.ShowConsoleMsg("⚠ OGG 文件未生成，可能需要手动渲染\n")
+                reaper.ShowConsoleMsg("  请打开 RPP 文件，按 Ctrl+Alt+R 渲染\n")
+            end
         else
             reaper.ShowConsoleMsg("⚠ 未找到 REAPER 可执行文件，请手动渲染\n")
         end
@@ -2189,10 +2275,6 @@ function main()
     return ExportCapsule()
 end
 
--- 只有在直接执行脚本时才调用 main()
--- 当被其他脚本加载时，不会自动执行
--- 检测方法：查看是否定义了全局标志 _SYNEST_AUTO_EXPORT
-if not _SYNEST_AUTO_EXPORT then
-    -- 直接执行模式（没有被 auto_export_from_config.lua 加载）
-    main()
-end
+-- Windows 版本：不自动调用 main()
+-- 由入口脚本 auto_export_from_config_windows.lua 显式调用
+-- 如果需要直接测试，在 REAPER 中手动调用 main()

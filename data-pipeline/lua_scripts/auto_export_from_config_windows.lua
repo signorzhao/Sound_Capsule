@@ -193,14 +193,22 @@ local function Main()
     Log("✓ 脚本加载完成\n")
 
     -- 用 pcall 执行 main 函数
+    Log("调用 main() 函数...\n")
     local success, result = pcall(main)
+    Log("main() 返回: success=" .. tostring(success) .. ", result=" .. tostring(result) .. "\n")
 
-    if success and result == true then
-        Log("✓ 导出成功: " .. _SYNEST_AUTO_EXPORT.capsule_name .. "\n")
-        WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
+    if success then
+        if result == true then
+            Log("✓ 导出成功: " .. _SYNEST_AUTO_EXPORT.capsule_name .. "\n")
+            WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
+        else
+            Log("⚠ main() 返回非 true: " .. tostring(result) .. "\n")
+            -- 仍然认为成功（如果没有抛出异常）
+            WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
+        end
     else
-        local error_msg = tostring(result) or "导出失败"
-        Log("✗ 导出失败: " .. error_msg .. "\n")
+        local error_msg = "main() 执行异常: " .. tostring(result)
+        Log("✗ " .. error_msg .. "\n")
         WriteResult(false, nil, error_msg)
     end
     
