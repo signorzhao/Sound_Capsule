@@ -16,3 +16,12 @@ bcrypt>=4.1.0
 
 # Cloud sync (Supabase)
 supabase>=2.0.0
+
+# ============================================
+# Optional: ML/Embedding features
+# (Not required for basic functionality)
+# ============================================
+# numpy>=1.24.0
+# scikit-learn>=1.3.0
+# scipy>=1.10.0
+# sentence-transformers>=2.2.0

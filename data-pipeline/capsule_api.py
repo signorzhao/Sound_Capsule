@@ -23,9 +23,16 @@ from auth import get_auth_manager
 from sync_service import get_sync_service
 from prism_version_manager import PrismVersionManager
 import capsule_scanner
-from hybrid_embedding_service import get_hybrid_service
 from supabase_client import get_supabase_client
 from capsule_download_api import register_download_routes
+
+# ML 功能可选导入（需要 numpy, sklearn, sentence-transformers）
+try:
+    from hybrid_embedding_service import get_hybrid_service
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    logging.warning(f"ML 功能不可用（缺少依赖）: {e}")
 
 # 配置日志
 logging.basicConfig(
@@ -3559,6 +3566,10 @@ def calculate_coordinate_api():
         }
     """
     try:
+        # 检查 ML 功能是否可用
+        if not ML_AVAILABLE:
+            raise APIError("ML 功能不可用（缺少 numpy/sklearn/sentence-transformers 依赖）", 503)
+        
         data = request.get_json()
         if not data or 'text' not in data or 'prism_id' not in data:
             raise APIError("缺少必要参数: text, prism_id", 400)
