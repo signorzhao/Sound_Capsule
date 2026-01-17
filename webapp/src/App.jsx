@@ -251,8 +251,23 @@ export default function App() {
         setIsLoading(false);
       } catch (error) {
         console.error('加载向量数据失败:', error);
-        // 使用演示数据
+        // 使用演示数据和默认配置
         setVectorData(generateDemoData());
+        
+        // 确保 lensConfig 使用默认配置
+        console.log('⚠️ 使用默认棱镜配置 DEFAULT_LENS_CONFIG');
+        setLensConfig(DEFAULT_LENS_CONFIG);
+        
+        // 初始化 allSelectedTags 和 lensCursorPosition
+        const initialTags = {};
+        const initialPositions = {};
+        Object.keys(DEFAULT_LENS_CONFIG).forEach(lensId => {
+          initialTags[lensId] = [];
+          initialPositions[lensId] = { x: 50, y: 50 };
+        });
+        setAllSelectedTags(initialTags);
+        setLensCursorPosition(initialPositions);
+        
         setIsLoading(false);
       }
     }
@@ -609,10 +624,25 @@ export default function App() {
   const handleEditCapsule = async (capsule) => {
     try {
       console.log('编辑胶囊:', capsule);
+      console.log('当前 lensConfig:', lensConfig, '棱镜数量:', Object.keys(lensConfig).length);
+
+      // 检查 lensConfig 是否有效
+      if (!lensConfig || Object.keys(lensConfig).length === 0) {
+        console.error('lensConfig 为空，无法编辑胶囊');
+        toast.error('棱镜配置未加载，请刷新页面后重试');
+        return;
+      }
 
       // 获取胶囊的标签数据
       const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/tags`);
       const data = await response.json();
+      console.log('获取标签响应:', data);
+
+      if (!data.success) {
+        console.error('获取标签失败:', data.error || data.message);
+        toast.error('获取标签失败: ' + (data.error || data.message || '未知错误'));
+        return;
+      }
 
       if (data.success) {
         const { tags, capsule: capsuleData } = data;
