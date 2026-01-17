@@ -854,8 +854,8 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
     return targetRPP
 end
 
--- 生成 metadata.json
-function GenerateMetadata(outputDir, capsuleName, capsuleType, itemsInfo, mediaFiles, failedFiles)
+-- 生成 metadata.json（新版本 - 不切换工程）
+function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo, mediaFiles, failedFiles)
     reaper.ShowConsoleMsg("\n=== 生成 metadata.json ===\n")
     
     -- 收集信息
@@ -2127,7 +2127,7 @@ function ExportCapsule()
     end
     
     -- 步骤 4：生成 metadata.json
-    GenerateMetadata(outputDir, capsuleName, capsuleType, collectedItemsInfo, mediaFiles, failedFiles)
+    GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, collectedItemsInfo, mediaFiles, failedFiles)
     
     -- 步骤 5：渲染预览音频（使用 -renderproject 命令）
     if exportPreview then
