@@ -275,10 +275,14 @@ class AuthManager:
             )
             
             if not cursor.fetchone():
+                # 使用占位符密码哈希（Supabase 用户不使用本地密码）
+                # 这是为了兼容旧数据库 schema（password_hash 可能是 NOT NULL）
+                placeholder_hash = "SUPABASE_AUTH_USER"
+                
                 cursor.execute("""
-                    INSERT INTO users (username, email, display_name, supabase_user_id, is_active)
-                    VALUES (?, ?, ?, ?, 1)
-                """, (username, email, username, supabase_user_id))
+                    INSERT INTO users (username, email, password_hash, display_name, supabase_user_id, is_active)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                """, (username, email, placeholder_hash, username, supabase_user_id))
                 conn.commit()
                 print(f"✓ [Auth] 已缓存用户: {username} ({supabase_user_id[:8]}...)")
         except Exception as e:
