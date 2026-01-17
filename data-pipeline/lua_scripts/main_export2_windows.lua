@@ -903,13 +903,37 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
         reaper.ShowConsoleMsg("设置渲染参数 (OGG)...\n")
         local renderFile = capsuleName .. ".ogg"
         
-        -- 更新 RENDER_FILE
-        content = content:gsub('RENDER_FILE "[^"]*"', 'RENDER_FILE "' .. renderFile .. '"')
-        
-        -- 设置 RECORD_PATH 为 Audio
-        if not content:match('RECORD_PATH "Audio"') then
-            content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH "Audio"')
+        -- 更新 RENDER_FILE（输出文件名，不含路径）
+        if content:match('RENDER_FILE "[^"]*"') then
+            content = content:gsub('RENDER_FILE "[^"]*"', 'RENDER_FILE "' .. renderFile .. '"')
+        else
+            -- 如果不存在，在 REAPER_PROJECT 后面添加
+            content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1  RENDER_FILE "' .. renderFile .. '"\n')
         end
+        
+        -- 设置 RENDER_PATTERN (渲染到项目目录)
+        if content:match('RENDER_PATTERN "[^"]*"') then
+            content = content:gsub('RENDER_PATTERN "[^"]*"', 'RENDER_PATTERN ""')
+        end
+        
+        -- 设置渲染格式为 OGG Vorbis
+        -- RENDER_FMT 格式: 字符串表示编码器
+        if content:match('RENDER_FMT%s+') then
+            -- OGG Vorbis 格式设置
+            content = content:gsub('RENDER_FMT%s+[^\n]+', 'RENDER_FMT vggo')
+        end
+        
+        -- 设置渲染范围为整个项目
+        if content:match('RENDER_RANGE%s+') then
+            content = content:gsub('RENDER_RANGE%s+[^\n]+', 'RENDER_RANGE 1 0 0 18 1000')
+        end
+        
+        -- 设置 RECORD_PATH 为空（渲染到项目目录）
+        if content:match('RECORD_PATH "[^"]*"') then
+            content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH ""')
+        end
+        
+        reaper.ShowConsoleMsg("  RENDER_FILE: " .. renderFile .. "\n")
     end
     
     -- 写入新 RPP
@@ -929,8 +953,21 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
 end
 
 -- 生成 metadata.json（新版本 - 不切换工程）
+-- 生成 UUID
+local function generateUUID()
+    math.randomseed(os.time() + os.clock() * 1000000)
+    local template = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'
+    return string.gsub(template, '[xy]', function(c)
+        local v = (c == 'x') and math.random(0, 0xf) or math.random(8, 0xb)
+        return string.format('%x', v)
+    end)
+end
+
 function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo, mediaFiles, failedFiles)
     reaper.ShowConsoleMsg("\n=== 生成 metadata.json ===\n")
+    
+    -- 生成 UUID
+    local uuid = generateUUID()
     
     -- 收集信息
     local startTime = math.huge
@@ -947,6 +984,7 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
     
     -- 构建 JSON
     local json = string.format([[{
+  "uuid": "%s",
   "name": "%s",
   "capsule_type": "%s",
   "created_at": "%s",
@@ -959,6 +997,7 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
   "rpp_file": "%s.rpp",
   "preview_audio": "%s.ogg"
 }]], 
+        uuid,
         capsuleName,
         capsuleType or "magic",
         os.date("%Y-%m-%dT%H:%M:%S"),
