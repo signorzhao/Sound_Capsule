@@ -502,14 +502,22 @@ def get_auth_manager(db_path: str = None) -> AuthManager:
     获取认证管理器实例
 
     Args:
-        db_path: 数据库路径（可选，默认使用 capsules.db）
+        db_path: 数据库路径（可选，默认从 PathManager 获取）
 
     Returns:
         AuthManager 实例
     """
     if db_path is None:
-        # 默认数据库路径
-        current_dir = Path(__file__).parent
-        db_path = current_dir / "database" / "capsules.db"
+        # 🔴 架构规范：优先从 PathManager 获取数据库路径
+        # 这确保所有模块使用同一个数据库文件
+        try:
+            from common import PathManager
+            pm = PathManager.get_instance()
+            db_path = pm.db_path
+        except (RuntimeError, ImportError):
+            # 兜底：如果 PathManager 未初始化（如独立脚本运行），使用项目目录
+            current_dir = Path(__file__).parent
+            db_path = current_dir / "database" / "capsules.db"
+            print(f"⚠️ [AuthManager] PathManager 未初始化，使用兜底路径: {db_path}")
 
     return AuthManager(str(db_path))
