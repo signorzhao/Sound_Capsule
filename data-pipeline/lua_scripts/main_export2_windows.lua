@@ -840,41 +840,77 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
     local content = sourceFile:read("*all")
     sourceFile:close()
     
-    -- 替换媒体路径
-    reaper.ShowConsoleMsg("替换媒体路径...\n")
+    -- 删除未选中的 ITEM 块（保留只有选中媒体的 items）
+    reaper.ShowConsoleMsg("清理未选中的 Items...\n")
     
-    -- 调试：显示 RPP 中的 FILE 引用
-    reaper.ShowConsoleMsg("RPP 中的 FILE 引用:\n")
-    local fileCount = 0
-    for line in content:gmatch("[^\r\n]+") do
-        if line:match("^%s*FILE%s+") then
-            fileCount = fileCount + 1
-            if fileCount <= 5 then  -- 只显示前5个
-                reaper.ShowConsoleMsg("  " .. line:sub(1, 100) .. "\n")
-            end
+    -- 获取选中媒体的文件名列表
+    local selectedMediaNames = {}
+    for origPath, _ in pairs(pathMapping) do
+        local baseName = string.match(origPath, "([^/\\]+)$")
+        if baseName then
+            selectedMediaNames[baseName:lower()] = true
+            reaper.ShowConsoleMsg("  选中的媒体: " .. baseName .. "\n")
         end
     end
-    reaper.ShowConsoleMsg("  共 " .. fileCount .. " 个 FILE 引用\n")
     
+    -- 删除不包含选中媒体的 ITEM 块
+    local removedCount = 0
+    local newContent = ""
+    local inItem = false
+    local itemContent = ""
+    local itemDepth = 0
+    
+    for line in content:gmatch("([^\r\n]*)\r?\n?") do
+        if line:match("^%s*<ITEM") then
+            inItem = true
+            itemDepth = 1
+            itemContent = line .. "\n"
+        elseif inItem then
+            itemContent = itemContent .. line .. "\n"
+            -- 计算嵌套深度
+            if line:match("^%s*<") then
+                itemDepth = itemDepth + 1
+            end
+            if line:match("^%s*>") then
+                itemDepth = itemDepth - 1
+                if itemDepth == 0 then
+                    -- ITEM 块结束，检查是否包含选中的媒体
+                    local keepItem = false
+                    for mediaName, _ in pairs(selectedMediaNames) do
+                        -- 在 item 内容中查找媒体文件名
+                        if itemContent:lower():find(mediaName, 1, true) then
+                            keepItem = true
+                            break
+                        end
+                    end
+                    
+                    if keepItem then
+                        newContent = newContent .. itemContent
+                    else
+                        removedCount = removedCount + 1
+                    end
+                    
+                    inItem = false
+                    itemContent = ""
+                end
+            end
+        else
+            newContent = newContent .. line .. "\n"
+        end
+    end
+    content = newContent
+    reaper.ShowConsoleMsg("  删除了 " .. removedCount .. " 个未选中的 Items\n")
+    
+    -- 替换媒体路径（现在只处理选中的媒体）
+    reaper.ShowConsoleMsg("替换媒体路径...\n")
     local replacedCount = 0
     
-    -- 显示 pathMapping 内容
-    reaper.ShowConsoleMsg("\npathMapping 内容:\n")
-    for origPath, newPath in pairs(pathMapping) do
-        reaper.ShowConsoleMsg("  " .. origPath:sub(1, 60) .. "...\n")
-        reaper.ShowConsoleMsg("    -> " .. newPath .. "\n")
-    end
-    
-    reaper.ShowConsoleMsg("\n开始替换:\n")
     for origPath, newPath in pairs(pathMapping) do
         local baseName = string.match(origPath, "([^/\\]+)$")
         reaper.ShowConsoleMsg("  处理: " .. baseName .. "\n")
         
         -- RPP 文件中的路径可能有多种格式，尝试多种匹配
         local pathVariants = {
-            origPath,                           -- 原始绝对路径
-            origPath:gsub("\\", "/"),           -- 反斜杠转斜杠
-            origPath:gsub("/", "\\"),           -- 斜杠转反斜杠
             "Audio\\" .. baseName,              -- 相对路径 (Windows)
             "Audio/" .. baseName,               -- 相对路径 (Unix)
             baseName,                           -- 只有文件名
@@ -887,12 +923,12 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
             
             -- 在 FILE 引用中查找并替换
             local pattern = '(FILE%s+")' .. escaped .. '(")'
-            local newContent, count = string.gsub(content, pattern, '%1' .. newPath .. '%2')
+            local replaced, count = string.gsub(content, pattern, '%1' .. newPath .. '%2')
             
             if count > 0 then
-                content = newContent
+                content = replaced
                 replacedCount = replacedCount + count
-                reaper.ShowConsoleMsg("    ✓ 匹配: " .. variant .. " -> " .. newPath .. " (x" .. count .. ")\n")
+                reaper.ShowConsoleMsg("    ✓ 匹配变体: " .. variant:sub(1,50) .. "\n")
             end
         end
     end
