@@ -86,6 +86,158 @@ class SupabaseClient:
         return self._client.table(table_name)
 
     # ==========================================
+    # 用户认证 (Supabase Auth)
+    # ==========================================
+
+    def auth_sign_up(self, email: str, password: str, username: str = None) -> Dict[str, Any]:
+        """
+        使用 Supabase Auth 注册用户
+        
+        Args:
+            email: 用户邮箱
+            password: 密码
+            username: 用户名（可选，存入 user_metadata）
+            
+        Returns:
+            包含用户信息和 session 的字典
+        """
+        try:
+            user_metadata = {}
+            if username:
+                user_metadata['username'] = username
+                user_metadata['display_name'] = username
+            
+            response = self._client.auth.sign_up({
+                'email': email,
+                'password': password,
+                'options': {
+                    'data': user_metadata
+                }
+            })
+            
+            if response.user:
+                return {
+                    'success': True,
+                    'user': {
+                        'id': response.user.id,
+                        'email': response.user.email,
+                        'username': username or email.split('@')[0],
+                        'created_at': str(response.user.created_at) if response.user.created_at else None
+                    },
+                    'session': {
+                        'access_token': response.session.access_token if response.session else None,
+                        'refresh_token': response.session.refresh_token if response.session else None,
+                        'expires_in': response.session.expires_in if response.session else None
+                    } if response.session else None
+                }
+            else:
+                return {'success': False, 'error': '注册失败'}
+        except Exception as e:
+            error_msg = str(e)
+            if 'already registered' in error_msg.lower():
+                return {'success': False, 'error': '该邮箱已被注册'}
+            return {'success': False, 'error': f'注册失败: {error_msg}'}
+
+    def auth_sign_in(self, email: str, password: str) -> Dict[str, Any]:
+        """
+        使用 Supabase Auth 登录用户
+        
+        Args:
+            email: 用户邮箱
+            password: 密码
+            
+        Returns:
+            包含用户信息和 session 的字典
+        """
+        try:
+            response = self._client.auth.sign_in_with_password({
+                'email': email,
+                'password': password
+            })
+            
+            if response.user and response.session:
+                user_metadata = response.user.user_metadata or {}
+                return {
+                    'success': True,
+                    'user': {
+                        'id': response.user.id,
+                        'email': response.user.email,
+                        'username': user_metadata.get('username', email.split('@')[0]),
+                        'display_name': user_metadata.get('display_name', user_metadata.get('username', email.split('@')[0])),
+                        'created_at': str(response.user.created_at) if response.user.created_at else None
+                    },
+                    'session': {
+                        'access_token': response.session.access_token,
+                        'refresh_token': response.session.refresh_token,
+                        'expires_in': response.session.expires_in
+                    }
+                }
+            else:
+                return {'success': False, 'error': '登录失败'}
+        except Exception as e:
+            error_msg = str(e)
+            if 'invalid' in error_msg.lower() or 'credentials' in error_msg.lower():
+                return {'success': False, 'error': '邮箱或密码错误'}
+            return {'success': False, 'error': f'登录失败: {error_msg}'}
+
+    def auth_sign_out(self) -> Dict[str, Any]:
+        """登出当前用户"""
+        try:
+            self._client.auth.sign_out()
+            return {'success': True}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    def auth_get_user(self, access_token: str) -> Optional[Dict[str, Any]]:
+        """
+        通过 access token 获取用户信息
+        
+        Args:
+            access_token: JWT access token
+            
+        Returns:
+            用户信息字典，如果无效则返回 None
+        """
+        try:
+            response = self._client.auth.get_user(access_token)
+            if response.user:
+                user_metadata = response.user.user_metadata or {}
+                return {
+                    'id': response.user.id,
+                    'email': response.user.email,
+                    'username': user_metadata.get('username', response.user.email.split('@')[0] if response.user.email else None),
+                    'display_name': user_metadata.get('display_name'),
+                    'supabase_user_id': response.user.id
+                }
+            return None
+        except Exception as e:
+            print(f"获取用户信息失败: {e}")
+            return None
+
+    def auth_refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+        """
+        刷新 access token
+        
+        Args:
+            refresh_token: refresh token
+            
+        Returns:
+            新的 session 信息
+        """
+        try:
+            response = self._client.auth.refresh_session(refresh_token)
+            if response.session:
+                return {
+                    'success': True,
+                    'access_token': response.session.access_token,
+                    'refresh_token': response.session.refresh_token,
+                    'expires_in': response.session.expires_in
+                }
+            return {'success': False, 'error': 'Token 刷新失败'}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+
+    # ==========================================
     # 胶囊操作
     # ==========================================
 

@@ -2,6 +2,10 @@
 用户认证模块
 
 提供用户注册、登录、Token 管理等认证功能
+
+认证模式：
+- 优先使用 Supabase Auth（云端统一认证，跨设备一致）
+- 如果 Supabase 不可用，降级到本地 SQLite 认证
 """
 
 import uuid
@@ -24,11 +28,26 @@ except ImportError:
     bcrypt = None
 
 
-# JWT 配置
+# JWT 配置（用于本地模式的降级）
 SECRET_KEY = "synesth-secret-key-change-in-production"  # TODO: 从环境变量读取
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
+
+# Supabase 客户端（延迟导入避免循环依赖）
+_supabase_client = None
+
+def _get_supabase():
+    """获取 Supabase 客户端（延迟初始化）"""
+    global _supabase_client
+    if _supabase_client is None:
+        try:
+            from supabase_client import get_supabase_client
+            _supabase_client = get_supabase_client()
+        except Exception as e:
+            print(f"⚠️ [Auth] Supabase 不可用: {e}")
+            _supabase_client = False  # 标记为不可用
+    return _supabase_client if _supabase_client else None
 
 
 class AuthManager:
@@ -109,6 +128,8 @@ class AuthManager:
     def register_user(self, username: str, email: str, password: str) -> Dict[str, Any]:
         """
         注册新用户
+        
+        优先使用 Supabase Auth（云端统一认证），如果不可用则降级到本地认证
 
         Args:
             username: 用户名
@@ -133,7 +154,51 @@ class AuthManager:
         if not self._validate_password(password):
             raise ValueError("密码强度不足（最少8字符，必须包含字母和数字）")
 
-        # 检查用户名是否已存在
+        # ========================================
+        # 尝试使用 Supabase Auth（优先）
+        # ========================================
+        supabase = _get_supabase()
+        if supabase:
+            try:
+                result = supabase.auth_sign_up(email, password, username)
+                
+                if result.get('success'):
+                    supabase_user_id = result['user']['id']
+                    
+                    # 在本地数据库中缓存用户信息
+                    self._cache_supabase_user(
+                        supabase_user_id=supabase_user_id,
+                        username=username,
+                        email=email
+                    )
+                    
+                    return {
+                        "success": True,
+                        "user": {
+                            "id": supabase_user_id,
+                            "username": username,
+                            "email": email,
+                            "display_name": username,
+                            "supabase_user_id": supabase_user_id
+                        },
+                        "tokens": {
+                            "access_token": result['session']['access_token'] if result.get('session') else None,
+                            "refresh_token": result['session']['refresh_token'] if result.get('session') else None,
+                            "expires_in": result['session']['expires_in'] if result.get('session') else 3600
+                        }
+                    }
+                else:
+                    raise ValueError(result.get('error', '注册失败'))
+            except ValueError:
+                raise
+            except Exception as e:
+                print(f"⚠️ [Auth] Supabase 注册失败，降级到本地模式: {e}")
+        
+        # ========================================
+        # 降级到本地 SQLite 认证
+        # ========================================
+        print("📝 [Auth] 使用本地认证模式")
+        
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -149,7 +214,7 @@ class AuthManager:
             # 哈希密码
             password_hash = self.hash_password(password)
 
-            # 生成 Supabase UUID
+            # 生成本地 UUID（本地模式无法跨设备）
             supabase_user_id = str(uuid.uuid4())
 
             # 插入用户
@@ -192,10 +257,40 @@ class AuthManager:
             raise e
         finally:
             conn.close()
+    
+    def _cache_supabase_user(self, supabase_user_id: str, username: str, email: str):
+        """
+        在本地数据库中缓存 Supabase 用户信息
+        
+        这样即使离线也能识别用户身份
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            
+            # 检查是否已存在
+            cursor.execute(
+                "SELECT id FROM users WHERE supabase_user_id = ?", 
+                (supabase_user_id,)
+            )
+            
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT INTO users (username, email, display_name, supabase_user_id, is_active)
+                    VALUES (?, ?, ?, ?, 1)
+                """, (username, email, username, supabase_user_id))
+                conn.commit()
+                print(f"✓ [Auth] 已缓存用户: {username} ({supabase_user_id[:8]}...)")
+        except Exception as e:
+            print(f"⚠️ [Auth] 缓存用户失败: {e}")
+        finally:
+            conn.close()
 
     def login_user(self, login: str, password: str) -> Dict[str, Any]:
         """
         用户登录
+        
+        优先使用 Supabase Auth（云端统一认证），如果不可用则降级到本地认证
 
         Args:
             login: 用户名或邮箱
@@ -207,6 +302,62 @@ class AuthManager:
         Raises:
             ValueError: 如果登录失败
         """
+        # ========================================
+        # 尝试使用 Supabase Auth（优先）
+        # ========================================
+        supabase = _get_supabase()
+        
+        # 判断 login 是邮箱还是用户名
+        is_email = '@' in login
+        
+        if supabase and is_email:
+            # Supabase Auth 只支持邮箱登录
+            try:
+                result = supabase.auth_sign_in(login, password)
+                
+                if result.get('success'):
+                    user_info = result['user']
+                    session = result['session']
+                    
+                    # 在本地数据库中缓存用户信息
+                    self._cache_supabase_user(
+                        supabase_user_id=user_info['id'],
+                        username=user_info.get('username', login.split('@')[0]),
+                        email=login
+                    )
+                    
+                    print(f"✓ [Auth] Supabase 登录成功: {user_info.get('username')}")
+                    
+                    return {
+                        "success": True,
+                        "user": {
+                            "id": user_info['id'],
+                            "username": user_info.get('username', login.split('@')[0]),
+                            "email": user_info.get('email', login),
+                            "display_name": user_info.get('display_name', user_info.get('username')),
+                            "supabase_user_id": user_info['id']
+                        },
+                        "tokens": {
+                            "access_token": session['access_token'],
+                            "refresh_token": session['refresh_token'],
+                            "expires_in": session.get('expires_in', 3600)
+                        }
+                    }
+                else:
+                    raise ValueError(result.get('error', '登录失败'))
+            except ValueError:
+                raise
+            except Exception as e:
+                print(f"⚠️ [Auth] Supabase 登录失败，降级到本地模式: {e}")
+        
+        # ========================================
+        # 降级到本地 SQLite 认证
+        # ========================================
+        if not is_email and supabase:
+            print("📝 [Auth] 用户名登录，使用本地认证模式")
+        elif not supabase:
+            print("📝 [Auth] Supabase 不可用，使用本地认证模式")
+        
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -214,7 +365,7 @@ class AuthManager:
             # 查找用户（支持用户名或邮箱登录）
             cursor.execute("""
                 SELECT * FROM users
-                WHERE username = ? OR email = ?
+                WHERE (username = ? OR email = ?)
                 AND is_active = 1
             """, (login, login))
 
@@ -223,7 +374,10 @@ class AuthManager:
             if not user:
                 raise ValueError("用户名或密码错误")
 
-            # 验证密码
+            # 验证密码（本地模式需要 password_hash）
+            if not user['password_hash']:
+                raise ValueError("该账号使用云端认证，请使用邮箱登录")
+            
             if not self.verify_password(password, user['password_hash']):
                 raise ValueError("用户名或密码错误")
 
@@ -266,6 +420,8 @@ class AuthManager:
     def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
         """
         刷新 Access Token
+        
+        优先使用 Supabase 刷新，如果失败则尝试本地刷新
 
         Args:
             refresh_token: Refresh Token 字符串
@@ -276,6 +432,26 @@ class AuthManager:
         Raises:
             ValueError: 如果 Refresh Token 无效
         """
+        # ========================================
+        # 尝试使用 Supabase 刷新（优先）
+        # ========================================
+        supabase = _get_supabase()
+        if supabase:
+            try:
+                result = supabase.auth_refresh_token(refresh_token)
+                if result.get('success'):
+                    return {
+                        "success": True,
+                        "access_token": result['access_token'],
+                        "refresh_token": result.get('refresh_token', refresh_token),
+                        "expires_in": result.get('expires_in', 3600)
+                    }
+            except Exception as e:
+                print(f"⚠️ [Auth] Supabase 刷新失败，尝试本地刷新: {e}")
+        
+        # ========================================
+        # 降级到本地刷新
+        # ========================================
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
@@ -339,13 +515,36 @@ class AuthManager:
     def verify_access_token(self, token: str) -> Optional[Dict[str, Any]]:
         """
         验证 Access Token
+        
+        优先使用 Supabase 验证，如果失败则尝试本地验证
 
         Args:
             token: JWT Token 字符串
 
         Returns:
-            Token Payload 或 None
+            Token Payload 或 None（包含 user_id 或 supabase_user_id）
         """
+        # ========================================
+        # 尝试使用 Supabase 验证（优先）
+        # ========================================
+        supabase = _get_supabase()
+        if supabase:
+            try:
+                user = supabase.auth_get_user(token)
+                if user:
+                    return {
+                        'user_id': user['id'],
+                        'supabase_user_id': user['id'],
+                        'username': user.get('username'),
+                        'email': user.get('email')
+                    }
+            except Exception as e:
+                # Supabase 验证失败，尝试本地验证
+                pass
+        
+        # ========================================
+        # 降级到本地 JWT 验证
+        # ========================================
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
