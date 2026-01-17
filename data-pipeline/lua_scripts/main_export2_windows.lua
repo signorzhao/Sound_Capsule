@@ -653,6 +653,267 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
     return mediaFiles
 end
 
+-- ============================================================
+-- 新版导出核心：不切换工程，只复制文件和生成新 RPP
+-- ============================================================
+
+-- 收集选中 items 的媒体文件路径（使用 REAPER API）
+function CollectSelectedItemsMedia()
+    local mediaFiles = {}  -- {absolutePath = baseName}
+    local itemsInfo = {}   -- 记录选中 items 的信息
+    local _, currentProjPath = reaper.EnumProjects(-1, "")
+    local currentProjDir = GetDirectoryPath(currentProjPath)
+    
+    reaper.ShowConsoleMsg("\n=== 收集选中 Items 的媒体文件 ===\n")
+    reaper.ShowConsoleMsg("当前工程: " .. (currentProjPath or "未知") .. "\n")
+    
+    local numItems = reaper.CountSelectedMediaItems(0)
+    reaper.ShowConsoleMsg("选中 Items 数量: " .. numItems .. "\n")
+    
+    for i = 0, numItems - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        local take = reaper.GetActiveTake(item)
+        
+        if take then
+            local source = reaper.GetMediaItemTake_Source(take)
+            if source then
+                local retval, fileName = reaper.GetMediaSourceFileName(source, "")
+                
+                if retval and fileName and fileName ~= "" and fileName ~= "?" then
+                    -- 解析完整路径
+                    local isAbsolute = string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") or string.match(fileName, "^\\\\")
+                    local fullPath = nil
+                    
+                    if isAbsolute then
+                        fullPath = fileName
+                    else
+                        -- 相对路径：从项目目录解析
+                        local testPaths = {
+                            JoinPath(currentProjDir, fileName),
+                            JoinPath(currentProjDir, "audio", fileName),
+                            JoinPath(currentProjDir, "Audio", fileName),
+                        }
+                        for _, testPath in ipairs(testPaths) do
+                            local f = io.open(testPath, "r")
+                            if f then
+                                f:close()
+                                fullPath = testPath
+                                break
+                            end
+                        end
+                    end
+                    
+                    -- 验证文件可访问
+                    if fullPath then
+                        local f = io.open(fullPath, "r")
+                        if f then
+                            f:close()
+                            local baseName = string.match(fullPath, "([^/\\]+)$") or fullPath
+                            if not mediaFiles[fullPath] then
+                                mediaFiles[fullPath] = baseName
+                                reaper.ShowConsoleMsg("  ✓ " .. baseName .. "\n")
+                                reaper.ShowConsoleMsg("    路径: " .. fullPath .. "\n")
+                            end
+                        else
+                            reaper.ShowConsoleMsg("  ⚠ 无法访问: " .. fullPath .. "\n")
+                        end
+                    else
+                        reaper.ShowConsoleMsg("  ⚠ 无法解析路径: " .. fileName .. "\n")
+                    end
+                    
+                    -- 收集 item 信息
+                    local track = reaper.GetMediaItemTrack(item)
+                    table.insert(itemsInfo, {
+                        position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+                        length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+                        volume = reaper.GetMediaItemInfo_Value(item, "D_VOL"),
+                        trackNum = track and reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0,
+                        mediaFile = fullPath
+                    })
+                end
+            end
+        end
+    end
+    
+    local count = 0
+    for _ in pairs(mediaFiles) do count = count + 1 end
+    reaper.ShowConsoleMsg("共找到 " .. count .. " 个媒体文件\n")
+    
+    return mediaFiles, itemsInfo
+end
+
+-- 复制媒体文件到目标 Audio 目录
+function CopyMediaFiles(mediaFiles, audioDir)
+    reaper.ShowConsoleMsg("\n=== 复制媒体文件 ===\n")
+    reaper.ShowConsoleMsg("目标目录: " .. audioDir .. "\n")
+    
+    MakeDir(audioDir)
+    
+    local copiedCount = 0
+    local failedFiles = {}
+    local pathMapping = {}  -- {原路径 = 新相对路径}
+    
+    for sourcePath, baseName in pairs(mediaFiles) do
+        local targetPath = JoinPath(audioDir, baseName)
+        
+        reaper.ShowConsoleMsg("复制: " .. baseName .. "\n")
+        
+        -- 执行复制
+        CopyFile(sourcePath, targetPath)
+        
+        -- 验证
+        local f = io.open(targetPath, "r")
+        if f then
+            f:close()
+            copiedCount = copiedCount + 1
+            pathMapping[sourcePath] = "Audio/" .. baseName
+            reaper.ShowConsoleMsg("  ✓ 成功\n")
+        else
+            table.insert(failedFiles, sourcePath)
+            reaper.ShowConsoleMsg("  ✗ 失败，保留原路径\n")
+        end
+    end
+    
+    local total = 0
+    for _ in pairs(mediaFiles) do total = total + 1 end
+    reaper.ShowConsoleMsg("复制完成: " .. copiedCount .. "/" .. total .. "\n")
+    
+    return pathMapping, failedFiles
+end
+
+-- 生成新的 RPP 文件（不切换工程）
+function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview)
+    reaper.ShowConsoleMsg("\n=== 生成胶囊 RPP ===\n")
+    
+    -- 获取当前工程路径
+    local _, currentProjPath = reaper.EnumProjects(-1, "")
+    if not currentProjPath or currentProjPath == "" then
+        reaper.ShowConsoleMsg("✗ 错误：当前工程未保存\n")
+        return nil
+    end
+    
+    -- 先保存当前工程（确保内容是最新的）
+    reaper.Main_SaveProject(0, false)
+    
+    -- 读取原 RPP 内容
+    reaper.ShowConsoleMsg("读取原 RPP: " .. currentProjPath .. "\n")
+    local sourceFile = io.open(currentProjPath, "r")
+    if not sourceFile then
+        reaper.ShowConsoleMsg("✗ 无法读取原 RPP\n")
+        return nil
+    end
+    local content = sourceFile:read("*all")
+    sourceFile:close()
+    
+    -- 替换媒体路径
+    reaper.ShowConsoleMsg("替换媒体路径...\n")
+    local replacedCount = 0
+    for origPath, newPath in pairs(pathMapping) do
+        -- 转义特殊字符
+        local escapedOrig = origPath:gsub("([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+        escapedOrig = escapedOrig:gsub("\\", "\\\\")
+        
+        -- 替换
+        local newContent, count = string.gsub(content, escapedOrig, newPath)
+        if count > 0 then
+            content = newContent
+            replacedCount = replacedCount + count
+            local baseName = string.match(origPath, "([^/\\]+)$")
+            reaper.ShowConsoleMsg("  ✓ " .. baseName .. " -> " .. newPath .. "\n")
+        end
+    end
+    reaper.ShowConsoleMsg("共替换 " .. replacedCount .. " 处路径\n")
+    
+    -- 设置渲染参数（OGG 格式）
+    if renderPreview then
+        reaper.ShowConsoleMsg("设置渲染参数 (OGG)...\n")
+        local renderFile = capsuleName .. ".ogg"
+        
+        -- 更新 RENDER_FILE
+        content = content:gsub('RENDER_FILE "[^"]*"', 'RENDER_FILE "' .. renderFile .. '"')
+        
+        -- 设置 RECORD_PATH 为 Audio
+        if not content:match('RECORD_PATH "Audio"') then
+            content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH "Audio"')
+        end
+    end
+    
+    -- 写入新 RPP
+    local targetRPP = JoinPath(outputDir, capsuleName .. ".rpp")
+    reaper.ShowConsoleMsg("写入新 RPP: " .. targetRPP .. "\n")
+    
+    local targetFile = io.open(targetRPP, "w")
+    if not targetFile then
+        reaper.ShowConsoleMsg("✗ 无法写入新 RPP\n")
+        return nil
+    end
+    targetFile:write(content)
+    targetFile:close()
+    
+    reaper.ShowConsoleMsg("✓ RPP 生成成功\n")
+    return targetRPP
+end
+
+-- 生成 metadata.json
+function GenerateMetadata(outputDir, capsuleName, capsuleType, itemsInfo, mediaFiles, failedFiles)
+    reaper.ShowConsoleMsg("\n=== 生成 metadata.json ===\n")
+    
+    -- 收集信息
+    local startTime = math.huge
+    local endTime = 0
+    for _, info in ipairs(itemsInfo) do
+        if info.position < startTime then startTime = info.position end
+        if info.position + info.length > endTime then endTime = info.position + info.length end
+    end
+    
+    local duration = endTime - startTime
+    local mediaCount = 0
+    for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
+    local failedCount = #failedFiles
+    
+    -- 构建 JSON
+    local json = string.format([[{
+  "name": "%s",
+  "capsule_type": "%s",
+  "created_at": "%s",
+  "info": {
+    "duration": %.2f,
+    "item_count": %d,
+    "media_count": %d,
+    "external_media_count": %d
+  },
+  "rpp_file": "%s.rpp",
+  "preview_audio": "%s.ogg"
+}]], 
+        capsuleName,
+        capsuleType or "magic",
+        os.date("%Y-%m-%dT%H:%M:%S"),
+        duration,
+        #itemsInfo,
+        mediaCount,
+        failedCount,
+        capsuleName,
+        capsuleName
+    )
+    
+    -- 写入文件
+    local metadataPath = JoinPath(outputDir, "metadata.json")
+    local file = io.open(metadataPath, "w")
+    if file then
+        file:write(json)
+        file:close()
+        reaper.ShowConsoleMsg("✓ metadata.json 生成成功\n")
+        return true
+    else
+        reaper.ShowConsoleMsg("✗ 无法写入 metadata.json\n")
+        return false
+    end
+end
+
+-- ============================================================
+-- 旧版函数（保留兼容性）
+-- ============================================================
+
 -- 收集当前项目中所有媒体文件的绝对路径（使用 REAPER API）
 function CollectMediaFilesFromProject()
     local mediaFiles = {}  -- {absolutePath = baseName}
@@ -1831,314 +2092,93 @@ function ExportCapsule()
     reaper.ShowConsoleMsg("创建输出目录: " .. outputDir .. "\n")
     MakeDir(outputDir)
 
-    -- 2. 全量快照：将当前工程另存为临时文件
-    -- 保存当前工程（如果有未保存的修改，REAPER会弹出对话框）
-    -- 注意：用户需要先保存工程，或者允许弹出对话框
-    reaper.Main_SaveProject(0, false)
-
-    -- 获取当前工程路径
-    local _, currentProjectPath = reaper.EnumProjects(-1, "")
-
-    -- 保存临时工程副本并重新打开
-    local tempProjectPath = outputDir .. "/_temp_export.rpp"
-    reaper.ShowConsoleMsg("保存临时工程（包含媒体文件）: " .. tempProjectPath .. "\n")
-
-    -- 使用保存函数来复制工程和媒体文件
-    SaveProjectWithMedia(tempProjectPath)
-
-    -- 打开临时工程
-    reaper.Main_openProject(tempProjectPath)
-    reaper.UpdateTimeline()
-
-    -- 等待工程加载完成
-    reaper.defer(function() end)  -- 确保工程已加载
-
-    -- 3. 在临时工程中找到所有Item并合并依赖追踪
-    reaper.ShowConsoleMsg("========== 开始依赖追踪（所有Item） ==========\n")
-    local allKeepTracks = {}
-    local allFoundItems = {}
+    -- ============================================================
+    -- 新版导出流程：不切换工程
+    -- ============================================================
     
-    for itemIndex, itemInfo in ipairs(itemInfoList) do
-        local itemStart = itemInfo.itemStart
-        local itemLength = itemInfo.itemLength
-        local trackNumber = itemInfo.trackNumber
-        local itemName = itemInfo.itemName
-        
-        -- 在临时工程中重新找到对应的Item
-        local foundItem = nil
-        local tempTrack = reaper.GetTrack(0, trackNumber - 1)
-        reaper.ShowConsoleMsg(string.format("查找Item %d/%d: 轨道=%d, 开始=%.2f, 长度=%.2f\n", 
-            itemIndex, #itemInfoList, trackNumber, itemStart, itemLength))
-        
-        if tempTrack ~= nil then
-            local tempItemCount = reaper.CountTrackMediaItems(tempTrack)
-            for i = 0, tempItemCount - 1 do
-                local tempItem = reaper.GetTrackMediaItem(tempTrack, i)
-                if tempItem ~= nil then
-                    local tempItemStart = reaper.GetMediaItemInfo_Value(tempItem, "D_POSITION")
-                    local tempItemLength = reaper.GetMediaItemInfo_Value(tempItem, "D_LENGTH")
-                    -- 检查时间位置是否匹配（允许小误差）
-                    if math.abs(tempItemStart - itemStart) < 0.01 and math.abs(tempItemLength - itemLength) < 0.01 then
-                        foundItem = tempItem
-                        reaper.ShowConsoleMsg(string.format("  ✓ 找到匹配的Item: %s\n", itemName))
-                        break
-                    end
-                end
-            end
-            
-            -- 如果没找到精确匹配，使用轨道上的第一个Item
-            if foundItem == nil and tempItemCount > 0 then
-                foundItem = reaper.GetTrackMediaItem(tempTrack, 0)
-                reaper.ShowConsoleMsg(string.format("  使用轨道上的第一个Item\n"))
-            end
-        end
-        
-        if foundItem ~= nil then
-            table.insert(allFoundItems, foundItem)
-            -- 对每个Item进行依赖追踪，合并所有需要保留的轨道
-            local itemKeepTracks = GetRelatedTracks(foundItem)
-            for track, _ in pairs(itemKeepTracks) do
-                allKeepTracks[track] = true
-            end
-        else
-            reaper.ShowConsoleMsg(string.format("  ✗ 警告：无法找到Item: %s\n", itemName))
-        end
+    reaper.ShowConsoleMsg("\n========== 新版导出流程 (不切换工程) ==========\n")
+    
+    -- 获取胶囊类型
+    local capsuleType = "magic"
+    if _SYNEST_AUTO_EXPORT and _SYNEST_AUTO_EXPORT.capsule_type then
+        capsuleType = _SYNEST_AUTO_EXPORT.capsule_type
     end
     
-    -- 验证所有保留的轨道
-    reaper.ShowConsoleMsg("合并后的依赖追踪结果:\n")
-    local validTracks = {}
-    for track, _ in pairs(allKeepTracks) do
-        if track ~= nil then
-            local _, trackName = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
-            local trackNum = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER")
-            if trackNum ~= nil then
-                validTracks[track] = true
-                reaper.ShowConsoleMsg(string.format("  ✓ 轨道 %d: %s\n", trackNum, trackName or "未命名"))
-            end
-        end
+    -- 步骤 1：收集选中 items 的媒体文件
+    local mediaFiles, collectedItemsInfo = CollectSelectedItemsMedia()
+    
+    local mediaCount = 0
+    for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
+    
+    if mediaCount == 0 then
+        reaper.ShowConsoleMsg("⚠ 警告：没有找到媒体文件\n")
     end
     
-    local keepCount = (function() local count = 0; for _ in pairs(validTracks) do count = count + 1 end; return count end)()
-    reaper.ShowConsoleMsg(string.format("需要保留 %d 个轨道，找到 %d 个Item\n", keepCount, #allFoundItems))
-    reaper.ShowConsoleMsg("==================================\n")
+    -- 步骤 2：复制媒体文件到 Audio 目录
+    local audioDir = JoinPath(outputDir, "Audio")
+    local pathMapping, failedFiles = CopyMediaFiles(mediaFiles, audioDir)
     
-    if keepCount == 0 or #allFoundItems == 0 then
-        -- 自动导出模式下不弹窗，只记录日志
-        if not _SYNEST_AUTO_EXPORT then
-            reaper.ShowMessageBox("错误：无法找到有效的轨道或Item", "错误", 0)
-        else
-            reaper.ShowConsoleMsg("[自动导出] 错误: 无法找到有效的轨道或Item\n")
-        end
-        -- 恢复原工程
-        if originalProjectPath ~= "" then
-            reaper.Main_openProject(originalProjectPath)
-            reaper.UpdateTimeline()
-        end
+    -- 步骤 3：生成新的 RPP 文件（不切换工程）
+    local rppPath = GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, exportPreview)
+    
+    if not rppPath then
+        reaper.ShowConsoleMsg("✗ RPP 生成失败\n")
         return false
     end
     
-    -- 4. 修剪工程：删除无关轨道和素材
-    PruneTracks(validTracks)
-
-    -- 5. 修复文件夹层次结构，确保只在保留的轨道之间保持正确的父子关系
-    FixFolderHierarchy(validTracks)
-
-    -- 删除不在所有Item列表中的其他Item（保留所有选中的Item）
-    local trackCount = reaper.CountTracks(0)
-    for i = 0, trackCount - 1 do
-        local track = reaper.GetTrack(0, i)
-        if track ~= nil then
-            local itemCount = reaper.CountTrackMediaItems(track)
-            -- 倒序遍历该轨道上的所有Item
-            for j = itemCount - 1, 0, -1 do
-                local item = reaper.GetTrackMediaItem(track, j)
-                local shouldKeep = false
-                -- 检查这个Item是否在保留列表中
-                for _, keepItem in ipairs(allFoundItems) do
-                    if item == keepItem then
-                        shouldKeep = true
-                        break
-                    end
-                end
-                -- 如果不在保留列表中，删除它
-                if not shouldKeep then
-                    reaper.DeleteTrackMediaItem(track, item)
+    -- 步骤 4：生成 metadata.json
+    GenerateMetadata(outputDir, capsuleName, capsuleType, collectedItemsInfo, mediaFiles, failedFiles)
+    
+    -- 步骤 5：渲染预览音频（使用 -renderproject 命令）
+    if exportPreview then
+        reaper.ShowConsoleMsg("\n=== 渲染预览音频 ===\n")
+        
+        -- 注意：OGG 渲染需要 RPP 文件中已经配置好渲染设置
+        -- 这里我们已经在 GenerateCapsuleRPP 中设置了 RENDER_FILE
+        -- 可以使用命令行渲染：reaper.exe -renderproject "path/to/project.rpp"
+        
+        local reaperPath = nil
+        if IsWindows() then
+            -- 尝试从配置或常见路径获取 REAPER 路径
+            local possiblePaths = {
+                "C:\\Program Files\\REAPER (x64)\\reaper.exe",
+                "C:\\Program Files\\REAPER (arm64)\\reaper.exe",
+                "C:\\Program Files\\REAPER\\reaper.exe",
+                "C:\\Program Files (x86)\\REAPER\\reaper.exe",
+            }
+            for _, path in ipairs(possiblePaths) do
+                local f = io.open(path, "r")
+                if f then
+                    f:close()
+                    reaperPath = path
+                    break
                 end
             end
         end
-    end
-    
-    -- 验证修剪后的结果
-    local finalTrackCount = reaper.CountTracks(0)
-    reaper.ShowConsoleMsg(string.format("修剪后验证：剩余 %d 个轨道\n", finalTrackCount))
-    
-    -- 5. 配置渲染设置（在保存工程前，如果用户选择导出预览）
-    if exportPreview then
-        local previewPath = outputDir .. "/preview.ogg"  -- 最终输出路径
-        local tempPreviewPath = outputDir .. "/preview_temp.wav"  -- 临时 WAV 文件
-        reaper.ShowConsoleMsg("配置渲染设置...\n")
-        reaper.ShowConsoleMsg(string.format("  时间范围: %.2f - %.2f\n", startTime, endTime))
-        reaper.ShowConsoleMsg("  最终输出路径: " .. previewPath .. "\n")
-        reaper.ShowConsoleMsg("  临时 WAV 文件: " .. tempPreviewPath .. "\n")
-        reaper.ShowConsoleMsg("  格式: WAV (将转换为 OGG)\n")
-
-        -- 设置时间选择范围（必须设置，RENDER_RANGE才会生效）
-        reaper.GetSet_LoopTimeRange(true, false, startTime, endTime, false)
-
-        -- 设置渲染输出路径（使用临时 WAV 路径）
-        reaper.GetSetProjectInfo_String(0, "RENDER_FILE", tempPreviewPath, true)
-
-        -- 设置渲染范围：时间选择（1 = time selection, 2 = custom time range, 0 = entire project）
-        -- 使用时间选择范围
-        reaper.GetSetProjectInfo(0, "RENDER_RANGE", 1, false)
-
-        -- 注意：RENDER_FMT 已在 RPP 文件中设置为 OGG 格式 (0 2 44100)
-        -- RENDER_SETTINGS 会覆盖 RPP 文件设置，所以不要在这里设置
-        -- 让 RPP 文件中的 OGG 格式设置生效
-        -- reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, false)  -- 已删除
-
-        -- 设置渲染源：Master mix（136 = Master mix输出）
-        reaper.GetSetProjectInfo(0, "RENDER_STEMS", 136, false)
-
-        -- 设置采样率（使用项目采样率）
-        local ret, sampleRate = reaper.GetSetProjectInfo(0, "P_PROJECT_SRATE", 0, false)
-        if ret and sampleRate and sampleRate > 0 then
-            reaper.GetSetProjectInfo(0, "RENDER_SRATE", sampleRate, false)
+        
+        if reaperPath then
+            local renderCmd = string.format('"%s" -renderproject "%s"', reaperPath, rppPath)
+            reaper.ShowConsoleMsg("渲染命令: " .. renderCmd .. "\n")
+            reaper.ShowConsoleMsg("注意: 渲染将在后台进行\n")
+            -- 使用 os.execute 执行渲染（会在后台运行）
+            -- os.execute(renderCmd)
+            -- 暂时不执行，因为需要确保 RPP 中的渲染设置正确
+            reaper.ShowConsoleMsg("⚠ 渲染功能待完善，请手动打开 RPP 渲染\n")
         else
-            -- 使用默认采样率
-            reaper.GetSetProjectInfo(0, "RENDER_SRATE", 48000, false)
-            reaper.ShowConsoleMsg("  警告：无法获取项目采样率，使用默认值 48000\n")
+            reaper.ShowConsoleMsg("⚠ 未找到 REAPER 可执行文件，请手动渲染\n")
         end
-
-        -- 注意：RENDER_FMT 已在 RPP 文件中设置为 OGG 格式 (0 2 44100)
-        -- 不要在这里覆盖它，否则会导出为 WAV 而不是 OGG
-
-        reaper.ShowConsoleMsg("  渲染设置已配置（OGG 格式）\n")
-    else
-        reaper.ShowConsoleMsg("用户选择不导出预览音频\n")
     end
     
-    -- 5. 最终保存：保存修剪后的工程（包含媒体文件和渲染设置）
-    local sourceRppPath = JoinPath(outputDir, capsuleName .. ".rpp")
-    reaper.ShowConsoleMsg("保存最终工程（包含媒体文件和渲染设置）: " .. sourceRppPath .. "\n")
+    -- 完成
+    reaper.ShowConsoleMsg("\n========== 导出完成 ==========\n")
+    reaper.ShowConsoleMsg("胶囊目录: " .. outputDir .. "\n")
+    reaper.ShowConsoleMsg("RPP 文件: " .. rppPath .. "\n")
+    reaper.ShowConsoleMsg("原工程: 未修改\n")
+    reaper.ShowConsoleMsg("================================\n")
     
-    -- 在保存前再次确认渲染设置（因为 SaveProjectWithMedia 可能会覆盖设置）
-    if exportPreview then
-        local tempPreviewPath = JoinPath(outputDir, "preview_temp.wav")
-        reaper.ShowConsoleMsg("保存前再次确认渲染设置...\n")
-        -- 确保时间选择范围正确
-        reaper.GetSet_LoopTimeRange(true, false, startTime, endTime, false)
-        -- 确保渲染输出路径正确（使用临时 OGG）
-        reaper.GetSetProjectInfo_String(0, "RENDER_FILE", tempPreviewPath, true)
-        -- 确保渲染范围是时间选择
-        reaper.GetSetProjectInfo(0, "RENDER_RANGE", 1, false)
-        -- 注意：不要设置 RENDER_SETTINGS，让 RPP 文件中的 OGG 格式生效
-        -- reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, false)  -- 已删除
-        -- Master mix
-        reaper.GetSetProjectInfo(0, "RENDER_STEMS", 136, false)
-        reaper.ShowConsoleMsg("  渲染设置已重新确认（OGG 格式）\n")
-    end
-    
-    -- 使用保存函数来复制工程和媒体文件
-    SaveProjectWithMedia(sourceRppPath)
-    
-    -- 保存后再次设置渲染参数并保存（因为 SaveProjectWithMedia 可能会改变设置）
-    if exportPreview then
-        local tempPreviewPath = JoinPath(outputDir, "preview_temp.wav")
-        -- 重新设置时间选择范围
-        reaper.GetSet_LoopTimeRange(true, false, startTime, endTime, false)
-        -- 重新设置渲染输出路径
-        reaper.GetSetProjectInfo_String(0, "RENDER_FILE", tempPreviewPath, true)
-        -- 重新设置渲染范围
-        reaper.GetSetProjectInfo(0, "RENDER_RANGE", 1, false)
-        -- 注意：不要设置 RENDER_SETTINGS，让 RPP 文件中的 OGG 格式生效
-        -- reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, false)  -- 已删除
-        -- 重新设置 Master mix
-        reaper.GetSetProjectInfo(0, "RENDER_STEMS", 136, false)
-        -- 注意：不在这里保存，避免触发自动渲染
-        -- 后续会通过 FixRPPRenderSettings 直接修改 RPP 文件
-    end
-
-    reaper.ShowConsoleMsg("已保存修剪后的工程: " .. sourceRppPath .. "\n")
-    
-    -- 6. 渲染预览音频（如果用户选择了导出预览）
-    if exportPreview then
-        local previewPath = JoinPath(outputDir, capsuleName .. ".ogg")  -- 最终输出路径（胶囊目录/胶囊名.ogg）
-        local tempPreviewPath = JoinPath(outputDir, capsuleName .. "_temp.wav")  -- 临时 WAV（避免创建子目录）
-
-        reaper.ShowConsoleMsg("\n========== 开始预览渲染 ==========\n")
-        reaper.ShowConsoleMsg("预览文件路径: " .. previewPath .. "\n")
-        reaper.ShowConsoleMsg("临时文件路径: " .. tempPreviewPath .. "\n")
-
-        -- 在渲染前，直接修复RPP文件中的渲染设置（因为SaveProjectWithMedia可能覆盖了设置）
-        reaper.ShowConsoleMsg("修复RPP文件中的渲染设置...\n")
-
-        -- 修复为使用临时 WAV 路径，并传入胶囊名用于最终文件名
-        local fixSuccess = FixRPPRenderSettings(sourceRppPath, tempPreviewPath, startTime, endTime, capsuleName)
-        if not fixSuccess then
-            reaper.ShowConsoleMsg("✗ 修复RPP渲染设置失败\n")
-        else
-            reaper.ShowConsoleMsg("✓ RPP渲染设置已修复\n")
-        end
-
-        -- 调用渲染函数（传入最终 OGG 路径，函数内部会处理 WAV 渲染和转换）
-        reaper.ShowConsoleMsg("开始渲染预览音频...\n")
-        local renderSuccess = RenderPreviewAudioFromRPP(sourceRppPath, previewPath, startTime, endTime)
-
-        if renderSuccess then
-            reaper.ShowConsoleMsg("✓ 预览音频渲染成功\n")
-
-            -- 验证文件是否存在
-            local previewFile = io.open(previewPath, "r")
-            if previewFile then
-                previewFile:close()
-                reaper.ShowConsoleMsg("✓ 预览文件已生成: " .. previewPath .. "\n")
-            else
-                reaper.ShowConsoleMsg("⚠ 预览文件不存在: " .. previewPath .. "\n")
-            end
-        else
-            reaper.ShowConsoleMsg("✗ 预览音频渲染失败\n")
-            reaper.ShowConsoleMsg("  可能原因:\n")
-            reaper.ShowConsoleMsg("    1. FFmpeg 未安装或不在 PATH 中\n")
-            reaper.ShowConsoleMsg("    2. REAPER 命令行渲染失败\n")
-            reaper.ShowConsoleMsg("    3. 文件权限问题\n")
-            -- 不中断导出流程，继续生成元数据
-        end
-
-        reaper.ShowConsoleMsg("========== 预览渲染结束 ==========\n\n")
-    else
-        reaper.ShowConsoleMsg("预览渲染已禁用 (exportPreview = false)\n")
-    end
-    
-    -- 7. 扫描插件
-    local plugins = ScanPlugins()
-    reaper.ShowConsoleMsg(string.format("扫描到 %d 个插件\n", #plugins))
-    
-    -- 8. 获取路由信息
-    local routingInfo = GetRoutingInfo()
-    
-    -- 9. 生成元数据（使用组合名称）
-    local rppFileName = capsuleName .. ".rpp"
-    GenerateMetadata(capsuleName, startTime, endTime, plugins, routingInfo, outputDir, rppFileName)
-    
-    -- 10. 清理临时文件
-    os.execute('rm -f "' .. tempProjectPath .. '"')
-
-    reaper.ShowConsoleMsg(string.format("胶囊导出完成: %s (包含 %d 个Item)\n", capsuleName, #allFoundItems))
-
-    -- 恢复原工程
-    if originalProjectPath ~= "" then
-        reaper.ShowConsoleMsg("恢复原工程: " .. originalProjectPath .. "\n")
-        reaper.Main_openProject(originalProjectPath)
-        reaper.UpdateTimeline()
-    end
-
-    reaper.ShowConsoleMsg("所有胶囊导出完成！\n")
-
     -- 如果是自动导出模式，不显示弹窗
     if not _SYNEST_AUTO_EXPORT then
-        reaper.ShowMessageBox("胶囊导出完成！\n请查看输出目录。", "完成", 0)
+        reaper.ShowMessageBox("胶囊导出完成！\n\n目录: " .. outputDir .. "\n\n原工程未修改。", "完成", 0)
     end
 
     return true
