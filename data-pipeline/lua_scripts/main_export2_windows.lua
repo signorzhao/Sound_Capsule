@@ -1019,9 +1019,11 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_RANGE%s+[^\n]*\n?', '')
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
-        -- 构建完整的渲染设置块
-        -- RENDER_RANGE 1 = 使用时间选择（SELECTION）
-        -- SELECTION 和 SELECTION2 定义时间选择范围
+        -- 删除所有旧的 RENDER_CFG 块（避免格式冲突）
+        -- 匹配 <RENDER_CFG 开始到 > 结束的整个块
+        content = content:gsub('%s*<RENDER_CFG%s*\n[^>]*>', '')
+        
+        -- 构建顶部渲染设置块（不包含 SELECTION）
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
@@ -1031,23 +1033,22 @@ RENDER_STEMS 0
     dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
   >
 ]], renderDir, capsuleName)
-
-        -- 设置时间选择范围（SELECTION 和 SELECTION2）
+        
+        -- 在 REAPER_PROJECT 行后插入渲染设置
+        content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
+        
+        -- 替换 SELECTION 和 SELECTION2（在 PLAYRATE 之后的位置）
         local selectionStr = string.format("SELECTION %.6f %.6f", actualStartTime, actualEndTime)
         local selection2Str = string.format("SELECTION2 %.6f %.6f", actualStartTime, actualEndTime)
         
-        -- 替换或添加 SELECTION
-        if content:match("SELECTION%s+[%d%.]+%s+[%d%.]+") then
-            content = content:gsub("SELECTION%s+[%d%.]+%s+[%d%.]+", selectionStr)
+        if content:match("SELECTION2%s+[%d%.%-]+%s+[%d%.%-]+") then
+            content = content:gsub("SELECTION2%s+[%d%.%-]+%s+[%d%.%-]+", selection2Str)
         end
-        if content:match("SELECTION2%s+[%d%.]+%s+[%d%.]+") then
-            content = content:gsub("SELECTION2%s+[%d%.]+%s+[%d%.]+", selection2Str)
+        if content:match("SELECTION%s+[%d%.%-]+%s+[%d%.%-]+") then
+            content = content:gsub("SELECTION%s+[%d%.%-]+%s+[%d%.%-]+", selectionStr)
         end
         
         reaper.ShowConsoleMsg("  时间选择: " .. selectionStr .. "\n")
-        
-        -- 在 REAPER_PROJECT 行后插入所有渲染设置
-        content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
         
         -- 设置 RECORD_PATH 为 Audio
         if content:match('RECORD_PATH "[^"]*"') then
