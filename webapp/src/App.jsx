@@ -981,9 +981,20 @@ export default function App() {
         onComplete={() => {
           console.log('✅ 初始化设置完成，重新加载配置');
           setShowInitialSetup(false);
+          
           // 重新加载配置
           getAppConfig().then(config => {
             setUserConfig(config);
+            
+            // 初始化完成后，检查是否需要触发 BootSync
+            const accessToken = localStorage.getItem('access_token');
+            if (accessToken && !isBootSyncComplete) {
+              console.log('🚀 [BootSync] 初始化完成，触发启动同步');
+              setShowBootSync(true);
+            } else {
+              console.log('ℹ️ [BootSync] 跳过启动同步（无 token 或已完成）');
+              setIsBootSyncComplete(true);
+            }
           });
         }}
       />
