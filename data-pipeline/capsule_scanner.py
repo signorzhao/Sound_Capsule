@@ -75,7 +75,7 @@ def import_capsule_from_output(capsule_info):
     relative_path = capsule_info['dir'].relative_to(output_dir)
 
     capsule_data = {
-        'uuid': metadata.get('id'),
+        'uuid': metadata.get('uuid') or metadata.get('id'),
         'name': metadata.get('name'),
         'project_name': metadata.get('project_name'),
         'theme_name': metadata.get('theme_name'),

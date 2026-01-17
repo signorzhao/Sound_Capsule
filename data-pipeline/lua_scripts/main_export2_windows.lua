@@ -1004,68 +1004,38 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
     if renderPreview then
         reaper.ShowConsoleMsg("设置渲染参数 (OGG)...\n")
         
-        -- 输出文件路径（使用胶囊目录的绝对路径）
-        local renderFilePath = outputDir:gsub("\\", "/") .. "/" .. capsuleName
-        
-        -- RENDER_FILE: 目录路径（胶囊目录）
-        -- RENDER_PATTERN: 文件名（不含扩展名）
         local renderDir = outputDir:gsub("\\", "/")
+        local actualStartTime = startTime or 0
+        local actualEndTime = endTime or 0
         
         reaper.ShowConsoleMsg("  RENDER_FILE (目录): " .. renderDir .. "\n")
         reaper.ShowConsoleMsg("  RENDER_PATTERN (文件名): " .. capsuleName .. "\n")
-        reaper.ShowConsoleMsg("  时间范围: " .. string.format("%.6f - %.6f", startTime or 0, endTime or 0) .. "\n")
+        reaper.ShowConsoleMsg("  时间范围: " .. string.format("%.6f - %.6f", actualStartTime, actualEndTime) .. "\n")
         
-        -- 先删除所有旧的 RENDER_FILE 和 RENDER_PATTERN
+        -- 先删除所有旧的渲染相关设置
         content = content:gsub('RENDER_FILE [^\n]*\n?', '')
         content = content:gsub('RENDER_PATTERN [^\n]*\n?', '')
-        
-        -- 在 REAPER_PROJECT 后插入新的渲染设置
-        -- RENDER_FILE = 输出目录
-        -- RENDER_PATTERN = 文件名
-        local renderSettings = string.format('RENDER_FILE %s\nRENDER_PATTERN %s\n', renderDir, capsuleName)
-        content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
-        
-        -- 设置 RENDER_FMT (采样率等)
-        if content:match('RENDER_FMT%s+[^\n]+') then
-            content = content:gsub('RENDER_FMT%s+[^\n]+', 'RENDER_FMT 0 2 44100')
-        end
-        
-        -- 设置 RENDER_RANGE（按时间选区渲染）
-        -- 格式: RENDER_RANGE 2 startTime endTime 0 1000
-        -- 2 = 渲染模式（时间选区）
-        local actualStartTime = startTime or 0
-        local actualEndTime = endTime or 0
-        local renderRange = string.format('RENDER_RANGE 2 %.6f %.6f 0 1000', actualStartTime, actualEndTime)
-        reaper.ShowConsoleMsg("  设置 RENDER_RANGE: " .. renderRange .. "\n")
-        
-        -- 先删除所有旧的 RENDER_RANGE 行（可能有多个）
+        content = content:gsub('RENDER_FMT%s+[^\n]*\n?', '')
         content = content:gsub('RENDER_RANGE%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
-        -- 在 RENDER_PATTERN 后插入新的 RENDER_RANGE
-        if content:match('RENDER_PATTERN [^\n]+') then
-            content = content:gsub('(RENDER_PATTERN [^\n]+\n)', '%1' .. renderRange .. '\n')
-        else
-            -- 如果没有 RENDER_PATTERN，在 RENDER_FILE 后插入
-            content = content:gsub('(RENDER_FILE [^\n]+\n)', '%1' .. renderRange .. '\n')
-        end
+        -- 构建完整的渲染设置块
+        local renderSettings = string.format([[RENDER_FILE %s
+RENDER_PATTERN %s
+RENDER_FMT 0 2 44100
+RENDER_RANGE 2 %.6f %.6f 0 1000
+RENDER_STEMS 0
+  <RENDER_CFG
+    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
+  >
+]], renderDir, capsuleName, actualStartTime, actualEndTime)
+        
+        -- 在 REAPER_PROJECT 行后插入所有渲染设置
+        content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
         
         -- 设置 RECORD_PATH 为 Audio
         if content:match('RECORD_PATH "[^"]*"') then
             content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH "Audio"')
-        end
-        
-        -- 设置 RENDER_CFG（OGG Vorbis 编码器配置 Base64）
-        local oggRenderCfg = [[  <RENDER_CFG
-    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
-  >]]
-        
-        if content:match('<RENDER_CFG[^>]*>.-</RENDER_CFG>') then
-            content = content:gsub('<RENDER_CFG[^>]*>.-</RENDER_CFG>', oggRenderCfg)
-        elseif content:match('<RENDER_CFG[^>]*>\n.-\n%s*>') then
-            content = content:gsub('<RENDER_CFG[^>]*>\n.-\n%s*>', oggRenderCfg)
-        else
-            -- 在 RENDER_RANGE 后添加
-            content = content:gsub('(RENDER_RANGE [^\n]+\n)', '%1' .. oggRenderCfg .. '\n')
         end
         
         reaper.ShowConsoleMsg("  ✓ 渲染参数设置完成\n")
@@ -1117,9 +1087,9 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
     for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
     local failedCount = #failedFiles
     
-    -- 构建 JSON
+    -- 构建 JSON（使用 "id" 字段，与 Mac 版保持一致）
     local json = string.format([[{
-  "uuid": "%s",
+  "id": "%s",
   "name": "%s",
   "capsule_type": "%s",
   "created_at": "%s",
