@@ -502,10 +502,8 @@ class SupabaseClient:
             是否成功
         """
         try:
-            # 先删除该胶囊的所有旧标签
+            # 先删除该胶囊的所有旧标签（不限制 user_id，避免跨设备同步时重复）
             self.client.table('cloud_capsule_tags').delete().eq(
-                'user_id', user_id
-            ).eq(
                 'capsule_id', capsule_cloud_id
             ).execute()
 
