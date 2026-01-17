@@ -144,18 +144,19 @@ CREATE TABLE IF NOT EXISTS sync_status (
 );
 
 -- ============================================
--- 棱镜配置表
+-- 棱镜配置表 (与 prism_versioning.sql 保持一致)
 -- ============================================
 CREATE TABLE IF NOT EXISTS prisms (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    lens_id TEXT NOT NULL,              -- 棱镜 ID（如 'texture', 'source'）
-    config TEXT,                         -- JSON 格式的配置
-    version INTEGER DEFAULT 1,
-    last_synced_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, lens_id)
+    id TEXT PRIMARY KEY,          -- 棱镜 ID (如 'texture', 'mechanics')
+    name TEXT NOT NULL,           -- 显示名称 (如 'Texture / (质感)')
+    description TEXT,             -- 描述
+    axis_config TEXT DEFAULT '{}',  -- 坐标轴配置 (JSON)
+    anchors TEXT DEFAULT '[]',      -- 锚点数据 (JSON)
+    field_data TEXT DEFAULT '[]',   -- 字段数据 (JSON)
+    version INTEGER DEFAULT 1,      -- 当前版本号
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_by TEXT,                -- 修改者
+    is_deleted BOOLEAN DEFAULT 0    -- 是否已删除
 );
 
 -- ============================================

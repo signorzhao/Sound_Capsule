@@ -150,13 +150,23 @@ class CapsuleDatabase:
             current_tables = {row[0] for row in cursor.fetchall()}
             missing_tables = required_tables - current_tables
             
-            # 检查 sync_status 表的列结构
+            # 检查表的列结构
             invalid_tables = []
+            
+            # 检查 sync_status 表
             if 'sync_status' in current_tables:
                 cursor.execute("PRAGMA table_info(sync_status)")
                 sync_status_fields = {row[1] for row in cursor.fetchall()}
                 if 'sync_state' not in sync_status_fields:
                     invalid_tables.append('sync_status')
+            
+            # 检查 prisms 表
+            if 'prisms' in current_tables:
+                cursor.execute("PRAGMA table_info(prisms)")
+                prisms_fields = {row[1] for row in cursor.fetchall()}
+                # prisms 表必须包含 is_deleted 和 field_data 列
+                if 'is_deleted' not in prisms_fields or 'field_data' not in prisms_fields:
+                    invalid_tables.append('prisms')
             
             is_valid = len(missing_fields) == 0 and len(missing_tables) == 0 and len(invalid_tables) == 0
             

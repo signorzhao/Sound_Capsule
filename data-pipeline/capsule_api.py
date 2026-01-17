@@ -3879,15 +3879,16 @@ if __name__ == '__main__':
                 """,
                 'prisms': """
                     CREATE TABLE IF NOT EXISTS prisms (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT NOT NULL,
-                        lens_id TEXT NOT NULL,
-                        config TEXT,
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        axis_config TEXT DEFAULT '{}',
+                        anchors TEXT DEFAULT '[]',
+                        field_data TEXT DEFAULT '[]',
                         version INTEGER DEFAULT 1,
-                        last_synced_at TIMESTAMP,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        UNIQUE(user_id, lens_id)
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        updated_by TEXT,
+                        is_deleted BOOLEAN DEFAULT 0
                     )
                 """,
                 'capsule_types': """
