@@ -653,161 +653,65 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
     return mediaFiles
 end
 
--- 保存工程并复制媒体文件到指定路径（使用Reaper内置功能）
-function SaveProjectWithMedia(targetPath)
-    reaper.ShowConsoleMsg("保存工程到: " .. targetPath .. "\n")
-
-    -- 获取项目目录（跨平台）
-    local projectDir = GetDirectoryPath(targetPath)
-
-    -- 创建项目目录（如果不存在）
-    if projectDir ~= "" then
-        MakeDir(projectDir)
-    end
-
-    -- 先保存当前工程状态
-    reaper.Main_SaveProject(0, false)
-
-    -- 使用Reaper的"Save project as"功能来复制媒体文件
-    -- 首先设置项目路径为目标路径
-    reaper.GetSetProjectInfo_String(0, "PROJECT_PATH", targetPath, true)
-    
-    -- 使用Main_SaveProjectEx来保存并复制媒体文件
-    -- Main_SaveProjectEx(proj, saveFile, forceUI) - 但这个不直接支持复制媒体
-    
-    -- 更好的方法：使用"Save project"命令，它会使用项目设置中的"copy media"选项
-    -- 我们需要临时设置项目选项
-    
-    -- 方法：直接使用Reaper的保存功能，然后手动处理媒体文件复制
-    -- 但实际上，Reaper在保存时会自动处理相对路径
-    
-    -- 设置RECORD_PATH为Audio文件夹（这样Reaper会将媒体文件放在Audio目录）
-    reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
-    
-    -- 保存工程
-    reaper.Main_SaveProject(0, false)
-
-    -- 获取当前工程路径
+-- 收集当前项目中所有媒体文件的绝对路径（使用 REAPER API）
+function CollectMediaFilesFromProject()
+    local mediaFiles = {}  -- {absolutePath = baseName}
     local _, currentProjPath = reaper.EnumProjects(-1, "")
-
-    -- 获取保存后的路径（应该是目标路径）
-    local _, savedPath = reaper.EnumProjects(-1, "")
-
-    -- 如果保存路径不是目标路径，需要复制
-    if savedPath ~= targetPath then
-        -- 先读取原文件
-        local sourceFile = io.open(savedPath, "r")
-        if sourceFile then
-            local content = sourceFile:read("*all")
-            sourceFile:close()
-
-            -- 写入目标路径
-            local targetFile = io.open(targetPath, "w")
-            if targetFile then
-                targetFile:write(content)
-                targetFile:close()
-            end
-        end
-    end
-
-    -- 现在处理媒体文件：从RPP文件中提取路径并复制
-    -- 传递原始工程目录以便正确解析相对路径
-    local originalProjDir = GetDirectoryPath(currentProjPath)
-    local mediaFiles = ExtractMediaFilesFromRPP(targetPath, originalProjDir)
+    local currentProjDir = GetDirectoryPath(currentProjPath)
     
-    -- 如果没有从RPP中找到，尝试从当前工程中收集
-    local mediaCount = (function() local count = 0; for _ in pairs(mediaFiles) do count = count + 1 end; return count end)()
-    if mediaCount == 0 then
-        reaper.ShowConsoleMsg("从RPP未找到媒体文件，尝试使用API方式...\n")
-
-        -- 获取所有媒体文件并复制
-        local trackCount = reaper.CountTracks(0)
-        local currentProjDir = GetDirectoryPath(currentProjPath)
-
-        reaper.ShowConsoleMsg("开始收集媒体文件...\n")
-        reaper.ShowConsoleMsg("当前工程目录: " .. (currentProjDir or "未知") .. "\n")
-
-        -- 收集所有使用的媒体文件
-        for i = 0, trackCount - 1 do
+    reaper.ShowConsoleMsg("=== 收集媒体文件 ===\n")
+    reaper.ShowConsoleMsg("当前工程: " .. (currentProjPath or "未知") .. "\n")
+    reaper.ShowConsoleMsg("工程目录: " .. (currentProjDir or "未知") .. "\n")
+    
+    local trackCount = reaper.CountTracks(0)
+    for i = 0, trackCount - 1 do
         local track = reaper.GetTrack(0, i)
-        if track ~= nil then
+        if track then
             local itemCount = reaper.CountTrackMediaItems(track)
             for j = 0, itemCount - 1 do
                 local item = reaper.GetTrackMediaItem(track, j)
                 local takeCount = reaper.CountTakes(item)
                 for k = 0, takeCount - 1 do
                     local take = reaper.GetTake(item, k)
-                    if take ~= nil then
+                    if take then
                         local source = reaper.GetMediaItemTake_Source(take)
-                        if source ~= nil then
-                            -- 获取媒体源文件路径
-                            -- 首先尝试GetMediaSourceFileName
+                        if source then
                             local retval, fileName = reaper.GetMediaSourceFileName(source, "")
-                            
-                            -- 如果失败，尝试GetTakeSource
-                            if not retval or fileName == "" or fileName == "?" then
-                                local _, takeSource = reaper.GetMediaItemTakeInfo_Value(take, "P_SOURCE")
-                                if takeSource then
-                                    fileName = tostring(takeSource)
-                                end
-                            end
-                            
-                            -- 也尝试从Item的source属性获取
-                            if not fileName or fileName == "" or fileName == "?" then
-                                local _, itemSource = reaper.GetSetMediaItemInfo_String(item, "P_SOURCE", "", false)
-                                if itemSource and itemSource ~= "" then
-                                    fileName = itemSource
-                                end
-                            end
-                            
-                            if fileName and fileName ~= "" and fileName ~= "?" then
-                                reaper.ShowConsoleMsg("找到媒体文件: " .. fileName .. "\n")
-                                
-                                -- 尝试多种路径解析方式
+                            if retval and fileName and fileName ~= "" and fileName ~= "?" then
+                                -- 检查是否是绝对路径
+                                local isAbsolute = string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:")
                                 local fullPath = nil
                                 
-                                -- 方式1: 如果是绝对路径，直接使用（支持 Unix 和 Windows）
-                                if string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") then
+                                if isAbsolute then
                                     fullPath = fileName
-                                    reaper.ShowConsoleMsg("  绝对路径: " .. fullPath .. "\n")
                                 else
-                                    -- 方式2: 尝试从项目目录解析（包括audio子文件夹，使用跨平台 JoinPath）
+                                    -- 相对路径：尝试从项目目录解析
                                     local testPaths = {
                                         JoinPath(currentProjDir, fileName),
                                         JoinPath(currentProjDir, "audio", fileName),
                                         JoinPath(currentProjDir, "Audio", fileName),
                                     }
-                                    
-                                    -- 也尝试从项目根目录解析（跨平台正则匹配）
-                                    local projBaseDir = GetDirectoryPath(currentProjPath)
-                                    table.insert(testPaths, JoinPath(projBaseDir, fileName))
-                                    table.insert(testPaths, JoinPath(projBaseDir, "audio", fileName))
-                                    table.insert(testPaths, JoinPath(projBaseDir, "Audio", fileName))
-                                    
                                     for _, testPath in ipairs(testPaths) do
-                                        local file = io.open(testPath, "r")
-                                        if file then
-                                            file:close()
+                                        local f = io.open(testPath, "r")
+                                        if f then
+                                            f:close()
                                             fullPath = testPath
-                                            reaper.ShowConsoleMsg("  找到文件位置: " .. fullPath .. "\n")
                                             break
                                         end
                                     end
                                 end
                                 
-                                -- 如果找到了文件，添加到列表中
+                                -- 验证文件存在并添加到列表
                                 if fullPath then
-                                    local file = io.open(fullPath, "r")
-                                    if file then
-                                        file:close()
-                                        local baseName = string.match(fileName, "([^/\\]+)$") or fileName
+                                    local f = io.open(fullPath, "r")
+                                    if f then
+                                        f:close()
+                                        local baseName = string.match(fullPath, "([^/\\]+)$") or fullPath
                                         if not mediaFiles[fullPath] then
                                             mediaFiles[fullPath] = baseName
-                                            reaper.ShowConsoleMsg("  添加到复制列表: " .. baseName .. "\n")
+                                            reaper.ShowConsoleMsg("  ✓ " .. baseName .. " -> " .. fullPath .. "\n")
                                         end
                                     end
-                                else
-                                    reaper.ShowConsoleMsg("  警告：无法找到文件: " .. fileName .. "\n")
                                 end
                             end
                         end
@@ -817,81 +721,132 @@ function SaveProjectWithMedia(targetPath)
         end
     end
     
-        reaper.ShowConsoleMsg("共找到 " .. 
-            (function() local count = 0; for _ in pairs(mediaFiles) do count = count + 1 end; return count end)() 
-            .. " 个媒体文件需要复制\n")
-    else
-        reaper.ShowConsoleMsg("从RPP文件找到 " .. 
-            (function() local count = 0; for _ in pairs(mediaFiles) do count = count + 1 end; return count end)() 
-            .. " 个媒体文件\n")
+    local count = 0
+    for _ in pairs(mediaFiles) do count = count + 1 end
+    reaper.ShowConsoleMsg("共找到 " .. count .. " 个媒体文件\n")
+    
+    return mediaFiles
+end
+
+-- 保存工程并复制媒体文件到指定路径（Windows 优化版）
+function SaveProjectWithMedia(targetPath)
+    reaper.ShowConsoleMsg("\n=== SaveProjectWithMedia (Windows) ===\n")
+    reaper.ShowConsoleMsg("目标路径: " .. targetPath .. "\n")
+
+    -- 获取项目目录（跨平台）
+    local projectDir = GetDirectoryPath(targetPath)
+
+    -- 创建项目目录和 Audio 子目录
+    if projectDir ~= "" then
+        MakeDir(projectDir)
+        MakeDir(JoinPath(projectDir, "Audio"))
     end
     
-    -- 复制媒体文件到项目目录的Audio文件夹（跨平台）
-    local audioDir = JoinPath(projectDir, "Audio")
-    MakeDir(audioDir)
+    -- 获取当前工程路径（用于后续路径解析）
+    local _, currentProjPath = reaper.EnumProjects(-1, "")
+    reaper.ShowConsoleMsg("原始工程: " .. (currentProjPath or "未知") .. "\n")
+
+    -- ★ 关键步骤 1：先收集所有媒体文件（在保存之前）
+    local mediaFiles = CollectMediaFilesFromProject()
     
+    -- ★ 关键步骤 2：复制媒体文件到 Audio 目录
+    local audioDir = JoinPath(projectDir, "Audio")
     local copiedCount = 0
-    for mediaPath, baseName in pairs(mediaFiles) do
-        -- 目标路径在Audio文件夹中（跨平台）
+    local copiedFiles = {}  -- 记录复制成功的文件 {baseName = true}
+    
+    reaper.ShowConsoleMsg("\n=== 复制媒体文件到 " .. audioDir .. " ===\n")
+    for sourcePath, baseName in pairs(mediaFiles) do
         local targetMediaPath = JoinPath(audioDir, baseName)
         
-        -- 检查源文件是否存在
-        local sourceFile = io.open(mediaPath, "r")
-        if sourceFile then
-            sourceFile:close()
-            
-            -- 复制文件到Audio文件夹（跨平台）
-            reaper.ShowConsoleMsg(string.format("复制: %s -> %s\n", baseName, targetMediaPath))
-            CopyFile(mediaPath, targetMediaPath)
-            
-            -- 验证复制是否成功
-            local targetFile = io.open(targetMediaPath, "r")
-            if targetFile then
-                targetFile:close()
-                reaper.ShowConsoleMsg("✓ 成功: " .. baseName .. "\n")
-                copiedCount = copiedCount + 1
-            else
-                reaper.ShowConsoleMsg("✗ 失败: " .. baseName .. "\n")
-            end
+        reaper.ShowConsoleMsg("复制: " .. baseName .. "\n")
+        reaper.ShowConsoleMsg("  从: " .. sourcePath .. "\n")
+        reaper.ShowConsoleMsg("  到: " .. targetMediaPath .. "\n")
+        
+        CopyFile(sourcePath, targetMediaPath)
+        
+        -- 验证复制是否成功
+        local f = io.open(targetMediaPath, "r")
+        if f then
+            f:close()
+            reaper.ShowConsoleMsg("  ✓ 成功\n")
+            copiedCount = copiedCount + 1
+            copiedFiles[baseName] = true
         else
-            reaper.ShowConsoleMsg("✗ 源文件不存在: " .. mediaPath .. "\n")
+            reaper.ShowConsoleMsg("  ✗ 失败\n")
         end
     end
     
-    local totalFiles = (function() local count = 0; for _ in pairs(mediaFiles) do count = count + 1 end; return count end)()
-    reaper.ShowConsoleMsg(string.format("媒体文件复制完成: %d/%d 成功\n", copiedCount, totalFiles))
+    local totalFiles = 0
+    for _ in pairs(mediaFiles) do totalFiles = totalFiles + 1 end
+    reaper.ShowConsoleMsg("媒体文件复制完成: " .. copiedCount .. "/" .. totalFiles .. "\n")
     
-    -- 更新RPP文件中的路径为相对路径 Audio/文件名
-    local file = io.open(targetPath, "r")
-    if file then
-        local content = file:read("*all")
-        file:close()
+    -- ★ 关键步骤 3：使用 Main_SaveProjectEx 保存项目到新位置
+    reaper.ShowConsoleMsg("\n=== 保存项目 ===\n")
+    
+    -- 设置 RECORD_PATH 为 Audio 文件夹
+    reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
+    
+    -- 使用 Main_SaveProjectEx 保存到指定路径（0 = 不弹出对话框）
+    local saveResult = reaper.Main_SaveProjectEx(0, targetPath, 0)
+    reaper.ShowConsoleMsg("保存结果: " .. tostring(saveResult) .. "\n")
+    
+    -- 如果 Main_SaveProjectEx 失败或不可用，使用备用方案
+    if not saveResult then
+        reaper.ShowConsoleMsg("Main_SaveProjectEx 失败，使用备用方案...\n")
+        -- 读取当前项目内容
+        local sourceFile = io.open(currentProjPath, "r")
+        if sourceFile then
+            local content = sourceFile:read("*all")
+            sourceFile:close()
+            
+            -- 写入目标路径
+            local targetFile = io.open(targetPath, "w")
+            if targetFile then
+                targetFile:write(content)
+                targetFile:close()
+                reaper.ShowConsoleMsg("备用方案: 已复制 RPP 文件\n")
+            end
+        end
+    end
+    
+    -- ★ 关键步骤 4：更新 RPP 文件中的路径为相对路径 Audio/文件名
+    reaper.ShowConsoleMsg("\n=== 更新 RPP 文件中的媒体路径 ===\n")
+    local rppFile = io.open(targetPath, "r")
+    if rppFile then
+        local content = rppFile:read("*all")
+        rppFile:close()
         local modified = false
         
-        for mediaPath, baseName in pairs(mediaFiles) do
+        for sourcePath, baseName in pairs(mediaFiles) do
             -- 转义路径中的特殊字符
-            local escapedPath = string.gsub(mediaPath, "([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+            local escapedPath = string.gsub(sourcePath, "([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+            -- 同时转义反斜杠（Windows 路径）
+            escapedPath = string.gsub(escapedPath, "\\", "\\\\")
+            
             -- 替换为相对路径 Audio/文件名
             local relativePath = "Audio/" .. baseName
             local newContent = string.gsub(content, escapedPath, relativePath)
             if newContent ~= content then
                 content = newContent
                 modified = true
-                reaper.ShowConsoleMsg("更新路径: " .. baseName .. " -> " .. relativePath .. "\n")
+                reaper.ShowConsoleMsg("  更新: " .. baseName .. " -> " .. relativePath .. "\n")
             end
         end
         
         -- 如果内容被修改，写回文件
         if modified then
-            file = io.open(targetPath, "w")
-            if file then
-                file:write(content)
-                file:close()
-                reaper.ShowConsoleMsg("已更新RPP文件中的媒体路径为相对路径\n")
+            rppFile = io.open(targetPath, "w")
+            if rppFile then
+                rppFile:write(content)
+                rppFile:close()
+                reaper.ShowConsoleMsg("✓ 已更新 RPP 文件中的媒体路径\n")
             end
+        else
+            reaper.ShowConsoleMsg("  (无需更新，路径已是相对路径)\n")
         end
     end
     
+    reaper.ShowConsoleMsg("=== SaveProjectWithMedia 完成 ===\n\n")
     return true
 end
 
