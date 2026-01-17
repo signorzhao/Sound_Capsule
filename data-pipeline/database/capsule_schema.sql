@@ -162,27 +162,26 @@ CREATE TABLE IF NOT EXISTS prisms (
 -- 胶囊类型表
 -- ============================================
 CREATE TABLE IF NOT EXISTS capsule_types (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    display_name TEXT,
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    name_cn TEXT NOT NULL,
     description TEXT,
     icon TEXT,
-    color TEXT,
-    is_active INTEGER DEFAULT 1,
+    color TEXT NOT NULL,
+    gradient TEXT NOT NULL,
+    examples TEXT,
+    priority_lens TEXT,
     sort_order INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 插入默认胶囊类型
-INSERT OR IGNORE INTO capsule_types (name, display_name, description, icon, color, sort_order)
+INSERT OR IGNORE INTO capsule_types (id, name, name_cn, description, icon, color, gradient, examples, priority_lens, sort_order)
 VALUES 
-    ('magic', 'Magic', '魔法音效', 'sparkles', '#8B5CF6', 1),
-    ('impact', 'Impact', '冲击音效', 'zap', '#EF4444', 2),
-    ('atmosphere', 'Atmosphere', '氛围音效', 'cloud', '#3B82F6', 3),
-    ('texture', 'Texture', '纹理音效', 'layers', '#10B981', 4),
-    ('transition', 'Transition', '过渡音效', 'arrow-right', '#F59E0B', 5),
-    ('riser', 'Riser', '上升音效', 'trending-up', '#EC4899', 6),
-    ('downer', 'Downer', '下降音效', 'trending-down', '#6366F1', 7);
+    ('magic', 'MAGIC', '魔法', '神秘、梦幻、超自然', 'Sparkles', '#8B5CF6', 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', '["粒子合成", "调制噪声", "演变音色"]', 'texture', 1),
+    ('impact', 'IMPACT', '打击', '强力、冲击、震撼', 'Flame', '#EF4444', 'linear-gradient(135deg, #EF4444 0%, #F59E0B 100%)', '["鼓点", "打击乐", "贝斯拨奏"]', 'texture', 2),
+    ('atmosphere', 'ATMOSPHERE', '环境', '空间、氛围、场景', 'Music', '#10B981', 'linear-gradient(135deg, #10B981 0%, #06B6D4 100%)', '["Pad", "氛围纹理", "音景"]', 'atmosphere', 3);
 
 -- ============================================
 -- 性能优化索引

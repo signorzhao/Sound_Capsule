@@ -256,13 +256,41 @@ def handle_generic_error(error):
 def find_reaper_executable():
     """
     查找 REAPER 可执行文件（跨平台）
+    
+    优先使用用户配置的路径
 
     Returns:
         Path 或 None
     """
     import platform
     import shutil
+    import json
 
+    # 1. 优先读取用户配置的 REAPER 路径
+    try:
+        system = platform.system()
+        if system == "Darwin":
+            config_path = Path.home() / "Library/Application Support/com.soundcapsule.app/config.json"
+        elif system == "Windows":
+            config_path = Path.home() / "AppData/Roaming/com.soundcapsule.app/config.json"
+        else:
+            config_path = Path.home() / ".config/com.soundcapsule.app/config.json"
+        
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                reaper_path = config.get('reaper_path')
+                if reaper_path:
+                    reaper_exe = Path(reaper_path)
+                    if reaper_exe.exists():
+                        print(f"✓ 使用用户配置的 REAPER 路径: {reaper_exe}")
+                        return reaper_exe
+                    else:
+                        print(f"⚠️ 用户配置的 REAPER 路径不存在: {reaper_path}")
+    except Exception as e:
+        print(f"⚠️ 读取 REAPER 配置失败: {e}")
+
+    # 2. 降级到默认路径
     system = platform.system()
 
     if system == "Darwin":  # macOS
@@ -273,6 +301,7 @@ def find_reaper_executable():
         ]
     elif system == "Windows":
         paths = [
+            Path("C:/Program Files/REAPER (x64)/reaper.exe"),
             Path("C:/Program Files/REAPER/reaper.exe"),
             Path("C:/Program Files (x86)/REAPER/reaper.exe"),
             Path.home() / "AppData/Local/Programs/REAPER/reaper.exe"
@@ -285,6 +314,7 @@ def find_reaper_executable():
 
     for path in paths:
         if path.exists():
+            print(f"✓ 找到 REAPER: {path}")
             return path
 
     return None
