@@ -128,19 +128,34 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 );
 
 -- ============================================
--- 同步状态表
+-- 同步状态表（跟踪每条记录的同步状态）
 -- ============================================
 CREATE TABLE IF NOT EXISTS sync_status (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
+    table_name TEXT NOT NULL,           -- 表名（如 'capsules', 'capsule_tags'）
+    record_id INTEGER NOT NULL,         -- 记录 ID
+    sync_state TEXT DEFAULT 'pending',  -- 'pending', 'synced', 'conflict'
+    local_version INTEGER DEFAULT 1,
+    cloud_version INTEGER DEFAULT 0,
     last_sync_at TIMESTAMP,
-    last_full_sync_at TIMESTAMP,
-    pending_uploads INTEGER DEFAULT 0,
-    pending_downloads INTEGER DEFAULT 0,
-    sync_in_progress INTEGER DEFAULT 0,
-    last_error TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(table_name, record_id)
+);
+
+-- ============================================
+-- 棱镜配置表
+-- ============================================
+CREATE TABLE IF NOT EXISTS prisms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    lens_id TEXT NOT NULL,              -- 棱镜 ID（如 'texture', 'source'）
+    config TEXT,                         -- JSON 格式的配置
+    version INTEGER DEFAULT 1,
+    last_synced_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, lens_id)
 );
 
 -- ============================================
