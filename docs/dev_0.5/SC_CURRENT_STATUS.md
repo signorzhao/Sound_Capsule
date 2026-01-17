@@ -126,7 +126,6 @@ metadata.json：
 改用文件大小稳定性检测
 4. auto_export_from_config_windows.lua - 入口脚本
 改进了 main() 返回值处理和调试输出
-
 ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ 
 待改进方向
 1. 同步冲突处理

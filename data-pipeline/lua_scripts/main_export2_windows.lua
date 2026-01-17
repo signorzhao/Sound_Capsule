@@ -1020,8 +1020,8 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
         -- 删除所有旧的 RENDER_CFG 块（避免格式冲突）
-        -- 匹配 <RENDER_CFG 开始到 > 结束的整个块
-        content = content:gsub('%s*<RENDER_CFG%s*\n[^>]*>', '')
+        -- 只匹配 <RENDER_CFG 到它自己的结束 >（通常是2-3行）
+        content = content:gsub('%s*<RENDER_CFG%s*\n%s*[%w%+%/=]+%s*\n%s*>', '')
         
         -- 构建顶部渲染设置块（不包含 SELECTION）
         local renderSettings = string.format([[RENDER_FILE %s
