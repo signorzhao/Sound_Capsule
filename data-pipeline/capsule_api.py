@@ -200,7 +200,10 @@ logger.info("✅ Library Routes 注册: /api/capsules/*")
 # ============================================
 # Phase C1: 棱镜版本管理器初始化
 # ============================================
-prism_manager = PrismVersionManager()
+# 使用 PathManager 获取正确的数据库路径
+from common import PathManager
+pm = PathManager.get_instance()
+prism_manager = PrismVersionManager(db_path=str(pm.db_path))
 try:
     prism_manager.init_tables()
     logger.info("✅ 棱镜版本管理器初始化成功")

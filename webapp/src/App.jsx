@@ -192,6 +192,17 @@ export default function App() {
 
         const data = await response.json();
         console.log('✅ 加载的棱镜:', Object.keys(data), '共', Object.keys(data).length, '个');
+        
+        // 检查是否是错误响应
+        if (data.success === false) {
+          throw new Error(data.error || 'API 返回错误');
+        }
+        
+        // 检查是否返回了空对象
+        if (Object.keys(data).length === 0) {
+          throw new Error('API 返回空数据');
+        }
+        
         setVectorData(data);
 
         // 动态生成棱镜配置
