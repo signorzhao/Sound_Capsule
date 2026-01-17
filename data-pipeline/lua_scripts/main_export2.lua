@@ -24,6 +24,52 @@ function reaper.ShowConsoleMsg(msg)
     end
 end
 
+-- 检测操作系统
+local function IsWindows()
+    local sep = package.config:sub(1,1)
+    return sep == "\\"
+end
+
+-- 跨平台创建目录（递归创建）
+local function MakeDir(path)
+    if not path or path == "" then
+        return false
+    end
+    
+    -- 规范化路径
+    local normalizedPath = path:gsub("\\", "/")
+    
+    if IsWindows() then
+        -- Windows: 使用 mkdir 命令（需要转回反斜杠）
+        local winPath = path:gsub("/", "\\")
+        -- 使用 PowerShell 的 New-Item 或 mkdir
+        local cmd = string.format('if not exist "%s" mkdir "%s"', winPath, winPath)
+        os.execute(cmd)
+    else
+        -- macOS/Linux: 使用 mkdir -p
+        os.execute('mkdir -p "' .. normalizedPath .. '"')
+    end
+    
+    return true
+end
+
+-- 跨平台复制文件
+local function CopyFile(src, dst)
+    if not src or not dst then
+        return false
+    end
+    
+    if IsWindows() then
+        local winSrc = src:gsub("/", "\\")
+        local winDst = dst:gsub("/", "\\")
+        local cmd = string.format('copy /Y "%s" "%s" >nul 2>&1', winSrc, winDst)
+        return os.execute(cmd) == 0
+    else
+        local cmd = string.format('cp "%s" "%s"', src, dst)
+        return os.execute(cmd) == 0
+    end
+end
+
 -- 辅助函数：添加轨道到保留列表
 function AddTrackToKeep(keepTracks, track)
     if track == nil then
@@ -581,7 +627,7 @@ function SaveProjectWithMedia(targetPath)
 
     -- 创建项目目录（如果不存在）
     if projectDir ~= "" then
-        os.execute('mkdir -p "' .. projectDir .. '"')
+        MakeDir(projectDir)
     end
 
     -- 先保存当前工程状态
@@ -747,7 +793,7 @@ function SaveProjectWithMedia(targetPath)
     
     -- 复制媒体文件到项目目录的Audio文件夹
     local audioDir = projectDir .. "/Audio"
-    os.execute('mkdir -p "' .. audioDir .. '"')
+    MakeDir(audioDir)
     
     local copiedCount = 0
     for mediaPath, baseName in pairs(mediaFiles) do
@@ -1090,7 +1136,7 @@ function CreateTempRenderScript(rppPath, outputPath, presetPath, presetName, sta
     
     -- 创建临时目录（如果需要）
     if scriptDir ~= "" then
-        os.execute('mkdir -p "' .. scriptDir .. '"')
+        MakeDir(scriptDir)
     end
     
     -- 从输出路径提取时间范围（如果提供了）
@@ -1717,7 +1763,7 @@ function ExportCapsule()
         for idx, path in ipairs(possiblePaths) do
             if path ~= nil then
                 -- 尝试创建目录
-                os.execute('mkdir -p "' .. path .. '"')
+                MakeDir(path)
                 -- 检查是否成功
                 local f = io.open(path .. "/.test", "w")
                 if f ~= nil then
@@ -1777,7 +1823,7 @@ function ExportCapsule()
 
     local outputDir = outputBaseDir .. "/" .. capsuleName
     reaper.ShowConsoleMsg("创建输出目录: " .. outputDir .. "\n")
-    os.execute('mkdir -p "' .. outputDir .. '"')
+    MakeDir(outputDir)
 
     -- 2. 全量快照：将当前工程另存为临时文件
     -- 保存当前工程（如果有未保存的修改，REAPER会弹出对话框）
