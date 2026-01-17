@@ -24,52 +24,6 @@ function reaper.ShowConsoleMsg(msg)
     end
 end
 
--- 检测操作系统
-local function IsWindows()
-    local sep = package.config:sub(1,1)
-    return sep == "\\"
-end
-
--- 跨平台创建目录（递归创建）
-local function MakeDir(path)
-    if not path or path == "" then
-        return false
-    end
-    
-    -- 规范化路径
-    local normalizedPath = path:gsub("\\", "/")
-    
-    if IsWindows() then
-        -- Windows: 使用 mkdir 命令（需要转回反斜杠）
-        local winPath = path:gsub("/", "\\")
-        -- 使用 PowerShell 的 New-Item 或 mkdir
-        local cmd = string.format('if not exist "%s" mkdir "%s"', winPath, winPath)
-        os.execute(cmd)
-    else
-        -- macOS/Linux: 使用 mkdir -p
-        os.execute('mkdir -p "' .. normalizedPath .. '"')
-    end
-    
-    return true
-end
-
--- 跨平台复制文件
-local function CopyFile(src, dst)
-    if not src or not dst then
-        return false
-    end
-    
-    if IsWindows() then
-        local winSrc = src:gsub("/", "\\")
-        local winDst = dst:gsub("/", "\\")
-        local cmd = string.format('copy /Y "%s" "%s" >nul 2>&1', winSrc, winDst)
-        return os.execute(cmd) == 0
-    else
-        local cmd = string.format('cp "%s" "%s"', src, dst)
-        return os.execute(cmd) == 0
-    end
-end
-
 -- 辅助函数：添加轨道到保留列表
 function AddTrackToKeep(keepTracks, track)
     if track == nil then
@@ -489,7 +443,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
         return mediaFiles
     end
     
-    local rppDir = GetDirectoryPath(rppPath)
+    local rppDir = string.match(rppPath, "(.+)/") or ""
     local content = file:read("*all")
     file:close()
     
@@ -574,7 +528,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 -- 尝试原始工程目录
                 local _, origProj = reaper.EnumProjects(-1, "")
                 if origProj ~= "" then
-                    local origDir = GetDirectoryPath(origProj)
+                    local origDir = string.match(origProj, "(.+)/") or ""
                     if origDir ~= "" then
                         table.insert(testPaths, origDir .. "/audio/" .. relativeFileName)
                         table.insert(testPaths, origDir .. "/Audio/" .. relativeFileName)
@@ -618,50 +572,16 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
     return mediaFiles
 end
 
--- 跨平台获取目录路径（同时支持 / 和 \）
-local function GetDirectoryPath(filePath)
-    if not filePath or filePath == "" then
-        return ""
-    end
-    -- 先尝试 Windows 风格 \，再尝试 Unix 风格 /
-    local dir = string.match(filePath, "(.+)\\[^\\]+$") or string.match(filePath, "(.+)/[^/]+$") or ""
-    return dir
-end
-
--- 跨平台路径拼接
-local function JoinPath(base, ...)
-    if not base or base == "" then
-        return ""
-    end
-    
-    local sep = "/"
-    if IsWindows() then
-        sep = "\\"
-    end
-    
-    local result = base
-    for _, part in ipairs({...}) do
-        if part and part ~= "" then
-            -- 移除 part 开头的分隔符
-            part = string.gsub(part, "^[/\\]+", "")
-            -- 确保 result 末尾没有分隔符
-            result = string.gsub(result, "[/\\]+$", "")
-            result = result .. sep .. part
-        end
-    end
-    return result
-end
-
 -- 保存工程并复制媒体文件到指定路径（使用Reaper内置功能）
 function SaveProjectWithMedia(targetPath)
     reaper.ShowConsoleMsg("保存工程到: " .. targetPath .. "\n")
 
-    -- 获取项目目录（跨平台）
-    local projectDir = GetDirectoryPath(targetPath)
+    -- 获取项目目录
+    local projectDir = string.match(targetPath, "(.+)/") or ""
 
     -- 创建项目目录（如果不存在）
     if projectDir ~= "" then
-        MakeDir(projectDir)
+        os.execute('mkdir -p "' .. projectDir .. '"')
     end
 
     -- 先保存当前工程状态
@@ -711,7 +631,7 @@ function SaveProjectWithMedia(targetPath)
 
     -- 现在处理媒体文件：从RPP文件中提取路径并复制
     -- 传递原始工程目录以便正确解析相对路径
-    local originalProjDir = GetDirectoryPath(currentProjPath)
+    local originalProjDir = string.match(currentProjPath, "(.+)/") or ""
     local mediaFiles = ExtractMediaFilesFromRPP(targetPath, originalProjDir)
     
     -- 如果没有从RPP中找到，尝试从当前工程中收集
@@ -721,7 +641,7 @@ function SaveProjectWithMedia(targetPath)
 
         -- 获取所有媒体文件并复制
         local trackCount = reaper.CountTracks(0)
-        local currentProjDir = GetDirectoryPath(currentProjPath)
+        local currentProjDir = string.match(currentProjPath, "(.+)/") or ""
 
         reaper.ShowConsoleMsg("开始收集媒体文件...\n")
         reaper.ShowConsoleMsg("当前工程目录: " .. (currentProjDir or "未知") .. "\n")
@@ -826,22 +746,23 @@ function SaveProjectWithMedia(targetPath)
     end
     
     -- 复制媒体文件到项目目录的Audio文件夹
-    local audioDir = JoinPath(projectDir, "Audio")
-    MakeDir(audioDir)
+    local audioDir = projectDir .. "/Audio"
+    os.execute('mkdir -p "' .. audioDir .. '"')
     
     local copiedCount = 0
     for mediaPath, baseName in pairs(mediaFiles) do
         -- 目标路径在Audio文件夹中
-        local targetMediaPath = JoinPath(audioDir, baseName)
+        local targetMediaPath = audioDir .. "/" .. baseName
         
         -- 检查源文件是否存在
         local sourceFile = io.open(mediaPath, "r")
         if sourceFile then
             sourceFile:close()
             
-            -- 复制文件到Audio文件夹（使用跨平台函数）
+            -- 复制文件到Audio文件夹
+            local copyCmd = string.format('cp "%s" "%s"', mediaPath, targetMediaPath)
             reaper.ShowConsoleMsg(string.format("复制: %s -> %s\n", baseName, targetMediaPath))
-            CopyFile(mediaPath, targetMediaPath)
+            os.execute(copyCmd)
             
             -- 验证复制是否成功
             local targetFile = io.open(targetMediaPath, "r")
@@ -1122,7 +1043,7 @@ end
 -- 创建临时渲染预设文件（基于用户的OGG预设）
 function CreateTempRenderPreset(rppPath, outputPath, startTime, endTime)
     -- 预设文件路径（放在输出目录中）
-    local outputDir = GetDirectoryPath(outputPath)
+    local outputDir = string.match(outputPath, "(.+)/") or ""
     local presetPath = outputDir .. "/_temp_render_preset.ini"
     
     -- 从用户的预设文件中提取关键设置
@@ -1165,11 +1086,11 @@ end
 -- 创建临时渲染脚本（使用预设）
 function CreateTempRenderScript(rppPath, outputPath, presetPath, presetName, startTime, endTime)
     local scriptPath = outputPath .. "_render_script.lua"
-    local scriptDir = GetDirectoryPath(scriptPath)
+    local scriptDir = string.match(scriptPath, "(.+)/") or ""
     
     -- 创建临时目录（如果需要）
     if scriptDir ~= "" then
-        MakeDir(scriptDir)
+        os.execute('mkdir -p "' .. scriptDir .. '"')
     end
     
     -- 从输出路径提取时间范围（如果提供了）
@@ -1778,7 +1699,7 @@ function ExportCapsule()
         local synesthOutputPath = os.getenv("SYNESTH_CAPSULE_OUTPUT") or
                                    reaper.GetResourcePath() .. "/Scripts/Reaper_Sonic_Capsule/output"
 
-        local projectDir = GetDirectoryPath(currentProjectPath)
+        local projectDir = string.match(currentProjectPath, "(.+)/") or ""
 
         -- 尝试多个可能的 Synesth 项目路径
         local possiblePaths = {
@@ -1796,7 +1717,7 @@ function ExportCapsule()
         for idx, path in ipairs(possiblePaths) do
             if path ~= nil then
                 -- 尝试创建目录
-                MakeDir(path)
+                os.execute('mkdir -p "' .. path .. '"')
                 -- 检查是否成功
                 local f = io.open(path .. "/.test", "w")
                 if f ~= nil then
@@ -1856,7 +1777,7 @@ function ExportCapsule()
 
     local outputDir = outputBaseDir .. "/" .. capsuleName
     reaper.ShowConsoleMsg("创建输出目录: " .. outputDir .. "\n")
-    MakeDir(outputDir)
+    os.execute('mkdir -p "' .. outputDir .. '"')
 
     -- 2. 全量快照：将当前工程另存为临时文件
     -- 保存当前工程（如果有未保存的修改，REAPER会弹出对话框）

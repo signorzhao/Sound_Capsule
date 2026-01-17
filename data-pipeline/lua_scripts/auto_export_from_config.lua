@@ -18,26 +18,9 @@ local function Log(msg)
     end
 end
 
--- 获取跨平台的临时目录
-local function GetTempDir()
-    local sep = package.config:sub(1,1)  -- 获取路径分隔符
-    if sep == "\\" then
-        -- Windows
-        local temp = os.getenv("TEMP") or os.getenv("TMP") or "C:\\Temp"
-        return temp .. "\\synest_export"
-    else
-        -- macOS/Linux
-        return "/tmp/synest_export"
-    end
-end
-
-local TEMP_DIR = GetTempDir()
-
 local function LoadConfig()
     -- 从配置文件读取导出参数
-    local config_path = TEMP_DIR .. "/webui_export_config.json"
-    -- Windows 路径需要用正斜杠或双反斜杠
-    config_path = config_path:gsub("\\", "/")
+    local config_path = "/tmp/synest_export/webui_export_config.json"
     local file = io.open(config_path, "r")
 
     if not file then
@@ -88,8 +71,7 @@ local function LoadConfig()
 end
 
 local function WriteResult(success, capsule_name, error_msg)
-    local result_path = TEMP_DIR .. "/export_result.json"
-    result_path = result_path:gsub("\\", "/")  -- 确保使用正斜杠
+    local result_path = "/tmp/synest_export/export_result.json"
     local result_file = io.open(result_path, "w")
 
     Log("=== [WriteResult] 开始写入结果文件 ===\n")
@@ -185,35 +167,14 @@ local function Main()
     -- 尝试加载
     local main_export_func, load_err = loadfile(main_script)
     if not main_export_func then
-        Log("  相对路径加载失败: " .. (load_err or "未知错误") .. "\n")
-        Log("  脚本目录: " .. (script_dir or "nil") .. "\n")
-        
-        -- 尝试其他可能的路径
-        local alt_paths = {
-            script_dir .. "main_export2.lua",
-            script_dir .. "/main_export2.lua",
-            script_dir .. "\\main_export2.lua",
-        }
-        
-        -- 添加 Windows 常见路径
-        local sep = package.config:sub(1,1)
-        if sep == "\\" then
-            -- Windows: 尝试从资源路径加载
-            local resource_base = reaper.GetResourcePath()
-            table.insert(alt_paths, resource_base .. "\\Scripts\\main_export2.lua")
-        end
-        
-        for _, alt_path in ipairs(alt_paths) do
-            Log("  尝试路径: " .. alt_path .. "\n")
-            main_export_func = loadfile(alt_path)
-            if main_export_func then
-                Log("  ✓ 成功从 " .. alt_path .. " 加载\n")
-                break
-            end
-        end
+        Log("  相对路径加载失败，尝试绝对路径...\n")
+        -- 尝试绝对路径
+        local alt_path = "/Users/ianzhao/Desktop/Sound_Capsule/synesth/data-pipeline/lua_scripts/main_export2.lua"
+        Log("  绝对路径: " .. alt_path .. "\n")
+        main_export_func = loadfile(alt_path)
 
         if not main_export_func then
-            local error_msg = "无法加载主导出脚本: " .. (load_err or "未知错误") .. "\n请确保 main_export2.lua 与 auto_export_from_config.lua 在同一目录"
+            local error_msg = "无法加载主导出脚本: " .. (load_err or "未知错误")
             Log("✗ " .. error_msg .. "\n")
             WriteResult(false, nil, error_msg)
             return
