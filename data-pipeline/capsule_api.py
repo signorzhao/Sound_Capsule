@@ -3945,6 +3945,35 @@ if __name__ == '__main__':
                 except Exception as e:
                     print(f"   ✗ 插入默认胶囊类型失败: {e}")
             
+            # 插入默认棱镜数据（如果是新创建的）
+            if 'prisms' in tables_to_create:
+                try:
+                    default_prisms = [
+                        ('texture', 'Texture / Timbre', '描述声音的质感特征', 
+                         '{"x_label": {"pos": "Light / 光明治愈", "neg": "Dark / 黑暗恐惧"}, "y_label": {"pos": "Playful / 趣味活跃", "neg": "Serious / 写实严肃"}}',
+                         '[]', '[]', 1),
+                        ('source', 'Source & Physics', '描述声音的来源和物理特性',
+                         '{"x_label": {"pos": "Transient / 瞬态冲击", "neg": "Static / 静态铺底"}, "y_label": {"pos": "Sci-Fi / 科幻合成", "neg": "Organic / 有机自然"}}',
+                         '[]', '[]', 1),
+                        ('materiality', 'Materiality / Room', '描述声音的材质和空间感',
+                         '{"x_label": {"pos": "Distant / 遥远湿润", "neg": "Close / 贴耳干涩"}, "y_label": {"pos": "Warm / 暖软吸音", "neg": "Cold / 冷硬反射"}}',
+                         '[]', '[]', 1),
+                        ('temperament', 'Temperament', '描述声音的情绪和性格',
+                         '{"x_label": {"pos": "Calm / 平静", "neg": "Intense / 激烈"}, "y_label": {"pos": "Positive / 积极", "neg": "Negative / 消极"}}',
+                         '[]', '[]', 1),
+                        ('spectral', 'Spectral', '描述声音的频谱特征',
+                         '{"x_label": {"pos": "Bright / 明亮", "neg": "Dark / 暗淡"}, "y_label": {"pos": "Thin / 纤细", "neg": "Thick / 厚重"}}',
+                         '[]', '[]', 1)
+                    ]
+                    for prism in default_prisms:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO prisms (id, name, description, axis_config, anchors, field_data, version)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, prism)
+                    print(f"   ✓ 插入默认棱镜数据 ({len(default_prisms)} 个)")
+                except Exception as e:
+                    print(f"   ✗ 插入默认棱镜数据失败: {e}")
+            
             # 自动添加缺失的字段
             if health['missing_fields']:
                 # 字段类型映射（根据用途推断）
@@ -3984,6 +4013,39 @@ if __name__ == '__main__':
             print("✅ 数据库修复完成！")
         else:
             print("✅ 数据库 schema 完整")
+        
+        # 检查 prisms 表是否为空，如果为空则插入默认数据
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM prisms")
+        prisms_count = cursor.fetchone()[0]
+        if prisms_count == 0:
+            print("⚠️  prisms 表为空，插入默认棱镜数据...")
+            default_prisms = [
+                ('texture', 'Texture / Timbre', '描述声音的质感特征', 
+                 '{"x_label": {"pos": "Light / 光明治愈", "neg": "Dark / 黑暗恐惧"}, "y_label": {"pos": "Playful / 趣味活跃", "neg": "Serious / 写实严肃"}}',
+                 '[]', '[]', 1),
+                ('source', 'Source & Physics', '描述声音的来源和物理特性',
+                 '{"x_label": {"pos": "Transient / 瞬态冲击", "neg": "Static / 静态铺底"}, "y_label": {"pos": "Sci-Fi / 科幻合成", "neg": "Organic / 有机自然"}}',
+                 '[]', '[]', 1),
+                ('materiality', 'Materiality / Room', '描述声音的材质和空间感',
+                 '{"x_label": {"pos": "Distant / 遥远湿润", "neg": "Close / 贴耳干涩"}, "y_label": {"pos": "Warm / 暖软吸音", "neg": "Cold / 冷硬反射"}}',
+                 '[]', '[]', 1),
+                ('temperament', 'Temperament', '描述声音的情绪和性格',
+                 '{"x_label": {"pos": "Calm / 平静", "neg": "Intense / 激烈"}, "y_label": {"pos": "Positive / 积极", "neg": "Negative / 消极"}}',
+                 '[]', '[]', 1),
+                ('spectral', 'Spectral', '描述声音的频谱特征',
+                 '{"x_label": {"pos": "Bright / 明亮", "neg": "Dark / 暗淡"}, "y_label": {"pos": "Thin / 纤细", "neg": "Thick / 厚重"}}',
+                 '[]', '[]', 1)
+            ]
+            for prism in default_prisms:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO prisms (id, name, description, axis_config, anchors, field_data, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, prism)
+            conn.commit()
+            print(f"   ✓ 已插入 {len(default_prisms)} 个默认棱镜")
+        conn.close()
 
     # 启动服务器（使用命令行参数中的端口）
     port = ARGS.port
