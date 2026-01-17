@@ -712,10 +712,15 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           if (result.success) {
             toast.update(toastId, '已上传到云端', 'success');
             toastFinalized = true;
-            // 刷新胶囊列表
-            // window.location.reload();
-            console.error("🛑 [DEBUG] 拦截到重启请求（上传成功后刷新）", { capsule });
-            // 手动刷新胶囊列表而不是重启整个应用
+            
+            // 🔥 清除该胶囊的状态缓存，强制 UI 刷新
+            setAssetStatusCache(prev => {
+              const newCache = { ...prev };
+              delete newCache[capsule.id];
+              return newCache;
+            });
+            
+            // 手动刷新胶囊列表
             window.dispatchEvent(new CustomEvent('sync-completed'));
             onSyncComplete && onSyncComplete();
           } else {
@@ -817,6 +822,14 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           if (result.success) {
             toast.update(toastId, '已重新上传到云端', 'success');
             toastFinalized = true;
+            
+            // 🔥 清除该胶囊的状态缓存，强制 UI 刷新
+            setAssetStatusCache(prev => {
+              const newCache = { ...prev };
+              delete newCache[capsule.id];
+              return newCache;
+            });
+            
             // 刷新胶囊列表
             window.dispatchEvent(new CustomEvent('sync-completed'));
             onSyncComplete && onSyncComplete();
@@ -884,7 +897,24 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   const handleDownloadComplete = () => {
     toast.success('下载完成，正在打开 REAPER...');
     if (downloadDialog) {
-      const capsule = capsules.find(c => c.id === downloadDialog.capsuleId);
+      const capsuleId = downloadDialog.capsuleId;
+      const capsule = capsules.find(c => c.id === capsuleId);
+      
+      // 🔥 清除该胶囊的状态缓存，强制重新获取
+      setAssetStatusCache(prev => {
+        const newCache = { ...prev };
+        delete newCache[capsuleId];
+        return newCache;
+      });
+      
+      // 🔥 重新获取该胶囊的状态
+      getAssetStatus(capsuleId);
+      
+      // 🔥 触发父组件刷新（如果提供了回调）
+      if (onSyncComplete) {
+        onSyncComplete();
+      }
+      
       if (capsule) {
         openCapsuleInReaper(capsule, false);
       }

@@ -98,7 +98,7 @@ def import_capsule_from_output(capsule_info):
     # 插入数据库
     capsule_id = db.insert_capsule(capsule_data)
 
-    # 检查本地是否有 Audio 文件夹，修正 asset_status
+    # 检查本地是否有 Audio 文件夹，修正 asset_status 和 audio_uploaded
     try:
         audio_dir = capsule_info['dir'] / "Audio"
         has_audio_files = False
@@ -111,6 +111,11 @@ def import_capsule_from_output(capsule_info):
         asset_status = 'local' if has_audio_files else 'cloud_only'
         if capsule_id:
             db.update_asset_status(capsule_id, asset_status)
+            # 🔥 如果本地有 Audio 文件，设置 audio_uploaded = 1
+            if has_audio_files:
+                db.execute("""
+                    UPDATE capsules SET audio_uploaded = 1 WHERE id = ?
+                """, [capsule_id])
             status_label = "已下载" if asset_status == 'local' else "仅元数据"
             print(f"✓ 资产状态判定: {capsule_name} -> {status_label}")
     except Exception as e:

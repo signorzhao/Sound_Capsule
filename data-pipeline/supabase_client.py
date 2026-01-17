@@ -89,11 +89,26 @@ class SupabaseClient:
     # 胶囊操作
     # ==========================================
 
-    def get_cloud_capsule_by_local_id(self, user_id: str, local_id: int) -> Optional[Dict[str, Any]]:
-        """根据本地 ID 获取云端胶囊记录"""
+    def get_cloud_capsule_by_local_id(self, user_id: str, local_id: int, capsule_name: str = None) -> Optional[Dict[str, Any]]:
+        """
+        根据本地 ID 或胶囊名称获取云端胶囊记录
+        
+        优先使用 local_id 匹配，如果失败则尝试使用 name 匹配（防止切换文件夹后 ID 变化）
+        """
         try:
-            result = self.client.table('cloud_capsules').select('id, version, metadata').eq('user_id', user_id).eq('local_id', local_id).execute()
-            return result.data[0] if result.data else None
+            # 1. 优先使用 local_id 匹配
+            result = self.client.table('cloud_capsules').select('id, version, metadata, local_id').eq('user_id', user_id).eq('local_id', local_id).execute()
+            if result.data:
+                return result.data[0]
+            
+            # 2. 如果 local_id 匹配失败，尝试使用 name 匹配（更稳定）
+            if capsule_name:
+                result = self.client.table('cloud_capsules').select('id, version, metadata, local_id').eq('user_id', user_id).eq('name', capsule_name).execute()
+                if result.data:
+                    print(f"   ℹ️ 通过名称匹配到云端胶囊: {capsule_name}")
+                    return result.data[0]
+            
+            return None
         except Exception as e:
             print(f"✗ 获取云端胶囊失败: {e}")
             return None
@@ -151,18 +166,33 @@ class SupabaseClient:
                 'last_write_at': capsule_data.get('last_write_at', datetime.utcnow().isoformat()),
             }
 
-            # 检查是否已存在
-            existing = self.client.table('cloud_capsules').select('id, version').eq('user_id', user_id).eq('local_id', capsule_data.get('id')).execute()
+            # 检查是否已存在（使用多级匹配：local_id -> name）
+            capsule_name = capsule_data.get('name')
+            existing = None
+            
+            # 1. 优先使用 local_id 匹配
+            result_by_id = self.client.table('cloud_capsules').select('id, version').eq('user_id', user_id).eq('local_id', capsule_data.get('id')).execute()
+            if result_by_id.data:
+                existing = result_by_id.data[0]
+            
+            # 2. 如果 local_id 匹配失败，尝试使用 name 匹配（更稳定）
+            if not existing and capsule_name:
+                result_by_name = self.client.table('cloud_capsules').select('id, version').eq('user_id', user_id).eq('name', capsule_name).execute()
+                if result_by_name.data:
+                    existing = result_by_name.data[0]
+                    print(f"   ℹ️ 通过名称匹配到已有胶囊: {capsule_name}")
 
-            if existing.data:
+            if existing:
                 # 更新现有记录
-                cloud_record['version'] = existing.data[0]['version'] + 1
-                result = self.client.table('cloud_capsules').update(cloud_record).eq('id', existing.data[0]['id']).execute()
-                print(f"✓ 更新胶囊 {capsule_data.get('name')} (版本 {cloud_record['version']})")
+                cloud_record['version'] = existing['version'] + 1
+                # 同时更新 local_id 以保持同步
+                cloud_record['local_id'] = capsule_data.get('id')
+                result = self.client.table('cloud_capsules').update(cloud_record).eq('id', existing['id']).execute()
+                print(f"✓ 更新胶囊 {capsule_name} (版本 {cloud_record['version']})")
             else:
                 # 插入新记录
                 result = self.client.table('cloud_capsules').insert(cloud_record).execute()
-                print(f"✓ 上传胶囊 {capsule_data.get('name')}")
+                print(f"✓ 上传胶囊 {capsule_name}")
 
             return result.data[0] if result.data else None
 

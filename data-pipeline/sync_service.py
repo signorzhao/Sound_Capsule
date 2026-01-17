@@ -876,8 +876,16 @@ class SyncService:
 
                     for cloud_capsule in cloud_capsules:
                         try:
-                            # 检查本地是否存在
+                            # 检查本地是否存在（多级匹配：cloud_id -> name）
                             local_capsule = self._get_local_capsule_by_cloud_id(cloud_capsule['id'])
+                            
+                            # 🔥 如果 cloud_id 匹配失败，尝试用 name 匹配（防止本地扫描的胶囊未关联）
+                            if not local_capsule:
+                                local_capsule = self._get_local_capsule_by_name(cloud_capsule['name'])
+                                if local_capsule:
+                                    # 关联 cloud_id
+                                    self._set_capsule_cloud_id(local_capsule['id'], cloud_capsule['id'])
+                                    logger.info(f"   ℹ️ 通过名称匹配并关联 cloud_id: {cloud_capsule['name']}")
 
                             if local_capsule:
                                 # 更新本地元数据（不覆盖本地修改）
@@ -1159,7 +1167,8 @@ class SyncService:
 
                         # 上传元数据到 Supabase Database（仅 keywords 更新）
                         print(f"   🔍 [DEBUG] 准备上传元数据到 Database...")
-                        existing_cloud = supabase.get_cloud_capsule_by_local_id(user_id, capsule_data.get('id'))
+                        # 🔥 传入胶囊名称，防止切换文件夹后 local_id 变化导致重复上传
+                        existing_cloud = supabase.get_cloud_capsule_by_local_id(user_id, capsule_data.get('id'), capsule_name)
                         result = None
                         if existing_cloud:
                             cloud_id = existing_cloud.get('id')
@@ -1828,6 +1837,60 @@ class SyncService:
         finally:
             conn.close()
 
+    def _get_local_capsule_by_name(self, name: str) -> Optional[Dict]:
+        """
+        根据名称查找本地胶囊（用于匹配本地扫描创建的胶囊）
+        
+        Args:
+            name: 胶囊名称
+            
+        Returns:
+            本地胶囊字典，不存在返回 None
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, cloud_status, asset_status, owner_supabase_user_id, cloud_id
+                FROM capsules
+                WHERE name = ?
+            """, (name,))
+
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+        finally:
+            conn.close()
+
+    def _set_capsule_cloud_id(self, local_id: int, cloud_id: str) -> bool:
+        """
+        设置胶囊的 cloud_id（关联本地扫描的胶囊与云端记录）
+        
+        Args:
+            local_id: 本地胶囊 ID
+            cloud_id: 云端胶囊 ID
+            
+        Returns:
+            是否成功
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            # 🔥 同时设置 audio_uploaded = 1，因为云端已有完整数据
+            cursor.execute("""
+                UPDATE capsules
+                SET cloud_id = ?, cloud_status = 'synced', audio_uploaded = 1
+                WHERE id = ?
+            """, (cloud_id, local_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            conn.rollback()
+            print(f"❌ 设置 cloud_id 失败: {e}")
+            return False
+        finally:
+            conn.close()
+
     def _update_local_capsule_metadata(self, local_id: int, cloud_data: Dict) -> bool:
         """
         更新本地胶囊元数据（不覆盖 asset_status）
@@ -2024,14 +2087,40 @@ class SyncService:
                     conn.commit()
                     return existing_id
 
-            # 插入新胶囊（asset_status 默认为 'cloud_only'）
+            # 插入新胶囊
+            # rpp_file 使用默认命名规则：{capsule_name}.rpp
+            rpp_file = f"{cloud_name}.rpp" if cloud_name else None
+            
+            # 🔥 检测本地是否已有文件，动态设置 asset_status
+            asset_status = 'cloud_only'  # 默认
+            try:
+                from common import PathManager
+                pm = PathManager.get_instance()
+                export_dir = pm.export_dir
+                capsule_dir = Path(export_dir) / cloud_file_path
+                
+                # 检测本地文件是否存在
+                if capsule_dir.exists():
+                    # 检查是否有 Audio 文件夹（完整资产）
+                    audio_dir = capsule_dir / "Audio"
+                    if audio_dir.exists() and list(audio_dir.glob("*.wav")):
+                        asset_status = 'local'
+                        logger.info(f"   ℹ️ 检测到本地完整资产: {cloud_name} -> local")
+                    # 检查是否有预览文件（轻量资产）
+                    elif preview_audio and (capsule_dir / preview_audio).exists():
+                        asset_status = 'local'  # 有预览文件也算 local
+                        logger.info(f"   ℹ️ 检测到本地预览资产: {cloud_name} -> local")
+            except Exception as e:
+                logger.warning(f"   ⚠️ 检测本地文件失败: {e}")
+            
             cursor.execute("""
                 INSERT INTO capsules (
                     uuid, name, capsule_type, keywords, description, preview_audio, file_path,
-                    cloud_id, cloud_status, asset_status,
+                    rpp_file,
+                    cloud_id, cloud_status, asset_status, audio_uploaded,
                     owner_supabase_user_id,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synced', 'cloud_only', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'synced', ?, 1, ?, ?, ?)
             """, (
                 cloud_uuid,  # 使用云端 ID 作为 uuid
                 cloud_name,
@@ -2040,7 +2129,10 @@ class SyncService:
                 description,
                 preview_audio,  # Phase G2: 添加预览音频文件名
                 cloud_file_path,  # 文件路径默认为 name
+                rpp_file,  # 🔥 添加 RPP 文件名
                 cloud_id,  # cloud_id (Supabase record ID)
+                asset_status,  # 🔥 动态检测的 asset_status
+                # 🔥 audio_uploaded = 1，因为从云端同步的胶囊，Audio 已在云端
                 cloud_data.get('user_id'),  # Phase G: 保存所有者 ID
                 cloud_data.get('created_at'),
                 datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')

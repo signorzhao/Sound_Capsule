@@ -1057,11 +1057,32 @@ def open_in_reaper(capsule_id):
         if not capsule:
             raise APIError(f"胶囊不存在: {capsule_id}", 404)
 
+        # 获取文件路径，处理可能为 None 的情况
+        file_path = capsule.get('file_path') or capsule.get('name')
+        rpp_filename = capsule.get('rpp_file')
+        
+        # 如果 rpp_file 为空，尝试使用胶囊名称构建默认文件名
+        if not rpp_filename:
+            # 尝试查找目录中的 .rpp 文件
+            capsule_dir = capsule_scanner.get_output_dir() / file_path
+            if capsule_dir.exists():
+                rpp_files = list(capsule_dir.glob("*.rpp"))
+                if rpp_files:
+                    rpp_filename = rpp_files[0].name
+                else:
+                    # 使用默认命名规则
+                    rpp_filename = f"{capsule['name']}.rpp"
+            else:
+                rpp_filename = f"{capsule['name']}.rpp"
+        
+        if not file_path:
+            raise APIError("胶囊路径信息缺失", 400)
+
         # 使用 OUTPUT_DIR（用户配置的导出目录）而不是 CAPSULE_ROOT
-        rpp_file = capsule_scanner.get_output_dir() / capsule['file_path'] / capsule['rpp_file']
+        rpp_file = capsule_scanner.get_output_dir() / file_path / rpp_filename
 
         if not rpp_file.exists():
-            raise APIError("RPP 文件不存在", 404)
+            raise APIError(f"RPP 文件不存在: {rpp_file}", 404)
 
         # 转换为绝对路径
         rpp_file = rpp_file.resolve()
