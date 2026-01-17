@@ -147,14 +147,29 @@ npm install
 npm install -g @tauri-apps/cli
 ```
 
-### 4. 配置 Supabase（可选，云同步功能）
+### 4. 配置 Supabase（云同步和认证必需）
+
+> **重要**：`.env.supabase` 文件被 `.gitignore` 忽略，**不会通过 Git 同步**。每台开发机器需要手动创建。
 
 创建 `data-pipeline/.env.supabase` 文件：
 
 ```env
-SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_anon_key
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
+
+**获取这些值**：
+1. 登录 [Supabase Dashboard](https://app.supabase.com/)
+2. 选择项目 → Settings → API
+3. `SUPABASE_URL`: 复制 "Project URL"
+4. `SUPABASE_SERVICE_ROLE_KEY`: 复制 "service_role" key（**不是** anon key）
+
+**验证配置**：启动后端时，日志应显示：
+```
+✓ Supabase 客户端已初始化: https://your-project-id.supabase.co
+```
+
+如果显示 `无法初始化 Supabase 客户端: Supabase 配置缺失`，说明配置文件未找到或格式错误。
 
 ---
 
@@ -279,11 +294,54 @@ netstat -ano | findstr :5002
 ### Q: 云同步功能不工作
 
 **A**: 
-1. 确保已配置 `data-pipeline/.env.supabase` 文件
-2. 确保已安装 supabase 包：
+1. 确保已配置 `data-pipeline/.env.supabase` 文件（每台机器需要手动创建）
+2. 确保使用的是 `SUPABASE_SERVICE_ROLE_KEY`（不是 anon key）
+3. 确保已安装 supabase 包：
    ```powershell
    pip install supabase
    ```
+
+### Q: 登录后提示"no such table"或"no such column"错误
+
+**A**: 数据库 schema 不完整或过时。删除旧数据库后重启后端，让它自动重新初始化：
+
+```powershell
+# 删除旧数据库
+Remove-Item "$env:USERPROFILE\.soundcapsule\database\capsules.db" -Force
+
+# 重启后端（会自动创建新数据库）
+cd data-pipeline
+.\venv\Scripts\activate
+python capsule_api.py
+```
+
+启动时应看到日志：`数据库不存在，正在初始化... ✓ 数据库初始化成功`
+
+### Q: 胶囊类型（颜色/名称）与 Mac 不一致
+
+**A**: 这是数据库 schema 不一致导致的。请按上面的方法删除数据库重新初始化，然后重新登录让云同步拉取最新数据。
+
+### Q: 找不到 REAPER 可执行文件
+
+**A**: REAPER 路径需要在初始化设置中配置，或手动编辑配置文件：
+
+```powershell
+# 配置文件路径
+$env:APPDATA\com.soundcapsule.app\config.json
+```
+
+编辑该文件，添加或修改 `reaper_path`：
+```json
+{
+  "reaper_path": "C:\\Program Files\\REAPER (x64)\\reaper.exe",
+  "export_dir": "..."
+}
+```
+
+常见 REAPER 安装路径：
+- `C:\Program Files\REAPER (x64)\reaper.exe`
+- `C:\Program Files\REAPER\reaper.exe`
+- `C:\Program Files (x86)\REAPER\reaper.exe`
 
 ### Q: 首次运行 Tauri 编译很慢
 
@@ -322,7 +380,52 @@ Sound_Capsule/
 
 ---
 
-## 六、编译发布版本（高级）
+## 六、从 Mac 同步代码到 Windows
+
+如果你主要在 Mac 上开发，需要在 Windows 上同步测试，请注意以下事项：
+
+### 1. 拉取最新代码
+
+```powershell
+cd C:\WIN_DEV\Sound_Capsule  # 或你的项目路径
+git pull origin main
+```
+
+### 2. 手动创建被 gitignore 忽略的文件
+
+以下文件不会通过 Git 同步，需要手动创建：
+
+| 文件 | 路径 | 说明 |
+|------|------|------|
+| `.env.supabase` | `data-pipeline/.env.supabase` | Supabase 配置（从 Mac 复制内容） |
+| `config.json` | `%APPDATA%\com.soundcapsule.app\config.json` | 用户配置（首次登录时自动创建） |
+| `capsules.db` | `%USERPROFILE%\.soundcapsule\database\capsules.db` | 本地数据库（自动创建） |
+
+### 3. Schema 更新后重置数据库
+
+如果 Mac 上更新了 `capsule_schema.sql`，Windows 的旧数据库可能不兼容。删除后重新初始化：
+
+```powershell
+Remove-Item "$env:USERPROFILE\.soundcapsule\database\capsules.db" -Force
+```
+
+### 4. 重新触发初始化设置
+
+如果需要重新进行初始化设置（选择导出目录、REAPER 路径等）：
+
+```powershell
+# 删除用户配置
+Remove-Item "$env:APPDATA\com.soundcapsule.app" -Recurse -Force
+
+# 删除本地配置
+Remove-Item "$env:USERPROFILE\.soundcapsule" -Recurse -Force
+
+# 重启应用，会触发初始化设置向导
+```
+
+---
+
+## 七、编译发布版本（高级）
 
 如果需要打包分发，需要将 Python 后端编译为 Windows 可执行文件，并集成到 Tauri sidecar 中。
 
@@ -383,6 +486,11 @@ npm run tauri build
 
 ## 更新日志
 
+- **2026-01-17**: 新增跨平台同步章节，完善常见问题：
+  - 添加 Supabase 配置详细说明（SERVICE_ROLE_KEY）
+  - 添加数据库 schema 更新后重置方法
+  - 添加 REAPER 路径配置说明
+  - 添加"从 Mac 同步代码到 Windows"章节
 - **2026-01-16**: 完善文档：添加安装须知、PowerShell/CMD 双版本语法、依赖安装故障排查、sidecar 集成说明
 - **2026-01-16**: 修复 API 启动参数说明，添加 supabase 依赖，更新启动脚本
 - **2026-01-16**: 初始版本，支持 Windows 10/11 开发环境配置
