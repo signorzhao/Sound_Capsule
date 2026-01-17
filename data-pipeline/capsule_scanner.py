@@ -113,6 +113,7 @@ def import_capsule_from_output(capsule_info):
             db.update_asset_status(capsule_id, asset_status)
             # 🔥 如果本地有 Audio 文件，设置 audio_uploaded = 1
             if has_audio_files:
+                db.connect()  # 确保连接是打开的
                 db.conn.execute("""
                     UPDATE capsules SET audio_uploaded = 1 WHERE id = ?
                 """, [capsule_id])
@@ -125,6 +126,7 @@ def import_capsule_from_output(capsule_info):
     # 如果是已存在的胶囊，更新类型
     if capsule_id:
         try:
+            db.connect()  # 确保连接是打开的
             db.conn.execute("""
                 UPDATE capsules SET capsule_type = ? WHERE id = ?
             """, [capsule_type, capsule_id])
