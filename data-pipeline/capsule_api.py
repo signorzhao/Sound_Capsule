@@ -297,6 +297,10 @@ def find_reaper_executable():
 def get_current_user():
     """
     从请求中获取当前用户
+    
+    支持两种认证方式：
+    1. Supabase Auth：token 验证后返回 supabase_user_id
+    2. 本地认证：token 验证后返回 user_id（整数）
 
     Returns:
         用户信息字典或 None
@@ -322,8 +326,26 @@ def get_current_user():
     if not payload:
         raise APIError('Token 无效或已过期', 401)
 
-    # 获取用户信息
-    user = auth_manager.get_user_by_id(payload['user_id'])
+    # 根据 payload 类型获取用户信息
+    user = None
+    
+    # 优先使用 supabase_user_id（Supabase Auth）
+    if 'supabase_user_id' in payload:
+        user = auth_manager.get_user_by_supabase_id(payload['supabase_user_id'])
+        
+        # 如果本地没有缓存，直接返回 payload 中的信息
+        if not user:
+            user = {
+                'id': payload['supabase_user_id'],
+                'supabase_user_id': payload['supabase_user_id'],
+                'username': payload.get('username'),
+                'email': payload.get('email'),
+                'display_name': payload.get('username')
+            }
+    
+    # 降级到本地 user_id（本地认证）
+    elif 'user_id' in payload:
+        user = auth_manager.get_user_by_id(payload['user_id'])
 
     if not user:
         raise APIError('用户不存在', 401)

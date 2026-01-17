@@ -579,6 +579,34 @@ class AuthManager:
         finally:
             conn.close()
 
+    def get_user_by_supabase_id(self, supabase_user_id: str) -> Optional[Dict[str, Any]]:
+        """
+        根据 Supabase User ID 获取用户信息
+        
+        用于 Supabase Auth 认证后查找本地缓存的用户
+
+        Args:
+            supabase_user_id: Supabase User UUID
+
+        Returns:
+            用户信息字典或 None
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, username, email, display_name, avatar_url, bio,
+                       created_at, last_login, preferences, supabase_user_id
+                FROM users
+                WHERE supabase_user_id = ? AND is_active = 1
+            """, (supabase_user_id,))
+
+            user = cursor.fetchone()
+            return dict(user) if user else None
+
+        finally:
+            conn.close()
+
     def update_user_profile(self, user_id: int, updates: Dict[str, Any]) -> Dict[str, Any]:
         """
         更新用户资料
