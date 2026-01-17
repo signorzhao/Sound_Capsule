@@ -489,7 +489,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
         return mediaFiles
     end
     
-    local rppDir = string.match(rppPath, "(.+)/") or ""
+    local rppDir = GetDirectoryPath(rppPath)
     local content = file:read("*all")
     file:close()
     
@@ -574,7 +574,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 -- 尝试原始工程目录
                 local _, origProj = reaper.EnumProjects(-1, "")
                 if origProj ~= "" then
-                    local origDir = string.match(origProj, "(.+)/") or ""
+                    local origDir = GetDirectoryPath(origProj)
                     if origDir ~= "" then
                         table.insert(testPaths, origDir .. "/audio/" .. relativeFileName)
                         table.insert(testPaths, origDir .. "/Audio/" .. relativeFileName)
@@ -618,12 +618,46 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
     return mediaFiles
 end
 
+-- 跨平台获取目录路径（同时支持 / 和 \）
+local function GetDirectoryPath(filePath)
+    if not filePath or filePath == "" then
+        return ""
+    end
+    -- 先尝试 Windows 风格 \，再尝试 Unix 风格 /
+    local dir = string.match(filePath, "(.+)\\[^\\]+$") or string.match(filePath, "(.+)/[^/]+$") or ""
+    return dir
+end
+
+-- 跨平台路径拼接
+local function JoinPath(base, ...)
+    if not base or base == "" then
+        return ""
+    end
+    
+    local sep = "/"
+    if IsWindows() then
+        sep = "\\"
+    end
+    
+    local result = base
+    for _, part in ipairs({...}) do
+        if part and part ~= "" then
+            -- 移除 part 开头的分隔符
+            part = string.gsub(part, "^[/\\]+", "")
+            -- 确保 result 末尾没有分隔符
+            result = string.gsub(result, "[/\\]+$", "")
+            result = result .. sep .. part
+        end
+    end
+    return result
+end
+
 -- 保存工程并复制媒体文件到指定路径（使用Reaper内置功能）
 function SaveProjectWithMedia(targetPath)
     reaper.ShowConsoleMsg("保存工程到: " .. targetPath .. "\n")
 
-    -- 获取项目目录
-    local projectDir = string.match(targetPath, "(.+)/") or ""
+    -- 获取项目目录（跨平台）
+    local projectDir = GetDirectoryPath(targetPath)
 
     -- 创建项目目录（如果不存在）
     if projectDir ~= "" then
@@ -677,7 +711,7 @@ function SaveProjectWithMedia(targetPath)
 
     -- 现在处理媒体文件：从RPP文件中提取路径并复制
     -- 传递原始工程目录以便正确解析相对路径
-    local originalProjDir = string.match(currentProjPath, "(.+)/") or ""
+    local originalProjDir = GetDirectoryPath(currentProjPath)
     local mediaFiles = ExtractMediaFilesFromRPP(targetPath, originalProjDir)
     
     -- 如果没有从RPP中找到，尝试从当前工程中收集
@@ -687,7 +721,7 @@ function SaveProjectWithMedia(targetPath)
 
         -- 获取所有媒体文件并复制
         local trackCount = reaper.CountTracks(0)
-        local currentProjDir = string.match(currentProjPath, "(.+)/") or ""
+        local currentProjDir = GetDirectoryPath(currentProjPath)
 
         reaper.ShowConsoleMsg("开始收集媒体文件...\n")
         reaper.ShowConsoleMsg("当前工程目录: " .. (currentProjDir or "未知") .. "\n")
@@ -792,13 +826,13 @@ function SaveProjectWithMedia(targetPath)
     end
     
     -- 复制媒体文件到项目目录的Audio文件夹
-    local audioDir = projectDir .. "/Audio"
+    local audioDir = JoinPath(projectDir, "Audio")
     MakeDir(audioDir)
     
     local copiedCount = 0
     for mediaPath, baseName in pairs(mediaFiles) do
         -- 目标路径在Audio文件夹中
-        local targetMediaPath = audioDir .. "/" .. baseName
+        local targetMediaPath = JoinPath(audioDir, baseName)
         
         -- 检查源文件是否存在
         local sourceFile = io.open(mediaPath, "r")
@@ -1088,7 +1122,7 @@ end
 -- 创建临时渲染预设文件（基于用户的OGG预设）
 function CreateTempRenderPreset(rppPath, outputPath, startTime, endTime)
     -- 预设文件路径（放在输出目录中）
-    local outputDir = string.match(outputPath, "(.+)/") or ""
+    local outputDir = GetDirectoryPath(outputPath)
     local presetPath = outputDir .. "/_temp_render_preset.ini"
     
     -- 从用户的预设文件中提取关键设置
@@ -1131,7 +1165,7 @@ end
 -- 创建临时渲染脚本（使用预设）
 function CreateTempRenderScript(rppPath, outputPath, presetPath, presetName, startTime, endTime)
     local scriptPath = outputPath .. "_render_script.lua"
-    local scriptDir = string.match(scriptPath, "(.+)/") or ""
+    local scriptDir = GetDirectoryPath(scriptPath)
     
     -- 创建临时目录（如果需要）
     if scriptDir ~= "" then
@@ -1744,7 +1778,7 @@ function ExportCapsule()
         local synesthOutputPath = os.getenv("SYNESTH_CAPSULE_OUTPUT") or
                                    reaper.GetResourcePath() .. "/Scripts/Reaper_Sonic_Capsule/output"
 
-        local projectDir = string.match(currentProjectPath, "(.+)/") or ""
+        local projectDir = GetDirectoryPath(currentProjectPath)
 
         -- 尝试多个可能的 Synesth 项目路径
         local possiblePaths = {
