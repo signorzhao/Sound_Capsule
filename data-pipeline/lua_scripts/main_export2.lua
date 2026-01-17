@@ -805,10 +805,9 @@ function SaveProjectWithMedia(targetPath)
         if sourceFile then
             sourceFile:close()
             
-            -- 复制文件到Audio文件夹
-            local copyCmd = string.format('cp "%s" "%s"', mediaPath, targetMediaPath)
+            -- 复制文件到Audio文件夹（使用跨平台函数）
             reaper.ShowConsoleMsg(string.format("复制: %s -> %s\n", baseName, targetMediaPath))
-            os.execute(copyCmd)
+            CopyFile(mediaPath, targetMediaPath)
             
             -- 验证复制是否成功
             local targetFile = io.open(targetMediaPath, "r")

@@ -113,9 +113,10 @@ def import_capsule_from_output(capsule_info):
             db.update_asset_status(capsule_id, asset_status)
             # 🔥 如果本地有 Audio 文件，设置 audio_uploaded = 1
             if has_audio_files:
-                db.execute("""
+                db.conn.execute("""
                     UPDATE capsules SET audio_uploaded = 1 WHERE id = ?
                 """, [capsule_id])
+                db.conn.commit()
             status_label = "已下载" if asset_status == 'local' else "仅元数据"
             print(f"✓ 资产状态判定: {capsule_name} -> {status_label}")
     except Exception as e:
@@ -124,9 +125,10 @@ def import_capsule_from_output(capsule_info):
     # 如果是已存在的胶囊，更新类型
     if capsule_id:
         try:
-            db.execute("""
+            db.conn.execute("""
                 UPDATE capsules SET capsule_type = ? WHERE id = ?
             """, [capsule_type, capsule_id])
+            db.conn.commit()
             print(f"✓ 已更新胶囊类型: {capsule_name} -> {capsule_type}")
         except Exception as e:
             print(f"⚠ 更新胶囊类型失败: {e}")
