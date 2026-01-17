@@ -3840,14 +3840,98 @@ if __name__ == '__main__':
             if health['missing_tables']:
                 print(f"   缺失表: {', '.join(health['missing_tables'])}")
             
+            if health.get('invalid_tables'):
+                print(f"   结构错误的表: {', '.join(health['invalid_tables'])}")
+            
             print("\n🔧 正在自动修复...")
+            
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            # 修复结构错误的表（删除并重建）
+            invalid_tables = health.get('invalid_tables', [])
+            for table in invalid_tables:
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                    print(f"   ✓ 删除旧表: {table}")
+                except Exception as e:
+                    print(f"   ✗ 删除表 {table} 失败: {e}")
+            
+            # 创建缺失的表（包括刚删除的无效表）
+            tables_to_create = set(health.get('missing_tables', [])) | set(invalid_tables)
+            
+            # 表定义
+            table_definitions = {
+                'sync_status': """
+                    CREATE TABLE IF NOT EXISTS sync_status (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        table_name TEXT NOT NULL,
+                        record_id INTEGER NOT NULL,
+                        sync_state TEXT DEFAULT 'pending',
+                        local_version INTEGER DEFAULT 1,
+                        cloud_version INTEGER DEFAULT 0,
+                        last_sync_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(table_name, record_id)
+                    )
+                """,
+                'prisms': """
+                    CREATE TABLE IF NOT EXISTS prisms (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id TEXT NOT NULL,
+                        lens_id TEXT NOT NULL,
+                        config TEXT,
+                        version INTEGER DEFAULT 1,
+                        last_synced_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_id, lens_id)
+                    )
+                """,
+                'capsule_types': """
+                    CREATE TABLE IF NOT EXISTS capsule_types (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        name_cn TEXT NOT NULL,
+                        description TEXT,
+                        icon TEXT,
+                        color TEXT NOT NULL,
+                        gradient TEXT NOT NULL,
+                        examples TEXT,
+                        priority_lens TEXT,
+                        sort_order INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
+            }
+            
+            for table in tables_to_create:
+                if table in table_definitions:
+                    try:
+                        cursor.execute(table_definitions[table])
+                        print(f"   ✓ 创建表: {table}")
+                    except Exception as e:
+                        print(f"   ✗ 创建表 {table} 失败: {e}")
+            
+            # 插入默认胶囊类型（如果是新创建的）
+            if 'capsule_types' in tables_to_create:
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO capsule_types (id, name, name_cn, description, icon, color, gradient, examples, priority_lens, sort_order)
+                        VALUES 
+                            ('magic', 'MAGIC', '魔法', '神秘、梦幻、超自然', 'Sparkles', '#8B5CF6', 'linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%)', '["粒子合成", "调制噪声", "演变音色"]', 'texture', 1),
+                            ('impact', 'IMPACT', '打击', '强力、冲击、震撼', 'Flame', '#EF4444', 'linear-gradient(135deg, #EF4444 0%, #F59E0B 100%)', '["鼓点", "打击乐", "贝斯拨奏"]', 'texture', 2),
+                            ('atmosphere', 'ATMOSPHERE', '环境', '空间、氛围、场景', 'Music', '#10B981', 'linear-gradient(135deg, #10B981 0%, #06B6D4 100%)', '["Pad", "氛围纹理", "音景"]', 'atmosphere', 3)
+                    """)
+                    print(f"   ✓ 插入默认胶囊类型")
+                except Exception as e:
+                    print(f"   ✗ 插入默认胶囊类型失败: {e}")
             
             # 自动添加缺失的字段
             if health['missing_fields']:
-                import sqlite3
-                conn = sqlite3.connect(db_path)
-                cursor = conn.cursor()
-                
                 # 字段类型映射（根据用途推断）
                 field_types = {
                     'description': 'TEXT',
@@ -3879,10 +3963,10 @@ if __name__ == '__main__':
                         print(f"   ✓ 添加字段: {field}")
                     except Exception as e:
                         print(f"   ✗ 添加字段 {field} 失败: {e}")
-                
-                conn.commit()
-                conn.close()
-                print("✅ 数据库修复完成！")
+            
+            conn.commit()
+            conn.close()
+            print("✅ 数据库修复完成！")
         else:
             print("✅ 数据库 schema 完整")
 

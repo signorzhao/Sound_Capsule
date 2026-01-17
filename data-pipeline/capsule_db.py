@@ -145,17 +145,26 @@ class CapsuleDatabase:
             missing_fields = required_fields - current_fields
             
             # 检查必要的表
-            required_tables = {'capsules', 'capsule_types', 'sync_status'}
+            required_tables = {'capsules', 'capsule_types', 'sync_status', 'prisms'}
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             current_tables = {row[0] for row in cursor.fetchall()}
             missing_tables = required_tables - current_tables
             
-            is_valid = len(missing_fields) == 0 and len(missing_tables) == 0
+            # 检查 sync_status 表的列结构
+            invalid_tables = []
+            if 'sync_status' in current_tables:
+                cursor.execute("PRAGMA table_info(sync_status)")
+                sync_status_fields = {row[1] for row in cursor.fetchall()}
+                if 'sync_state' not in sync_status_fields:
+                    invalid_tables.append('sync_status')
+            
+            is_valid = len(missing_fields) == 0 and len(missing_tables) == 0 and len(invalid_tables) == 0
             
             return {
                 'valid': is_valid,
                 'missing_fields': list(missing_fields),
                 'missing_tables': list(missing_tables),
+                'invalid_tables': invalid_tables,
                 'current_fields_count': len(current_fields),
                 'required_fields_count': len(required_fields)
             }
