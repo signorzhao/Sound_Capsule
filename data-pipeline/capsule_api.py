@@ -1152,9 +1152,9 @@ def open_in_reaper(capsule_id):
             cmd = ["open", "-a", str(reaper_exe), str(rpp_file)]
             subprocess.run(cmd, check=True, capture_output=True)
         elif platform.system() == "Windows":
-            # Windows 上直接启动 REAPER 可执行文件
-            import os
-            os.startfile(str(rpp_file))  # 用关联程序打开 .rpp 文件
+            # Windows 上直接用 REAPER 可执行文件打开项目
+            subprocess.Popen([str(reaper_exe), str(rpp_file)], 
+                           creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
         else:  # Linux
             cmd = ["xdg-open", str(rpp_file)]
             subprocess.run(cmd, check=True, capture_output=True)
