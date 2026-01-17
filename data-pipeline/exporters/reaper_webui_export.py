@@ -269,8 +269,14 @@ class ReaperWebUIExporter:
 
         # 3. 调用 REAPER 执行导出脚本
         from common import PathManager
+        import platform
         pm = PathManager.get_instance()
-        script_path = pm.get_lua_script("auto_export_from_config.lua")
+        
+        # Windows 使用专用脚本
+        if platform.system() == "Windows":
+            script_path = pm.get_lua_script("auto_export_from_config_windows.lua")
+        else:
+            script_path = pm.get_lua_script("auto_export_from_config.lua")
 
         if not script_path.exists():
             return {

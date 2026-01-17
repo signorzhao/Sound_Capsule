@@ -153,8 +153,14 @@ class ReaperHeadlessExporter:
 
         # 3. 准备 Lua 脚本路径
         from common import PathManager
+        import platform
         pm = PathManager.get_instance()
-        lua_script = pm.get_lua_script("auto_export_from_config.lua")
+        
+        # Windows 使用专用脚本
+        if platform.system() == "Windows":
+            lua_script = pm.get_lua_script("auto_export_from_config_windows.lua")
+        else:
+            lua_script = pm.get_lua_script("auto_export_from_config.lua")
 
         if not lua_script.exists():
             return {
