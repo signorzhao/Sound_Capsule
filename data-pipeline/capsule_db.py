@@ -145,7 +145,7 @@ class CapsuleDatabase:
             missing_fields = required_fields - current_fields
             
             # 检查必要的表
-            required_tables = {'capsules', 'capsule_types', 'sync_status', 'prisms'}
+            required_tables = {'capsules', 'capsule_types', 'sync_status', 'prisms', 'prism_versions'}
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             current_tables = {row[0] for row in cursor.fetchall()}
             missing_tables = required_tables - current_tables

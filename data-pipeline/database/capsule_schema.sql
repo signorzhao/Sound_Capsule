@@ -160,6 +160,23 @@ CREATE TABLE IF NOT EXISTS prisms (
 );
 
 -- ============================================
+-- 棱镜版本历史表
+-- ============================================
+CREATE TABLE IF NOT EXISTS prism_versions (
+    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prism_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    snapshot_data TEXT NOT NULL,   -- JSON 格式的配置快照
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by TEXT,
+    change_reason TEXT,            -- 修改原因
+    FOREIGN KEY (prism_id) REFERENCES prisms (id)
+);
+
+-- 索引优化
+CREATE INDEX IF NOT EXISTS idx_prism_version ON prism_versions(prism_id, version);
+
+-- ============================================
 -- 胶囊类型表
 -- ============================================
 CREATE TABLE IF NOT EXISTS capsule_types (

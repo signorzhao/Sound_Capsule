@@ -1150,12 +1150,14 @@ def open_in_reaper(capsule_id):
 
         if platform.system() == "Darwin":  # macOS
             cmd = ["open", "-a", str(reaper_exe), str(rpp_file)]
+            subprocess.run(cmd, check=True, capture_output=True)
         elif platform.system() == "Windows":
-            cmd = ["start", "", str(reaper_exe), str(rpp_file)]
+            # Windows 上直接启动 REAPER 可执行文件
+            import os
+            os.startfile(str(rpp_file))  # 用关联程序打开 .rpp 文件
         else:  # Linux
             cmd = ["xdg-open", str(rpp_file)]
-
-        subprocess.run(cmd, check=True, capture_output=True)
+            subprocess.run(cmd, check=True, capture_output=True)
 
         return jsonify({
             'success': True,
@@ -3889,6 +3891,18 @@ if __name__ == '__main__':
                         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         updated_by TEXT,
                         is_deleted BOOLEAN DEFAULT 0
+                    )
+                """,
+                'prism_versions': """
+                    CREATE TABLE IF NOT EXISTS prism_versions (
+                        version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        prism_id TEXT NOT NULL,
+                        version INTEGER NOT NULL,
+                        snapshot_data TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        created_by TEXT,
+                        change_reason TEXT,
+                        FOREIGN KEY (prism_id) REFERENCES prisms (id)
                     )
                 """,
                 'capsule_types': """
