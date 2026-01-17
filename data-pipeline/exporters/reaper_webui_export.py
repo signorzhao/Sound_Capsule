@@ -404,26 +404,29 @@ end tell'''
         timeout = 180  # 3分钟
         start_time = time.time()
         check_interval = 0.5  # 每0.5秒检查一次
-        script_start_time = time.time()  # 记录脚本开始时间
+        
+        # 记录期望的胶囊名称，用于验证结果
+        expected_capsule_name = f"{capsule_type}_{username}_"
 
         print(f"等待导出完成... (最长等待 {timeout} 秒)")
         print(f"检查间隔: {check_interval} 秒")
+        print(f"期望的胶囊名称前缀: {expected_capsule_name}")
 
         waited_time = 0
+        last_file_size = -1
         while time.time() - start_time < timeout:
             if result_file.exists():
-                # 检查文件修改时间，确保是新创建的文件
-                file_mtime = result_file.stat().st_mtime
-                file_age = time.time() - file_mtime
+                # 检查文件大小是否稳定（确保写入完成）
+                current_size = result_file.stat().st_size
+                file_age = time.time() - result_file.stat().st_mtime
 
-                # 如果文件是脚本启动之前创建的，说明是旧文件
-                if file_mtime < script_start_time:
-                    print(f"⚠️  检测到旧的结果文件（{file_age:.1f}秒前），跳过...")
-                    time.sleep(check_interval)
-                    waited_time += check_interval
+                # 如果文件大小变化，等待写入完成
+                if current_size != last_file_size:
+                    last_file_size = current_size
+                    time.sleep(0.2)
                     continue
 
-                print(f"✓ 检测到结果文件! (文件年龄: {file_age:.2f}秒)")
+                print(f"✓ 检测到结果文件! (文件年龄: {file_age:.2f}秒, 大小: {current_size})")
                 try:
                     # 等待一小段时间确保文件写入完成
                     time.sleep(0.2)

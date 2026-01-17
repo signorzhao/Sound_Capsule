@@ -1033,11 +1033,20 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         -- 设置 RENDER_RANGE（按时间选区渲染）
         -- 格式: RENDER_RANGE 2 startTime endTime 0 1000
         -- 2 = 渲染模式（时间选区）
-        local renderRange = string.format('RENDER_RANGE 2 %.6f %.6f 0 1000', startTime or 0, endTime or 0)
-        if content:match('RENDER_RANGE%s+[^\n]+') then
-            content = content:gsub('RENDER_RANGE%s+[^\n]+', renderRange)
-        else
+        local actualStartTime = startTime or 0
+        local actualEndTime = endTime or 0
+        local renderRange = string.format('RENDER_RANGE 2 %.6f %.6f 0 1000', actualStartTime, actualEndTime)
+        reaper.ShowConsoleMsg("  设置 RENDER_RANGE: " .. renderRange .. "\n")
+        
+        -- 先删除所有旧的 RENDER_RANGE 行（可能有多个）
+        content = content:gsub('RENDER_RANGE%s+[^\n]*\n?', '')
+        
+        -- 在 RENDER_PATTERN 后插入新的 RENDER_RANGE
+        if content:match('RENDER_PATTERN [^\n]+') then
             content = content:gsub('(RENDER_PATTERN [^\n]+\n)', '%1' .. renderRange .. '\n')
+        else
+            -- 如果没有 RENDER_PATTERN，在 RENDER_FILE 后插入
+            content = content:gsub('(RENDER_FILE [^\n]+\n)', '%1' .. renderRange .. '\n')
         end
         
         -- 设置 RECORD_PATH 为 Audio
@@ -2399,23 +2408,19 @@ function ExportCapsule()
         if reaperPath then
             -- 确保路径使用正确的分隔符
             local winRppPath = rppPath:gsub("/", "\\")
-            local renderCmd = string.format('"%s" -renderproject "%s"', reaperPath, winRppPath)
+            
+            -- 使用 start /B 异步执行渲染，避免阻塞脚本
+            local renderCmd = string.format('start /B "" "%s" -renderproject "%s"', reaperPath, winRppPath)
             reaper.ShowConsoleMsg("渲染命令: " .. renderCmd .. "\n")
             
-            -- 执行渲染
-            reaper.ShowConsoleMsg("开始渲染...\n")
-            local result = os.execute(renderCmd)
+            -- 异步执行渲染（不等待完成）
+            reaper.ShowConsoleMsg("启动后台渲染...\n")
+            os.execute(renderCmd)
             
-            -- 检查渲染结果
-            local oggPath = JoinPath(outputDir, capsuleName .. ".ogg")
-            local oggFile = io.open(oggPath, "r")
-            if oggFile then
-                oggFile:close()
-                reaper.ShowConsoleMsg("✓ OGG 渲染成功: " .. oggPath .. "\n")
-            else
-                reaper.ShowConsoleMsg("⚠ OGG 文件未生成，可能需要手动渲染\n")
-                reaper.ShowConsoleMsg("  请打开 RPP 文件，按 Ctrl+Alt+R 渲染\n")
-            end
+            -- 等待一小段时间让渲染开始
+            -- 注意：渲染在后台进行，OGG 文件会在渲染完成后生成
+            reaper.ShowConsoleMsg("✓ 渲染已在后台启动\n")
+            reaper.ShowConsoleMsg("  OGG 文件将在渲染完成后生成\n")
         else
             reaper.ShowConsoleMsg("⚠ 未找到 REAPER 可执行文件，请手动渲染\n")
         end
