@@ -2106,10 +2106,8 @@ class SyncService:
                     if audio_dir.exists() and list(audio_dir.glob("*.wav")):
                         asset_status = 'local'
                         logger.info(f"   ℹ️ 检测到本地完整资产: {cloud_name} -> local")
-                    # 检查是否有预览文件（轻量资产）
-                    elif preview_audio and (capsule_dir / preview_audio).exists():
-                        asset_status = 'local'  # 有预览文件也算 local
-                        logger.info(f"   ℹ️ 检测到本地预览资产: {cloud_name} -> local")
+                    # 只有预览文件（OGG）保持 cloud_only，不改为 local
+                    # 因为 local 意味着有完整的 Audio/WAV 文件
             except Exception as e:
                 logger.warning(f"   ⚠️ 检测本地文件失败: {e}")
             
