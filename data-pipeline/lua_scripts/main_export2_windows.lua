@@ -1020,15 +1020,23 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
         
         -- 构建完整的渲染设置块
+        -- RENDER_RANGE 0 = 使用自定义时间边界
+        -- RENDER_STARTPOS 和 RENDER_ENDPOS 指定精确的开始和结束时间
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
-RENDER_RANGE 2 %.6f %.6f 0 1000
+RENDER_RANGE 0 0 0 18 1000
+RENDER_STARTPOS %.6f
+RENDER_ENDPOS %.6f
 RENDER_STEMS 0
   <RENDER_CFG
     dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==
   >
 ]], renderDir, capsuleName, actualStartTime, actualEndTime)
+
+        -- 删除旧的 RENDER_STARTPOS 和 RENDER_ENDPOS
+        content = content:gsub('RENDER_STARTPOS%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_ENDPOS%s+[^\n]*\n?', '')
         
         -- 在 REAPER_PROJECT 行后插入所有渲染设置
         content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)

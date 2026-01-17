@@ -103,6 +103,30 @@ Frontend: CapsuleLibrary.jsx (UI逻辑), CloudSyncIcon.jsx (新状态图标).
 - sync_service.py: 完善云端同步逻辑和状态设置
 - CapsuleLibrary.jsx: 操作完成后清除缓存并刷新
 
+1. main_export2_windows.lua - Windows 导出脚本
+媒体文件处理：
+修复了 CopyFile 函数，使用 Lua 原生 io 库复制文件（替代不可靠的 os.execute）
+增加了详细的调试输出
+轨道清理：
+添加了依赖追踪逻辑，只保留相关轨道（Item 所在轨道、父级轨道、Send 目标轨道）
+删除不相关的 TRACK 块和未选中的 ITEM 块
+渲染设置修复：
+整合所有渲染参数到一个块，一次性写入 RPP
+RENDER_FILE = 目录路径
+RENDER_PATTERN = 文件名
+RENDER_RANGE 2 startTime endTime 0 1000 = 按选中 items 时间范围渲染
+RENDER_CFG = OGG 编码器配置
+metadata.json：
+添加了 UUID 生成
+改用 "id" 字段（与 Mac 版保持一致）
+2. capsule_scanner.py - Python 后端
+修复 UUID 读取：metadata.get('uuid') or metadata.get('id')，兼容两种格式
+3. reaper_webui_export.py - Python 后端
+移除基于时间戳的"旧文件"检测逻辑
+改用文件大小稳定性检测
+4. auto_export_from_config_windows.lua - 入口脚本
+改进了 main() 返回值处理和调试输出
+
 ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ 
 待改进方向
 1. 同步冲突处理
