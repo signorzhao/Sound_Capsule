@@ -158,6 +158,24 @@ export const windowControls = {
   },
 
   /**
+   * 将窗口带到前台并聚焦
+   */
+  focus: async () => {
+    if (!isTauri()) return;
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window');
+      const window = getCurrentWindow();
+      await window.setFocus();
+      // 如果窗口被最小化，先恢复它
+      if (await window.isMinimized()) {
+        await window.unminimize();
+      }
+    } catch (error) {
+      console.error('Failed to focus window:', error);
+    }
+  },
+
+  /**
    * 设置窗口标题
    * @param {string} title - 标题
    */
