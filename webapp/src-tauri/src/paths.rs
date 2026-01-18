@@ -23,7 +23,11 @@ impl AppPaths {
         // 资源目录：开发环境使用项目根目录，生产环境使用应用目录
         let resources_dir = if cfg!(debug_assertions) {
             // 开发环境
+            // CARGO_MANIFEST_DIR = webapp/src-tauri
+            // ../.. = synesth (项目根目录)
+            // data-pipeline = synesth/data-pipeline
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
                 .join("..")
                 .join("data-pipeline")
         } else {
@@ -47,14 +51,25 @@ impl AppPaths {
                     
                     #[cfg(target_os = "windows")]
                     {
-                        // Windows: 资源在 exe 同目录或 resources 子目录
-                        // 优先查找 resources 子目录
-                        let resources_subdir = exe_dir.join("resources");
-                        if resources_subdir.exists() {
-                            Some(resources_subdir)
+                        // Windows: Tauri 保留原始相对路径结构
+                        // 资源路径: exe_dir/resources/_up_/_up_/data-pipeline
+                        let tauri_resources = exe_dir
+                            .join("resources")
+                            .join("_up_")
+                            .join("_up_")
+                            .join("data-pipeline");
+                        
+                        if tauri_resources.exists() {
+                            Some(tauri_resources)
                         } else {
-                            // 降级到 exe 同目录
-                            Some(exe_dir.to_path_buf())
+                            // 降级：直接在 resources 目录查找
+                            let resources_subdir = exe_dir.join("resources");
+                            if resources_subdir.exists() {
+                                Some(resources_subdir)
+                            } else {
+                                // 最后降级到 exe 同目录
+                                Some(exe_dir.to_path_buf())
+                            }
                         }
                     }
                     
