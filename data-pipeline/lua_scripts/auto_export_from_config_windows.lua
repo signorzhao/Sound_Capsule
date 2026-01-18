@@ -127,7 +127,9 @@ local function Main()
 
     if num_items == 0 then
         Log("错误: 没有选中的 Items\n")
-        -- 在 REAPER 中弹窗提示用户
+        -- 先写入结果文件（让后端尽快返回，不阻塞）
+        WriteResult(false, nil, "没有选中的 Items")
+        -- 再在 REAPER 中弹窗提示用户
         reaper.ShowMessageBox(
             "请先选中要导出的音频 Items\n\n" ..
             "操作方法：\n" ..
@@ -136,7 +138,6 @@ local function Main()
             "Sound Capsule - 没有选中的 Items",
             0  -- 0 = OK 按钮
         )
-        WriteResult(false, nil, "没有选中的 Items。请在 REAPER 中选中要导出的音频 Items")
         return
     end
 

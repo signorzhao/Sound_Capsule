@@ -602,7 +602,12 @@ export default function App() {
       console.error('保存失败:', error);
       setSaveStatus('idle');
       setSaveProgress(0);
-      toast.error('保存失败: ' + error.message);
+      
+      // 如果是"没有选中 item"的错误，REAPER 已经弹出提示了，不需要再显示 toast
+      const errorMsg = error.message || '';
+      if (!errorMsg.includes('没有选中') && !errorMsg.includes('Items')) {
+        toast.error('保存失败: ' + errorMsg);
+      }
     }
   };
 
