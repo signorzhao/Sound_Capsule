@@ -75,6 +75,14 @@ class PathManager:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         (self.config_dir / "database").mkdir(parents=True, exist_ok=True)
         self.export_dir.mkdir(parents=True, exist_ok=True)
+        
+        # -------------------------------------------------------
+        # 🛠️ 修复点 3: 自动初始化数据库
+        # -------------------------------------------------------
+        # 如果数据库不存在，从 schema 创建空数据库
+        if not self.db_path.exists():
+            print(f"📦 首次启动：初始化数据库...")
+            self._init_database()
     
     @classmethod
     def initialize(cls, config_dir: str, export_dir: str, resource_dir: str):
@@ -126,6 +134,63 @@ class PathManager:
                 "这是架构铁律：所有路径必须由 Tauri 通过命令行参数传入。"
             )
         return cls._instance
+    
+    def _init_database(self):
+        """
+        从 schema 文件初始化空数据库
+        
+        在首次启动时自动调用，确保用户无需手动复制数据库文件
+        """
+        import sqlite3
+        
+        try:
+            # 检查 schema 文件是否存在
+            if not self.schema_path.exists():
+                print(f"⚠️ Schema 文件不存在: {self.schema_path}")
+                print(f"   尝试从 resource_dir 的其他位置查找...")
+                
+                # 尝试其他可能的位置
+                alt_paths = [
+                    self.resource_dir / "capsule_schema.sql",
+                    self.resource_dir.parent / "database" / "capsule_schema.sql",
+                ]
+                
+                for alt_path in alt_paths:
+                    if alt_path.exists():
+                        self.schema_path = alt_path
+                        print(f"✓ 找到 Schema: {alt_path}")
+                        break
+                else:
+                    # 如果都找不到，创建一个最小化的数据库
+                    print(f"⚠️ 无法找到 Schema 文件，创建最小化数据库...")
+                    conn = sqlite3.connect(str(self.db_path))
+                    conn.execute('''
+                        CREATE TABLE IF NOT EXISTS capsules (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        )
+                    ''')
+                    conn.commit()
+                    conn.close()
+                    print(f"✓ 最小化数据库已创建: {self.db_path}")
+                    return
+            
+            # 从 schema 创建数据库
+            print(f"📄 读取 Schema: {self.schema_path}")
+            with open(self.schema_path, 'r', encoding='utf-8') as f:
+                schema_sql = f.read()
+            
+            conn = sqlite3.connect(str(self.db_path))
+            conn.executescript(schema_sql)
+            conn.commit()
+            conn.close()
+            
+            print(f"✓ 数据库已初始化: {self.db_path}")
+            
+        except Exception as e:
+            print(f"❌ 数据库初始化失败: {e}")
+            # 不抛出异常，让应用继续启动（可能有其他方式恢复）
     
     def get_config_file(self, filename: str) -> Path:
         """获取配置文件路径"""
