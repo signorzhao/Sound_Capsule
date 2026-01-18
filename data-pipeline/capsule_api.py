@@ -4021,11 +4021,21 @@ if __name__ == '__main__':
         # 检查 prisms 表是否为空或缺少 field_data，如果是则从 sonic_vectors.json 导入
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # 检查总数和有完整数据的数量
+        cursor.execute("SELECT COUNT(*) FROM prisms")
+        total_prisms = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM prisms WHERE field_data IS NOT NULL AND field_data != '[]' AND length(field_data) > 10")
         prisms_with_data = cursor.fetchone()[0]
         
+        print(f"检查棱镜数据完整性...")
+        print(f"   总棱镜数: {total_prisms}")
+        print(f"   有完整词数据的棱镜数: {prisms_with_data}")
+        
+        # 如果没有任何棱镜有完整的 field_data，需要从 sonic_vectors.json 导入
         if prisms_with_data == 0:
             print("⚠️  prisms 表缺少词数据，尝试从 sonic_vectors.json 导入...")
+            print(f"   RESOURCE_DIR = {RESOURCE_DIR}")
             
             # 尝试多个可能的路径
             sonic_vectors_paths = [
@@ -4039,38 +4049,62 @@ if __name__ == '__main__':
                 Path(RESOURCE_DIR).parent.parent.parent / '_up_' / 'public' / 'data' / 'sonic_vectors.json',
             ]
             
+            # 打印所有尝试的路径用于调试
+            print("   尝试的路径:")
+            for i, sv_path in enumerate(sonic_vectors_paths):
+                exists = sv_path.exists()
+                print(f"   [{i+1}] {sv_path}")
+                print(f"       存在: {exists}")
+            
             sonic_vectors_data = None
             for sv_path in sonic_vectors_paths:
                 if sv_path.exists():
-                    print(f"   ✓ 找到 sonic_vectors.json: {sv_path}")
+                    print(f"   ✓ 使用 sonic_vectors.json: {sv_path}")
                     with open(sv_path, 'r', encoding='utf-8') as f:
                         sonic_vectors_data = json.load(f)
                     break
             
             if sonic_vectors_data:
-                # 先清空现有的空数据
-                cursor.execute("DELETE FROM prisms")
+                # 使用 INSERT OR REPLACE 来更新或插入数据
+                # 这样可以保留已有记录的其他字段（如果有的话）
+                imported_count = 0
+                updated_count = 0
                 
                 for prism_id, prism_data in sonic_vectors_data.items():
                     axis_config = json.dumps(prism_data.get('axes', {}), ensure_ascii=False)
                     field_data = json.dumps(prism_data.get('points', []), ensure_ascii=False)
+                    points_count = len(prism_data.get('points', []))
                     
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO prisms (id, name, description, axis_config, anchors, field_data, version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        prism_id,
-                        prism_data.get('name', prism_id),
-                        prism_data.get('description', ''),
-                        axis_config,
-                        '[]',
-                        field_data,
-                        1
-                    ))
-                    print(f"   ✓ 导入棱镜: {prism_id} ({len(prism_data.get('points', []))} 个词)")
+                    # 检查是否已存在该棱镜
+                    cursor.execute("SELECT id FROM prisms WHERE id = ?", (prism_id,))
+                    existing = cursor.fetchone()
+                    
+                    if existing:
+                        # 已存在：只更新 field_data（保留云同步的其他配置）
+                        cursor.execute("""
+                            UPDATE prisms SET field_data = ? WHERE id = ?
+                        """, (field_data, prism_id))
+                        updated_count += 1
+                        print(f"   ✓ 更新棱镜 field_data: {prism_id} ({points_count} 个词)")
+                    else:
+                        # 不存在：完整插入
+                        cursor.execute("""
+                            INSERT INTO prisms (id, name, description, axis_config, anchors, field_data, version)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            prism_id,
+                            prism_data.get('name', prism_id),
+                            prism_data.get('description', ''),
+                            axis_config,
+                            '[]',
+                            field_data,
+                            1
+                        ))
+                        imported_count += 1
+                        print(f"   ✓ 导入棱镜: {prism_id} ({points_count} 个词)")
                 
                 conn.commit()
-                print(f"   ✅ 已从 sonic_vectors.json 导入 {len(sonic_vectors_data)} 个棱镜")
+                print(f"   ✅ 完成! 新增 {imported_count} 个, 更新 {updated_count} 个棱镜")
             else:
                 print("   ⚠️  未找到 sonic_vectors.json，使用默认空数据")
                 # 插入默认空数据
