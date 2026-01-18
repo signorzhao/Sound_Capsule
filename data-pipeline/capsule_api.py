@@ -1352,12 +1352,44 @@ def check_reaper_selection():
                 'error': f'检查脚本不存在: {script_path}'
             })
         
-        # 执行检查脚本
-        cmd = f'"{reaper_exe}" -nonewinst "{script_path}"'
-        subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 优先尝试通过 REAPER Web UI 执行（完全静默，不会弹窗）
+        webui_success = False
+        try:
+            import requests
+            # 尝试连接 REAPER Web UI
+            webui_url = "http://localhost:9000"
+            test_resp = requests.get(webui_url, timeout=1)
+            if test_resp.status_code == 200:
+                # Web UI 可用，通过 /_RSbc 执行脚本
+                # 先读取脚本内容
+                with open(script_path, 'r', encoding='utf-8') as f:
+                    script_content = f.read()
+                
+                # 使用 Web UI 的 _RSbc 命令执行 Lua 代码
+                exec_resp = requests.post(
+                    f"{webui_url}/_RSbc",
+                    data=script_content,
+                    headers={'Content-Type': 'text/plain'},
+                    timeout=3
+                )
+                if exec_resp.status_code == 200:
+                    webui_success = True
+                    print("✓ 通过 Web UI 执行检查脚本（静默）")
+        except Exception as e:
+            print(f"Web UI 不可用: {e}")
         
-        # 等待结果（最多 3 秒）
-        timeout = 3
+        # 如果 Web UI 不可用，跳过预检查（避免弹出 REAPER 窗口）
+        # 让导出流程自己处理检查
+        if not webui_success:
+            return jsonify({
+                'success': True,
+                'selected_items': -1,
+                'has_selection': True,  # 假设有选中，让导出流程验证
+                'message': 'Web UI 不可用，跳过静默预检查'
+            })
+        
+        # 等待结果（最多 2 秒）
+        timeout = 2
         start_time = time.time()
         
         while time.time() - start_time < timeout:

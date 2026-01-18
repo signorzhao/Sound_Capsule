@@ -8,8 +8,9 @@ if _SYNEST_EXPORT_RUNNING then
 end
 _SYNEST_EXPORT_RUNNING = true
 
--- 启用控制台输出以便调试
-local ENABLE_CONSOLE = true
+-- 禁用控制台输出（避免弹出 REAPER 控制台窗口）
+-- 调试时可设为 true
+local ENABLE_CONSOLE = false
 
 local function Log(msg)
     if ENABLE_CONSOLE then

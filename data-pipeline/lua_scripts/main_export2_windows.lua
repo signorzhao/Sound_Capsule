@@ -5,7 +5,8 @@
 -- 包含：精简的 RPP 工程、预览音频、JSON 元数据
 
 -- 全局变量：控制控制台输出
-local ENABLE_CONSOLE = true  -- 设为 true 开启调试输出
+-- 设为 false 避免弹出 REAPER 控制台窗口，调试时可设为 true
+local ENABLE_CONSOLE = false
 
 -- 保存原始的 ShowConsoleMsg 函数
 local _original_ShowConsoleMsg = reaper.ShowConsoleMsg
