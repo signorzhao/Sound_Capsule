@@ -584,29 +584,35 @@ function SaveProjectWithMedia(targetPath)
         os.execute('mkdir -p "' .. projectDir .. '"')
     end
 
-    -- 先保存当前工程状态
-    reaper.Main_SaveProject(0, false)
+    -- 检查是否为临时工程（未保存）
+    local _, currentProjPath = reaper.EnumProjects(-1, "")
+    local isTemporaryProject = (currentProjPath == "")
+    
+    if isTemporaryProject then
+        -- 临时工程：使用 Main_SaveProjectEx 直接保存到目标路径，避免弹出对话框
+        reaper.ShowConsoleMsg("⚠ 临时工程：直接保存到目标路径\n")
+        
+        -- 设置RECORD_PATH为Audio文件夹
+        reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
+        
+        -- 使用 Main_SaveProjectEx 保存到指定路径（第三个参数 0 = 不弹出对话框）
+        reaper.Main_SaveProjectEx(0, targetPath, 0)
+    else
+        -- 已保存的工程：正常保存当前状态
+        reaper.ShowConsoleMsg("保存当前工程状态: " .. currentProjPath .. "\n")
+        reaper.Main_SaveProject(0, false)
 
-    -- 使用Reaper的"Save project as"功能来复制媒体文件
-    -- 首先设置项目路径为目标路径
-    reaper.GetSetProjectInfo_String(0, "PROJECT_PATH", targetPath, true)
-    
-    -- 使用Main_SaveProjectEx来保存并复制媒体文件
-    -- Main_SaveProjectEx(proj, saveFile, forceUI) - 但这个不直接支持复制媒体
-    
-    -- 更好的方法：使用"Save project"命令，它会使用项目设置中的"copy media"选项
-    -- 我们需要临时设置项目选项
-    
-    -- 方法：直接使用Reaper的保存功能，然后手动处理媒体文件复制
-    -- 但实际上，Reaper在保存时会自动处理相对路径
-    
-    -- 设置RECORD_PATH为Audio文件夹（这样Reaper会将媒体文件放在Audio目录）
-    reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
-    
-    -- 保存工程
-    reaper.Main_SaveProject(0, false)
+        -- 设置项目路径为目标路径
+        reaper.GetSetProjectInfo_String(0, "PROJECT_PATH", targetPath, true)
+        
+        -- 设置RECORD_PATH为Audio文件夹
+        reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
+        
+        -- 保存到目标路径
+        reaper.Main_SaveProjectEx(0, targetPath, 0)
+    end
 
-    -- 获取当前工程路径
+    -- 重新获取当前工程路径（保存后可能已更新）
     local _, currentProjPath = reaper.EnumProjects(-1, "")
 
     -- 获取保存后的路径（应该是目标路径）
@@ -1780,12 +1786,17 @@ function ExportCapsule()
     os.execute('mkdir -p "' .. outputDir .. '"')
 
     -- 2. 全量快照：将当前工程另存为临时文件
-    -- 保存当前工程（如果有未保存的修改，REAPER会弹出对话框）
-    -- 注意：用户需要先保存工程，或者允许弹出对话框
-    reaper.Main_SaveProject(0, false)
-
-    -- 获取当前工程路径
+    -- 获取当前工程路径（检查是否为临时工程）
     local _, currentProjectPath = reaper.EnumProjects(-1, "")
+    
+    if currentProjectPath == "" then
+        -- 临时工程（未保存）：跳过 Main_SaveProject，避免弹出保存对话框
+        reaper.ShowConsoleMsg("⚠ 检测到临时工程，跳过保存步骤\n")
+    else
+        -- 已保存的工程：正常保存当前状态
+        reaper.ShowConsoleMsg("保存当前工程状态: " .. currentProjectPath .. "\n")
+        reaper.Main_SaveProject(0, false)
+    end
 
     -- 保存临时工程副本并重新打开
     local tempProjectPath = outputDir .. "/_temp_export.rpp"
@@ -1794,12 +1805,22 @@ function ExportCapsule()
     -- 使用保存函数来复制工程和媒体文件
     SaveProjectWithMedia(tempProjectPath)
 
-    -- 打开临时工程
-    reaper.Main_openProject(tempProjectPath)
-    reaper.UpdateTimeline()
-
-    -- 等待工程加载完成
-    reaper.defer(function() end)  -- 确保工程已加载
+    -- 检查是否为临时工程
+    local _, checkProjPath = reaper.EnumProjects(-1, "")
+    local isTemporaryProject = (originalProjectPath == "")
+    
+    if isTemporaryProject then
+        -- 临时工程：不需要打开新工程，当前工程已经包含所有内容
+        -- 只需要更新工程路径为临时文件路径
+        reaper.ShowConsoleMsg("⚠ 临时工程：继续使用当前工程状态\n")
+    else
+        -- 已保存的工程：打开临时工程进行处理
+        reaper.Main_openProject(tempProjectPath)
+        reaper.UpdateTimeline()
+        
+        -- 等待工程加载完成
+        reaper.defer(function() end)  -- 确保工程已加载
+    end
 
     -- 3. 在临时工程中找到所有Item并合并依赖追踪
     reaper.ShowConsoleMsg("========== 开始依赖追踪（所有Item） ==========\n")
