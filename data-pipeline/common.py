@@ -38,10 +38,20 @@ class PathManager:
         
         # 尝试从 config.json 读取用户自定义路径
         # 🔴 优先从系统配置目录读取（生产环境），如果不存在则从 config_dir 读取（开发环境）
-        config_locations = [
-            Path.home() / "Library/Application Support/com.soundcapsule.app/config.json",  # 系统配置
-            self.config_dir / "config.json"  # 项目配置
-        ]
+        import sys
+        
+        config_locations = []
+        
+        # Windows: %APPDATA%\com.soundcapsule.app\config.json
+        if sys.platform == 'win32':
+            appdata = os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming')
+            config_locations.append(Path(appdata) / "com.soundcapsule.app" / "config.json")
+        
+        # macOS: ~/Library/Application Support/com.soundcapsule.app/config.json
+        config_locations.append(Path.home() / "Library/Application Support/com.soundcapsule.app/config.json")
+        
+        # 通用: config_dir/config.json
+        config_locations.append(self.config_dir / "config.json")
         
         for config_file in config_locations:
             try:

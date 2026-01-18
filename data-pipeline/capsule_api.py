@@ -1015,13 +1015,43 @@ def stream_preview(capsule_id, filename=None):
         # 调试日志
         print(f"🔍 [预览音频] 调试信息:")
         print(f"  - output_dir: {output_dir}")
-        print(f"  - output_dir (absolute): {output_dir.resolve()}")
         print(f"  - capsule['file_path']: {capsule['file_path']}")
         print(f"  - preview_audio: {preview_audio}")
         print(f"  - 拼接后的路径: {preview_file}")
-        print(f"  - 绝对路径: {preview_file.resolve()}")
         print(f"  - 文件存在: {preview_file.exists()}")
 
+        # 如果文件不存在，尝试其他可能的位置
+        if not preview_file.exists():
+            print(f"  ⚠️ 文件不存在，尝试其他位置...")
+            
+            # 收集可能的导出目录
+            from common import PathManager
+            pm = PathManager.get_instance()
+            
+            possible_dirs = [
+                output_dir,  # 当前配置的导出目录
+                pm.export_dir,  # PathManager 的导出目录
+                Path.home() / 'Documents' / 'SoundCapsule' / 'Exports',  # 默认位置
+            ]
+            
+            # 添加用户可能使用过的其他目录（如 Exports2, Exports3 等）
+            base_exports = Path.home() / 'Documents' / 'SoundCapsule'
+            if base_exports.exists():
+                for item in base_exports.iterdir():
+                    if item.is_dir() and item.name.startswith('Exports'):
+                        possible_dirs.append(item)
+            
+            # 去重
+            possible_dirs = list(set(possible_dirs))
+            
+            for try_dir in possible_dirs:
+                try_file = try_dir / capsule['file_path'] / preview_audio
+                print(f"  🔍 尝试: {try_file}")
+                if try_file.exists():
+                    preview_file = try_file
+                    print(f"  ✓ 找到文件: {preview_file}")
+                    break
+        
         if not preview_file.exists():
             raise APIError(f"预览音频文件不存在: {preview_audio}", 404)
 
