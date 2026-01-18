@@ -1137,6 +1137,30 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
     for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
     local failedCount = #failedFiles
     
+    -- 扫描插件信息
+    local plugins = ScanPlugins()
+    local routingInfo = GetRoutingInfo()
+    
+    -- 获取工程信息
+    local ret, bpm = reaper.GetSetProjectInfo(0, "P_PROJECT_BPM", 0, false)
+    if not ret or bpm == nil or bpm == 0 then
+        bpm = 120  -- 默认值
+    end
+    
+    local ret2, sampleRate = reaper.GetSetProjectInfo(0, "P_PROJECT_SRATE", 0, false)
+    if not ret2 or sampleRate == nil or sampleRate == 0 then
+        sampleRate = 48000  -- 默认值
+    end
+    
+    -- 构建插件列表 JSON
+    local pluginListJson = ""
+    for i, plugin in ipairs(plugins) do
+        if i > 1 then
+            pluginListJson = pluginListJson .. ", "
+        end
+        pluginListJson = pluginListJson .. string.format('"%s"', EscapeJSON(plugin))
+    end
+    
     -- 构建 JSON（使用 "id" 字段，与 Mac 版保持一致）
     local json = string.format([[{
   "id": "%s",
@@ -1144,10 +1168,21 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
   "capsule_type": "%s",
   "created_at": "%s",
   "info": {
-    "duration": %.2f,
+    "bpm": %.1f,
+    "length": %.2f,
+    "sample_rate": %d,
     "item_count": %d,
     "media_count": %d,
     "external_media_count": %d
+  },
+  "plugins": {
+    "list": [%s],
+    "count": %d
+  },
+  "routing_info": {
+    "has_sends": %s,
+    "has_folder_bus": %s,
+    "tracks_included": %d
   },
   "rpp_file": "%s.rpp",
   "preview_audio": "%s.ogg"
@@ -1156,10 +1191,17 @@ function GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, itemsInfo,
         capsuleName,
         capsuleType or "magic",
         os.date("%Y-%m-%dT%H:%M:%S"),
+        bpm,
         duration,
+        sampleRate,
         #itemsInfo,
         mediaCount,
         failedCount,
+        pluginListJson,
+        #plugins,
+        tostring(routingInfo.has_sends),
+        tostring(routingInfo.has_folder_bus),
+        routingInfo.tracks_included,
         capsuleName,
         capsuleName
     )
