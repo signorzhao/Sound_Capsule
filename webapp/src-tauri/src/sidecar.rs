@@ -173,22 +173,39 @@ fn get_sidecar_path() -> Result<PathBuf, String> {
         Ok(project_dir.join("../../data-pipeline/venv/bin/python"))
     } else {
         // 生产环境: 使用打包在应用目录中的可执行文件
-        let sidecar_name = if cfg!(windows) {
-            "capsules-api.exe"
+        // 尝试多种可能的文件名（支持不同的命名约定）
+        let possible_names: Vec<&str> = if cfg!(windows) {
+            vec![
+                "capsules_api-x86_64-pc-windows-msvc.exe",  // Tauri externalBin 格式
+                "capsules_api-aarch64-pc-windows-msvc.exe", // ARM64 Windows
+                "capsules-api.exe",                         // 简化名称
+                "capsules_api.exe",                         // 下划线版本
+            ]
+        } else if cfg!(target_os = "macos") {
+            vec![
+                "capsules_api-aarch64-apple-darwin",        // Apple Silicon
+                "capsules_api-x86_64-apple-darwin",         // Intel Mac
+                "capsules_api",
+            ]
         } else {
-            "capsules_api"
+            vec!["capsules_api"]
         };
 
-        let sidecar_path = exe_dir.join(sidecar_name);
-
-        if sidecar_path.exists() {
-            Ok(sidecar_path)
-        } else {
-            Err(format!(
-                "Sidecar 可执行文件不存在: {}",
-                sidecar_path.display()
-            ))
+        for name in &possible_names {
+            let sidecar_path = exe_dir.join(name);
+            if sidecar_path.exists() {
+                println!("✓ 找到 Sidecar: {}", sidecar_path.display());
+                return Ok(sidecar_path);
+            }
         }
+
+        Err(format!(
+            "Sidecar 可执行文件不存在。已尝试以下路径:\n{}",
+            possible_names.iter()
+                .map(|n| format!("  - {}", exe_dir.join(n).display()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        ))
     }
 }
 
