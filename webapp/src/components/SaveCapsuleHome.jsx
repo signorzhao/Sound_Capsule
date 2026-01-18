@@ -95,8 +95,10 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
     });
   };
 
+  const isChecking = saveStatus === 'checking';
   const isSaving = saveStatus === 'saving';
   const isSuccess = saveStatus === 'success';
+  const isBusy = isChecking || isSaving;
 
   // 获取当前选中胶囊的颜色（用于进度条）
   const getCapsuleColors = () => {
@@ -153,7 +155,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
                 <button
                   className="flex items-center gap-2 px-5 py-2.5 bg-purple-500/15 border border-purple-500/30 rounded-xl text-purple-400 text-sm font-medium hover:bg-purple-500/25 hover:border-purple-500/50 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-purple-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                   onClick={onShowLibrary}
-                  disabled={isSaving}
+                  disabled={isBusy}
                 >
                   <Package className="w-4 h-4 flex-shrink-0" />
                   <span>查看胶囊库</span>
@@ -198,6 +200,24 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
               <Settings className="inline w-5 h-5 mr-2 mb-1" />
               打开胶囊类型管理器
             </button>
+          </div>
+        )}
+
+        {/* 检查状态提示 */}
+        {isChecking && (
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-xl border-t border-zinc-800">
+            <div className="max-w-7xl mx-auto px-6 py-4">
+              <div className="flex items-center gap-4">
+                <div className="relative w-12 h-12 flex-shrink-0">
+                  <div className="absolute inset-0 rounded-full border-2 border-zinc-700"></div>
+                  <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-purple-500 animate-spin"></div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-white">正在检查 REAPER 选中状态...</h3>
+                  <p className="text-xs text-zinc-500 mt-1">请稍候，正在验证是否有选中的音频 Items</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

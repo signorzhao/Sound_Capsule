@@ -519,6 +519,35 @@ export default function App() {
     console.log('📦 发送到 API 的数据:', JSON.stringify(requestData, null, 2));
     console.log('📦 胶囊类型:', requestData.capsule_type);
 
+    // 🔍 预检查：快速验证 REAPER 中是否有选中的 Items
+    console.log('🔍 预检查 REAPER 选中状态...');
+    setSaveStatus('checking');
+    
+    try {
+      const checkResponse = await fetch('http://localhost:5002/api/reaper/check-selection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const checkResult = await checkResponse.json();
+      console.log('🔍 预检查结果:', checkResult);
+      
+      if (checkResult.success && checkResult.has_selection === false) {
+        // 没有选中任何 Items
+        console.error('❌ 没有选中的 Items');
+        toast.error('请先在 REAPER 中选中要导出的音频 Items');
+        setSaveStatus('idle');
+        return;
+      }
+      
+      if (!checkResult.success) {
+        // 检查失败（可能 REAPER 未运行），继续尝试导出
+        console.warn('⚠️ 预检查失败，继续尝试导出:', checkResult.error);
+      }
+    } catch (checkError) {
+      // 预检查出错，继续尝试导出
+      console.warn('⚠️ 预检查出错，继续尝试导出:', checkError);
+    }
+
     setSaveStatus('saving');
     setSaveProgress(0);
 

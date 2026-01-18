@@ -1281,6 +1281,117 @@ def auto_export_api():
 
 
 # ============================================
+# REAPER 选中状态快速检查
+# ============================================
+
+@app.route('/api/reaper/check-selection', methods=['OPTIONS', 'POST'])
+def check_reaper_selection():
+    """
+    快速检查 REAPER 中是否有选中的 Items
+    
+    响应:
+        {
+            "success": true,
+            "selected_items": 2,
+            "has_selection": true
+        }
+    """
+    # 处理 OPTIONS 预检请求
+    if request.method == 'OPTIONS':
+        response = make_response()
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response
+    
+    import platform
+    import subprocess
+    import time
+    from pathlib import Path
+    
+    try:
+        system = platform.system()
+        
+        if system != "Windows":
+            # 非 Windows 暂不支持快速检查
+            return jsonify({
+                'success': True,
+                'selected_items': -1,
+                'has_selection': True,
+                'message': '非 Windows 系统，跳过预检查'
+            })
+        
+        # Windows: 使用快速检查脚本
+        from exporters.reaper_webui_export import get_export_temp_dir
+        
+        # 清理旧的检查结果
+        result_file = get_export_temp_dir() / "selection_check.json"
+        if result_file.exists():
+            result_file.unlink()
+        
+        # 查找 REAPER 路径
+        from exporters.reaper_webui_export import ReaperWebUIExporter
+        exporter = ReaperWebUIExporter()
+        reaper_exe = exporter._find_reaper_executable()
+        
+        if not reaper_exe:
+            return jsonify({
+                'success': False,
+                'error': '未找到 REAPER 可执行文件'
+            })
+        
+        # 查找检查脚本
+        script_path = PathManager.lua_scripts_dir / "check_selection_windows.lua"
+        if not script_path.exists():
+            # 尝试其他路径
+            script_path = Path(RESOURCE_DIR) / "lua_scripts" / "check_selection_windows.lua"
+        
+        if not script_path.exists():
+            return jsonify({
+                'success': False,
+                'error': f'检查脚本不存在: {script_path}'
+            })
+        
+        # 执行检查脚本
+        cmd = f'"{reaper_exe}" -nonewinst "{script_path}"'
+        subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 等待结果（最多 3 秒）
+        timeout = 3
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            if result_file.exists():
+                time.sleep(0.1)  # 等待写入完成
+                try:
+                    with open(result_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    result_file.unlink(missing_ok=True)
+                    
+                    selected = data.get('selected_items', 0)
+                    return jsonify({
+                        'success': True,
+                        'selected_items': selected,
+                        'has_selection': selected > 0
+                    })
+                except Exception as e:
+                    print(f"读取检查结果失败: {e}")
+            time.sleep(0.1)
+        
+        # 超时
+        return jsonify({
+            'success': False,
+            'error': '检查超时，请确保 REAPER 正在运行'
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+
+# ============================================
 # REAPER Web UI 远程触发导出 (推荐!)
 # ============================================
 
