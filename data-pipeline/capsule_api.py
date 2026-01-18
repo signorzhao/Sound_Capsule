@@ -1582,10 +1582,10 @@ def webui_export_api():
         print(f"📁 使用导出目录: {output_dir}")
         log_to_file(f"📁 使用导出目录: {output_dir}")
 
-        # 等待文件完全写入（最多等待 5 秒）
+        # 等待文件完全写入（最多等待 3 秒）
         import time
-        max_wait = 5  # 最多等待 5 秒
-        wait_interval = 0.5  # 每次检查间隔 0.5 秒
+        max_wait = 3  # 最多等待 3 秒（优化：从5减少）
+        wait_interval = 0.2  # 每次检查间隔 0.2 秒（优化：从0.5减少）
         waited = 0
 
         capsule_dir = output_dir / expected_capsule_name
@@ -1594,7 +1594,7 @@ def webui_export_api():
         while waited < max_wait:
             if metadata_file.exists():
                 # 文件存在，再等待一小段时间确保写入完成
-                time.sleep(0.5)
+                time.sleep(0.2)  # 优化：从0.5减少
                 print(f"✅ 文件已创建: {metadata_file}")
                 break
             print(f"   ⏳ 等待文件创建... ({waited}s)")

@@ -11,7 +11,7 @@ import SyncIndicator from './components/SyncIndicator';
 import InitialSetup from './components/InitialSetup';
 import BootSync from './components/BootSync'; // Phase G2: 启动同步
 import { useToast } from './components/Toast';
-import { sendNotification, requestNotificationPermission } from './utils/tauriApi';
+import { sendNotification, requestNotificationPermission, windowControls } from './utils/tauriApi';
 import { getAppConfig } from './utils/configApi';
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
@@ -519,35 +519,7 @@ export default function App() {
     console.log('📦 发送到 API 的数据:', JSON.stringify(requestData, null, 2));
     console.log('📦 胶囊类型:', requestData.capsule_type);
 
-    // 🔍 预检查：快速验证 REAPER 中是否有选中的 Items
-    console.log('🔍 预检查 REAPER 选中状态...');
-    setSaveStatus('checking');
-    
-    try {
-      const checkResponse = await fetch('http://localhost:5002/api/reaper/check-selection', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const checkResult = await checkResponse.json();
-      console.log('🔍 预检查结果:', checkResult);
-      
-      if (checkResult.success && checkResult.has_selection === false) {
-        // 没有选中任何 Items
-        console.error('❌ 没有选中的 Items');
-        toast.error('请先在 REAPER 中选中要导出的音频 Items');
-        setSaveStatus('idle');
-        return;
-      }
-      
-      if (!checkResult.success) {
-        // 检查失败（可能 REAPER 未运行），继续尝试导出
-        console.warn('⚠️ 预检查失败，继续尝试导出:', checkResult.error);
-      }
-    } catch (checkError) {
-      // 预检查出错，继续尝试导出
-      console.warn('⚠️ 预检查出错，继续尝试导出:', checkError);
-    }
-
+    // 直接开始保存，不做预检查（避免弹窗和延迟）
     setSaveStatus('saving');
     setSaveProgress(0);
 
@@ -564,8 +536,16 @@ export default function App() {
         body: JSON.stringify(requestData)
       });
 
+      // 🔄 请求发送后立刻将窗口带回前台（REAPER 可能会抢占焦点）
+      setTimeout(() => {
+        windowControls.focus();
+      }, 500);
+
       const result = await response.json();
       console.log('📡 API 响应:', JSON.stringify(result, null, 2));
+
+      // 🔄 收到响应后再次确保窗口在前台
+      windowControls.focus();
 
       clearInterval(interval);
       setSaveProgress(100);
@@ -602,7 +582,7 @@ export default function App() {
           console.error('❌ 获取完整胶囊数据失败:', error);
         }
 
-        // 延迟跳转到对应棱镜
+        // 快速跳转到对应棱镜（减少延迟）
         setTimeout(() => {
           const lensMap = {
             'magic': 'texture',
@@ -621,8 +601,8 @@ export default function App() {
           setTimeout(() => {
             setSaveStatus('idle');
             setSaveProgress(0);
-          }, 500);
-        }, 1000);
+          }, 200);
+        }, 300);
       } else {
         throw new Error(result.error || '保存失败');
       }

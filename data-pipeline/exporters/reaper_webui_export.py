@@ -403,7 +403,7 @@ end tell'''
         result_file = get_export_temp_dir() / "export_result.json"
         timeout = 180  # 3分钟
         start_time = time.time()
-        check_interval = 0.5  # 每0.5秒检查一次
+        check_interval = 0.2  # 每0.2秒检查一次（优化：从0.5减少）
         
         # 记录期望的胶囊名称，用于验证结果
         expected_capsule_name = f"{capsule_type}_{username}_"
@@ -423,13 +423,13 @@ end tell'''
                 # 如果文件大小变化，等待写入完成
                 if current_size != last_file_size:
                     last_file_size = current_size
-                    time.sleep(0.2)
+                    time.sleep(0.1)  # 优化：从0.2减少
                     continue
 
                 print(f"✓ 检测到结果文件! (文件年龄: {file_age:.2f}秒, 大小: {current_size})")
                 try:
                     # 等待一小段时间确保文件写入完成
-                    time.sleep(0.2)
+                    time.sleep(0.1)  # 优化：从0.2减少
 
                     # 使用 UTF-8 编码读取（Lua 脚本写入的是 UTF-8）
                     with open(result_file, 'r', encoding='utf-8') as f:
