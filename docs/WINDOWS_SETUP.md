@@ -455,12 +455,18 @@ pyinstaller capsules_api.spec
    mkdir ..\webapp\src-tauri\binaries -ErrorAction SilentlyContinue
    ```
 
-2. 复制并重命名可执行文件：
+2. 复制并重命名可执行文件（根据你的 CPU 架构选择）：
    ```powershell
    # 文件名格式：{name}-{target-triple}
-   # Windows x64: capsules_api-x86_64-pc-windows-msvc.exe
-   Copy-Item dist\capsules_api\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_api-x86_64-pc-windows-msvc.exe
+   
+   # Windows x64 (Intel/AMD):
+   Copy-Item dist\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_api-x86_64-pc-windows-msvc.exe
+   
+   # Windows ARM64 (如 Surface Pro X, Snapdragon 笔记本):
+   Copy-Item dist\capsules_api.exe ..\webapp\src-tauri\binaries\capsules_api-aarch64-pc-windows-msvc.exe
    ```
+   
+   > **注意**：PyInstaller 输出的是单个 `capsules_api.exe` 文件（在 `dist/` 目录下），不是目录。
 
 3. 确保 `tauri.conf.json` 中配置了 sidecar：
    ```json
@@ -526,7 +532,11 @@ NSIS 会生成**单个 .exe 安装程序**，用户双击即可安装，是最�
 
 ## 更新日志
 
-- **2026-01-18**: 添加 NSIS 安装程序打包说明，发布模式自动隐藏后端控制台窗口
+- **2026-01-18**: 
+  - 添加 NSIS 安装程序打包说明，发布模式自动隐藏后端控制台窗口
+  - 添加 ARM64 架构支持说明
+  - 修复临时工程（未保存的 RPP）导出失败问题
+  - 修复开发模式资源路径问题
 - **2026-01-17**: 新增跨平台同步章节，完善常见问题：
   - 添加 Supabase 配置详细说明（SERVICE_ROLE_KEY）
   - 添加数据库 schema 更新后重置方法
