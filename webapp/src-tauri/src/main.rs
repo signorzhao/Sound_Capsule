@@ -135,6 +135,35 @@ fn main() {
             sidecar::check_sidecar,
             sidecar::open_rpp_in_reaper,
         ])
+        .on_window_event(|window, event| {
+            // 当窗口关闭时，停止 sidecar 进程
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                log_to_file("🛑 窗口关闭请求，正在停止后端进程...");
+                
+                if let Some(state) = window.try_state::<SidecarState>() {
+                    if let Ok(mut process_guard) = state.process.lock() {
+                        if let Some(ref mut sidecar) = *process_guard {
+                            log_to_file("🛑 正在终止 Python 后端进程...");
+                            sidecar.stop();
+                            log_to_file("✅ Python 后端进程已终止");
+                        }
+                        *process_guard = None;
+                    }
+                }
+                
+                // Windows 上额外使用 taskkill 确保进程被终止
+                #[cfg(target_os = "windows")]
+                {
+                    log_to_file("🛑 [Windows] 使用 taskkill 清理残留进程...");
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/IM", "capsules_api.exe"])
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .output();
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
