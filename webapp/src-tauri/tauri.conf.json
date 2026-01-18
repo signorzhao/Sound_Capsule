@@ -35,16 +35,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      {
-        "path": "../../data-pipeline/database",
-        "target": "database"
-      },
-      {
-        "path": "../../data-pipeline/lua_scripts",
-        "target": "lua_scripts"
-      }
-    ],
+    "resources": {
+      "../../data-pipeline/database": "database",
+      "../../data-pipeline/lua_scripts": "lua_scripts"
+    },
     "externalBin": [
       "binaries/capsules_api"
     ]
