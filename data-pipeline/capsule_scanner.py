@@ -54,8 +54,14 @@ def scan_output_directory():
     return capsules
 
 
-def import_capsule_from_output(capsule_info):
-    """从 output 目录导入胶囊到数据库"""
+def import_capsule_from_output(capsule_info, custom_output_dir=None):
+    """
+    从 output 目录导入胶囊到数据库
+    
+    Args:
+        capsule_info: 胶囊信息字典，包含 'dir', 'name', 'metadata'
+        custom_output_dir: 可选的自定义导出目录（用于计算相对路径）
+    """
     db = get_database()
     metadata = capsule_info['metadata']
 
@@ -71,8 +77,15 @@ def import_capsule_from_output(capsule_info):
     # 准备数据
     # 使用相对于 output_dir 的路径（支持用户自定义目录）
     # capsule_info['dir'] 是完整路径
-    output_dir = get_output_dir()
-    relative_path = capsule_info['dir'].relative_to(output_dir)
+    output_dir = Path(custom_output_dir) if custom_output_dir else get_output_dir()
+    
+    # 计算相对路径，如果失败则使用胶囊名称作为相对路径
+    try:
+        relative_path = capsule_info['dir'].relative_to(output_dir)
+    except ValueError:
+        # 路径不在 output_dir 下，使用胶囊名称作为相对路径
+        print(f"  ⚠️ 胶囊路径不在 output_dir 下，使用名称作为相对路径")
+        relative_path = Path(capsule_name)
 
     capsule_data = {
         'uuid': metadata.get('uuid') or metadata.get('id'),
@@ -248,7 +261,8 @@ def import_specific_capsule(capsule_name, custom_output_dir=None):
             'metadata': metadata
         }
 
-        capsule_id = import_capsule_from_output(capsule_info)
+        # 传递 output_dir 以确保相对路径计算正确
+        capsule_id = import_capsule_from_output(capsule_info, custom_output_dir=output_dir)
         print(f"  ✓ 导入成功: {capsule_name} (ID: {capsule_id})")
 
         # 获取完整的胶囊数据

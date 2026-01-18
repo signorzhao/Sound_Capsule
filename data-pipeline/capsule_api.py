@@ -1403,10 +1403,9 @@ def webui_export_api():
         print(f"🎯 期望的胶囊名称: {expected_capsule_name}")
         print(f"⏳ 等待文件完全写入...")
 
-        # 从 PathManager 获取导出目录
-        from common import PathManager
-        pm = PathManager.get_instance()
-        output_dir = pm.export_dir
+        # 使用前端传递的导出目录（已在上面设置）
+        # 不要从 PathManager 重新获取，因为可能与前端传递的不一致
+        output_dir = Path(export_dir)
         print(f"📁 使用导出目录: {output_dir}")
         log_to_file(f"📁 使用导出目录: {output_dir}")
 
