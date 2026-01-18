@@ -11,7 +11,7 @@ import SyncIndicator from './components/SyncIndicator';
 import InitialSetup from './components/InitialSetup';
 import BootSync from './components/BootSync'; // Phase G2: 启动同步
 import { useToast } from './components/Toast';
-import { sendNotification, requestNotificationPermission, windowControls } from './utils/tauriApi';
+import { sendNotification, requestNotificationPermission } from './utils/tauriApi';
 import { getAppConfig } from './utils/configApi';
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
@@ -528,20 +528,6 @@ export default function App() {
       setSaveProgress(prev => prev >= 90 ? 90 : prev + 10);
     }, 200);
 
-    // 🔄 多次尝试将窗口带回前台（Windows 限制需要多次尝试）
-    const focusWindow = () => {
-      windowControls.focus();
-    };
-    
-    // 在多个时间点尝试聚焦
-    const focusTimers = [
-      setTimeout(focusWindow, 300),
-      setTimeout(focusWindow, 600),
-      setTimeout(focusWindow, 1000),
-      setTimeout(focusWindow, 1500),
-      setTimeout(focusWindow, 2000),
-    ];
-
     try {
       console.log('📡 发送导出请求到 API...');
       const response = await fetch('http://localhost:5002/api/capsules/webui-export', {
@@ -552,14 +538,6 @@ export default function App() {
 
       const result = await response.json();
       console.log('📡 API 响应:', JSON.stringify(result, null, 2));
-
-      // 🔄 收到响应后立刻聚焦
-      focusWindow();
-      
-      // 清除之后的定时器，设置新的聚焦时间点
-      focusTimers.forEach(t => clearTimeout(t));
-      setTimeout(focusWindow, 100);
-      setTimeout(focusWindow, 300);
 
       clearInterval(interval);
       setSaveProgress(100);

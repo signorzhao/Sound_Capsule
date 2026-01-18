@@ -159,36 +159,13 @@ export const windowControls = {
 
   /**
    * 将窗口带到前台并聚焦
-   * Windows 需要使用 setAlwaysOnTop 技巧来可靠地获取焦点
    */
   focus: async () => {
     if (!isTauri()) return;
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const win = getCurrentWindow();
-      
-      // 先检查是否最小化，如果是则恢复
-      if (await win.isMinimized()) {
-        await win.unminimize();
-      }
-      
-      // 确保窗口可见
-      await win.show();
-      
-      // Windows 技巧：先设置 always on top，然后聚焦，再取消 always on top
-      await win.setAlwaysOnTop(true);
       await win.setFocus();
-      
-      // 短暂延迟后取消 always on top，恢复正常窗口行为
-      setTimeout(async () => {
-        try {
-          await win.setAlwaysOnTop(false);
-        } catch (e) {
-          // 忽略错误
-        }
-      }, 100);
-      
-      console.log('✅ 窗口聚焦已请求 (使用 alwaysOnTop 技巧)');
     } catch (error) {
       console.error('Failed to focus window:', error);
     }
