@@ -71,6 +71,16 @@ fn main() {
                 log_to_file(&format!("   导出目录: {}", export_dir));
                 log_to_file(&format!("   资源目录: {}", resources_dir));
                 
+                // 检查 Lua 脚本是否存在
+                let lua_scripts_path = std::path::Path::new(&resources_dir).join("lua_scripts");
+                log_to_file(&format!("   Lua脚本目录: {}", lua_scripts_path.display()));
+                log_to_file(&format!("   Lua脚本目录存在: {}", lua_scripts_path.exists()));
+                
+                // 检查具体脚本文件
+                let windows_script = lua_scripts_path.join("auto_export_from_config_windows.lua");
+                log_to_file(&format!("   Windows脚本: {}", windows_script.display()));
+                log_to_file(&format!("   Windows脚本存在: {}", windows_script.exists()));
+                
                 match sidecar::SidecarProcess::start(
                     config_dir,
                     export_dir,

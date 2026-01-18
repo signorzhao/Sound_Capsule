@@ -36,9 +36,14 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../../data-pipeline/database/*.sql",
-      "../../data-pipeline/lua_scripts/**/*",
-      "../../data-pipeline/master_lexicon_v3.csv"
+      {
+        "path": "../../data-pipeline/database",
+        "target": "database"
+      },
+      {
+        "path": "../../data-pipeline/lua_scripts",
+        "target": "lua_scripts"
+      }
     ],
     "externalBin": [
       "binaries/capsules_api"
