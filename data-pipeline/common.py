@@ -66,10 +66,43 @@ class PathManager:
         # 派生路径
         self.db_path = config_dir / "database" / "capsules.db"
         
-        # 🔴 改回标准文件名 (去掉了 _complete)
+        # 检测平台和打包模式
+        import sys
+        self.platform = sys.platform
+        self.is_windows = self.platform == 'win32'
+        
+        # 检测是否是 Tauri 打包版本（通过检查 _up_ 目录结构）
+        self.is_tauri_bundled = (resource_dir / ".." / ".." / ".." / "_up_").resolve().exists() if self.is_windows else False
+        
+        # 🔴 Schema 文件路径：优先使用 resource_dir/database，备选多个位置
         self.schema_path = resource_dir / "database" / "capsule_schema.sql"
         
+        # 如果默认路径不存在，尝试其他可能的位置
+        if not self.schema_path.exists():
+            alt_schema_paths = [
+                resource_dir / "database" / "capsule_schema.sql",
+                resource_dir.parent / "database" / "capsule_schema.sql",
+                resource_dir.parent.parent.parent / "resources" / "database" / "capsule_schema.sql",
+            ]
+            for alt_path in alt_schema_paths:
+                if alt_path.exists():
+                    self.schema_path = alt_path
+                    print(f"📄 [PathManager] 使用备选 Schema 路径: {alt_path}")
+                    break
+        
         self.lua_scripts_dir = resource_dir / "lua_scripts"
+        
+        # 如果默认 Lua 脚本路径不存在，尝试其他位置
+        if not self.lua_scripts_dir.exists():
+            alt_lua_paths = [
+                resource_dir / "lua_scripts",
+                resource_dir.parent.parent.parent / "_up_" / "_up_" / "data-pipeline" / "lua_scripts",
+            ]
+            for alt_path in alt_lua_paths:
+                if alt_path.exists():
+                    self.lua_scripts_dir = alt_path
+                    print(f"📄 [PathManager] 使用备选 Lua 脚本路径: {alt_path}")
+                    break
         
         # 确保关键目录存在
         self.config_dir.mkdir(parents=True, exist_ok=True)

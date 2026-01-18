@@ -4029,9 +4029,14 @@ if __name__ == '__main__':
             
             # 尝试多个可能的路径
             sonic_vectors_paths = [
+                # 开发环境: data-pipeline -> synesth/webapp/public/data
                 Path(RESOURCE_DIR).parent / 'webapp' / 'public' / 'data' / 'sonic_vectors.json',
                 Path(__file__).parent.parent / 'webapp' / 'public' / 'data' / 'sonic_vectors.json',
-                Path(RESOURCE_DIR) / 'webapp' / 'public' / 'data' / 'sonic_vectors.json',
+                # Windows 打包: exe_dir/_up_/_up_/data-pipeline -> exe_dir/_up_/public/data
+                # RESOURCE_DIR.parent.parent = exe_dir/_up_
+                Path(RESOURCE_DIR).parent.parent / 'public' / 'data' / 'sonic_vectors.json',
+                # 直接在 exe_dir 下的 _up_ 结构
+                Path(RESOURCE_DIR).parent.parent.parent / '_up_' / 'public' / 'data' / 'sonic_vectors.json',
             ]
             
             sonic_vectors_data = None

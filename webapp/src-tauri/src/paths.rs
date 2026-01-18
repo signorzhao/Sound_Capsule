@@ -64,24 +64,34 @@ impl AppPaths {
                     
                     #[cfg(target_os = "windows")]
                     {
-                        // Windows: Tauri 2.0 保留相对路径结构
-                        // 资源路径: exe_dir/resources/_up_/_up_/data-pipeline/
-                        let resources_base = exe_dir.join("resources");
+                        // Windows: Tauri 2.0 处理 ../ 路径为 _up_ 目录
+                        // 但是 _up_ 目录在 exe_dir 根目录下，不是 resources 子目录
+                        // 实际结构: exe_dir/_up_/_up_/data-pipeline/lua_scripts/
                         
-                        // 优先尝试 Tauri 保留的相对路径结构
-                        let tauri_path = resources_base
+                        // 方案1: Tauri 2.0 标准结构 (../.. -> _up_/_up_)
+                        let tauri_path = exe_dir
                             .join("_up_")
                             .join("_up_")
                             .join("data-pipeline");
                         
                         if tauri_path.join("lua_scripts").exists() {
                             Some(tauri_path)
-                        } else if resources_base.join("lua_scripts").exists() {
-                            // 扁平化结构（备用）
-                            Some(resources_base)
                         } else {
-                            // 降级到 exe 同目录（用于开发/调试）
-                            Some(exe_dir.to_path_buf())
+                            // 方案2: 尝试 resources 子目录下的 _up_ 结构（向后兼容）
+                            let resources_path = exe_dir.join("resources")
+                                .join("_up_")
+                                .join("_up_")
+                                .join("data-pipeline");
+                            
+                            if resources_path.join("lua_scripts").exists() {
+                                Some(resources_path)
+                            } else if exe_dir.join("resources").join("lua_scripts").exists() {
+                                // 方案3: 扁平化结构
+                                Some(exe_dir.join("resources"))
+                            } else {
+                                // 方案4: 降级到 exe 同目录（用于开发/调试）
+                                Some(exe_dir.to_path_buf())
+                            }
                         }
                     }
                     

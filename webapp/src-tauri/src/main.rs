@@ -71,6 +71,23 @@ fn main() {
                 log_to_file(&format!("   导出目录: {}", export_dir));
                 log_to_file(&format!("   资源目录: {}", resources_dir));
                 
+                // 获取 exe 目录用于调试
+                if let Ok(exe_path) = std::env::current_exe() {
+                    if let Some(exe_dir) = exe_path.parent() {
+                        log_to_file(&format!("   EXE目录: {}", exe_dir.display()));
+                        
+                        // 检查 Tauri _up_ 结构
+                        let tauri_up_path = exe_dir.join("_up_").join("_up_").join("data-pipeline");
+                        log_to_file(&format!("   Tauri _up_ 路径: {}", tauri_up_path.display()));
+                        log_to_file(&format!("   Tauri _up_ 存在: {}", tauri_up_path.exists()));
+                        
+                        // 检查 resources 子目录
+                        let resources_subdir = exe_dir.join("resources");
+                        log_to_file(&format!("   resources子目录: {}", resources_subdir.display()));
+                        log_to_file(&format!("   resources子目录存在: {}", resources_subdir.exists()));
+                    }
+                }
+                
                 // 检查 Lua 脚本是否存在
                 let lua_scripts_path = std::path::Path::new(&resources_dir).join("lua_scripts");
                 log_to_file(&format!("   Lua脚本目录: {}", lua_scripts_path.display()));
@@ -80,6 +97,11 @@ fn main() {
                 let windows_script = lua_scripts_path.join("auto_export_from_config_windows.lua");
                 log_to_file(&format!("   Windows脚本: {}", windows_script.display()));
                 log_to_file(&format!("   Windows脚本存在: {}", windows_script.exists()));
+                
+                // 检查数据库 schema
+                let schema_path = std::path::Path::new(&resources_dir).join("database").join("capsule_schema.sql");
+                log_to_file(&format!("   Schema路径: {}", schema_path.display()));
+                log_to_file(&format!("   Schema存在: {}", schema_path.exists()));
                 
                 match sidecar::SidecarProcess::start(
                     config_dir,
