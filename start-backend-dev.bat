@@ -35,6 +35,7 @@ echo.
 echo 启动 API 服务器 (端口 5002)...
 echo   --config-dir: %CONFIG_DIR%
 echo   --export-dir: %EXPORT_DIR%
+echo   --resource-dir: %DATA_PIPELINE%
 echo.
 
-python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%"
+python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%" --resource-dir "%DATA_PIPELINE%"

@@ -32,7 +32,8 @@ if not exist "%DATA_PIPELINE%\venv\Scripts\activate.bat" (
 echo [1/2] 启动后端 API 服务器 (端口 5002)...
 echo       配置目录: %CONFIG_DIR%
 echo       导出目录: %EXPORT_DIR%
-start "Sound Capsule API" cmd /k "cd /d %DATA_PIPELINE% && venv\Scripts\activate && python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%""
+echo       资源目录: %DATA_PIPELINE%
+start "Sound Capsule API" cmd /k "cd /d %DATA_PIPELINE% && venv\Scripts\activate && python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%" --resource-dir "%DATA_PIPELINE%""
 
 :: 等待后端启动
 echo     等待后端启动...
