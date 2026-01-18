@@ -1448,10 +1448,10 @@ def webui_export_api():
         # 直接导入指定的胶囊
         print(f"\n🎯 [步骤 1] 导出请求的胶囊名称: {expected_capsule_name}")
         print(f"   用户选择的胶囊类型: {capsule_type}")
-        print(f"   当前使用的导出目录: {os.getenv('SYNESTH_CAPSULE_OUTPUT', '未设置')}")
+        print(f"   当前使用的导出目录: {export_dir}")
 
-        # 尝试导入指定的胶囊
-        imported_capsule = import_specific_capsule(expected_capsule_name)
+        # 尝试导入指定的胶囊（传递导出目录确保一致性）
+        imported_capsule = import_specific_capsule(expected_capsule_name, custom_output_dir=export_dir)
 
         if not imported_capsule:
             print(f"\n❌ [步骤 2] 导入胶囊失败！")

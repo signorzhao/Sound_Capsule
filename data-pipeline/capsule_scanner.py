@@ -183,24 +183,40 @@ def scan_and_import_all():
     return imported
 
 
-def import_specific_capsule(capsule_name):
+def import_specific_capsule(capsule_name, custom_output_dir=None):
     """
     导入指定名称的胶囊
 
     Args:
         capsule_name: 要导入的胶囊名称
+        custom_output_dir: 可选的自定义导出目录（如果提供则优先使用）
 
     Returns:
         完整的胶囊数据，如果失败则返回 None
     """
     print(f"🎯 尝试导入指定胶囊: {capsule_name}")
 
-    # 检查胶囊目录是否存在
-    output_dir = get_output_dir()
+    # 优先使用自定义目录，其次检查环境变量，最后使用 PathManager
+    if custom_output_dir:
+        output_dir = Path(custom_output_dir)
+        print(f"  📁 使用传入的导出目录: {output_dir}")
+    elif os.environ.get('SYNESTH_CAPSULE_OUTPUT'):
+        output_dir = Path(os.environ.get('SYNESTH_CAPSULE_OUTPUT'))
+        print(f"  📁 使用环境变量导出目录: {output_dir}")
+    else:
+        output_dir = get_output_dir()
+        print(f"  📁 使用 PathManager 导出目录: {output_dir}")
+    
     capsule_dir = output_dir / capsule_name
     if not capsule_dir.exists():
         print(f"  ❌ 胶囊目录不存在: {capsule_dir}")
-        return None
+        # 尝试 PathManager 的目录作为备选
+        fallback_dir = get_output_dir() / capsule_name
+        if fallback_dir.exists() and fallback_dir != capsule_dir:
+            print(f"  📁 尝试备选目录: {fallback_dir}")
+            capsule_dir = fallback_dir
+        else:
+            return None
 
     # 检查 metadata.json 是否存在
     metadata_file = capsule_dir / 'metadata.json'
