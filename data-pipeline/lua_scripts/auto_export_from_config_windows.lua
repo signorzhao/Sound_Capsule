@@ -202,9 +202,9 @@ local function Main()
             Log("✓ 导出成功: " .. _SYNEST_AUTO_EXPORT.capsule_name .. "\n")
             WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
         else
-            Log("⚠ main() 返回非 true: " .. tostring(result) .. "\n")
-            -- 仍然认为成功（如果没有抛出异常）
-            WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
+            -- main() 返回 false 表示导出失败（如没有选中 item）
+            Log("✗ main() 返回 false，导出失败\n")
+            WriteResult(false, nil, "导出失败：请先在 REAPER 中选中至少一个 Audio Item")
         end
     else
         local error_msg = "main() 执行异常: " .. tostring(result)

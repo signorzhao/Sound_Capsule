@@ -1462,13 +1462,57 @@ function PruneItems(startTime, endTime, targetItem)
     end
 end
 
--- 扫描所有保留轨道的插件
+-- 收集选中 items 相关的所有轨道
+function CollectRelatedTracks()
+    local relatedTracks = {}  -- 用于去重
+    local numItems = reaper.CountSelectedMediaItems(0)
+    
+    for i = 0, numItems - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        if item then
+            local track = reaper.GetMediaItemTrack(item)
+            if track then
+                -- 添加 item 所在轨道
+                relatedTracks[track] = true
+                
+                -- 添加父轨道链
+                local parent = reaper.GetParentTrack(track)
+                while parent do
+                    relatedTracks[parent] = true
+                    parent = reaper.GetParentTrack(parent)
+                end
+                
+                -- 添加 Send 目标轨道（递归）
+                local queue = {track}
+                local processed = {[track] = true}
+                
+                while #queue > 0 do
+                    local currentTrack = table.remove(queue, 1)
+                    local sendCount = reaper.GetTrackNumSends(currentTrack, 0)
+                    
+                    for j = 0, sendCount - 1 do
+                        local destTrack = reaper.GetTrackSendInfo_Value(currentTrack, 0, j, "P_DESTTRACK")
+                        if destTrack and not processed[destTrack] then
+                            relatedTracks[destTrack] = true
+                            processed[destTrack] = true
+                            table.insert(queue, destTrack)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return relatedTracks
+end
+
+-- 扫描选中 items 相关轨道的插件（精确版本）
 function ScanPlugins()
     local plugins = {}
-    local trackCount = reaper.CountTracks(0)
+    local relatedTracks = CollectRelatedTracks()
+    local seenPlugins = {}  -- 用于去重
     
-    for i = 0, trackCount - 1 do
-        local track = reaper.GetTrack(0, i)
+    for track, _ in pairs(relatedTracks) do
         if track ~= nil then
             local fxCount = reaper.TrackFX_GetCount(track)
             
@@ -1477,7 +1521,11 @@ function ScanPlugins()
                 if fxName ~= "" then
                     -- 提取插件名称（去掉VST/VST3/AAX等前缀）
                     local pluginName = string.match(fxName, "([^:]+)$") or fxName
-                    table.insert(plugins, pluginName)
+                    -- 去重
+                    if not seenPlugins[pluginName] then
+                        seenPlugins[pluginName] = true
+                        table.insert(plugins, pluginName)
+                    end
                 end
             end
         end
@@ -1486,7 +1534,7 @@ function ScanPlugins()
     return plugins
 end
 
--- 检查路由信息
+-- 检查选中 items 相关轨道的路由信息
 function GetRoutingInfo()
     local routingInfo = {
         has_sends = false,
@@ -1494,11 +1542,14 @@ function GetRoutingInfo()
         tracks_included = 0
     }
     
-    local trackCount = reaper.CountTracks(0)
-    routingInfo.tracks_included = trackCount
+    local relatedTracks = CollectRelatedTracks()
     
-    for i = 0, trackCount - 1 do
-        local track = reaper.GetTrack(0, i)
+    -- 计算相关轨道数
+    for _ in pairs(relatedTracks) do
+        routingInfo.tracks_included = routingInfo.tracks_included + 1
+    end
+    
+    for track, _ in pairs(relatedTracks) do
         if track ~= nil then
             -- 检查是否有Send
             if reaper.GetTrackNumSends(track, 0) > 0 then
