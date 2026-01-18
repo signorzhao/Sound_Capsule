@@ -126,6 +126,40 @@ metadata.json：
 改用文件大小稳定性检测
 4. auto_export_from_config_windows.lua - 入口脚本
 改进了 main() 返回值处理和调试输出
+
+---
+
+## 1月18日修复内容 - Windows 胶囊导出完善
+
+### 主要修复:
+
+**1. RPP 渲染设置修复 (main_export2_windows.lua)**
+- `RENDER_RANGE 1` → `RENDER_RANGE 2`：使用时间选择模式
+- `<RENDER_CFG>` 块移到 `SAMPLERATE` 行后面（REAPER 的正确位置）
+- 删除旧的 `<RENDER_CFG>` 块避免格式冲突
+- 正确设置 `SELECTION` 和 `SELECTION2` 字段定义渲染时间范围
+
+**2. metadata.json 格式兼容 (capsule_scanner.py)**
+- 修改字段读取逻辑，同时兼容两种格式：
+  - Windows 版：`preview_audio` / `rpp_file`（顶层字段）
+  - Mac 版：`files.preview` / `files.project`（嵌套字段）
+- 修复了预览音频无法播放的 404 错误
+
+**3. 正则表达式修复**
+- 修复删除 `<RENDER_CFG>` 块时的正则表达式，避免误删 `<TEMPOENVEX>` 等其他块
+
+### 修改文件:
+- `data-pipeline/lua_scripts/main_export2_windows.lua`：RPP 渲染参数和格式
+- `data-pipeline/capsule_scanner.py`：metadata.json 字段兼容
+
+### 当前状态:
+✅ Windows 胶囊导出功能完整可用
+✅ OGG 预览音频正确渲染（时间范围正确）
+✅ 预览音频可在界面中播放
+✅ 胶囊库和棱镜关键词页面功能正常
+
+
+
 ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ ⚠️ 
 待改进方向
 1. 同步冲突处理

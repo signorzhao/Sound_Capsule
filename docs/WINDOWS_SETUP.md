@@ -482,10 +482,51 @@ npm run tauri build
 
 > **注意**：编译后的可执行文件仍需要 `--config-dir` 和 `--export-dir` 参数，这些由 Tauri Rust 代码自动传递。
 
+### 步骤 4：生成 NSIS 安装程序（推荐分发方式）
+
+NSIS 会生成**单个 .exe 安装程序**，用户双击即可安装，是最干净的分发方式。
+
+1. 确保 `tauri.conf.json` 中配置了 NSIS：
+   ```json
+   {
+     "bundle": {
+       "active": true,
+       "targets": ["nsis"],
+       "externalBin": ["binaries/capsules_api"]
+     }
+   }
+   ```
+
+2. 执行打包：
+   ```powershell
+   cd webapp
+   npm run tauri build
+   ```
+
+3. **输出文件**：
+   ```
+   webapp/src-tauri/target/release/bundle/nsis/
+   └── Sound Capsule_1.0.0_x64-setup.exe   # 单个安装程序
+   ```
+
+### 打包格式对比
+
+| 格式 | 配置 `targets` | 输出 | 用途 |
+|------|---------------|------|------|
+| **NSIS** | `["nsis"]` | `.exe` 安装程序 | ✅ 推荐分发 |
+| **MSI** | `["msi"]` | `.msi` 安装包 | 企业部署 |
+| **全部** | `"all"` | 所有格式 | 测试用 |
+
+### 关于控制台窗口
+
+- **开发模式** (`npm run tauri dev`)：显示 Python 后端控制台，方便调试
+- **发布模式** (`npm run tauri build`)：自动隐藏控制台，只显示主窗口
+
 ---
 
 ## 更新日志
 
+- **2026-01-18**: 添加 NSIS 安装程序打包说明，发布模式自动隐藏后端控制台窗口
 - **2026-01-17**: 新增跨平台同步章节，完善常见问题：
   - 添加 Supabase 配置详细说明（SERVICE_ROLE_KEY）
   - 添加数据库 schema 更新后重置方法
