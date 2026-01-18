@@ -27,18 +27,42 @@ impl AppPaths {
                 .join("..")
                 .join("data-pipeline")
         } else {
-            // 生产环境：使用 Contents/Resources/_up_/_up_/data-pipeline/
+            // 生产环境：根据操作系统选择正确的路径
             std::env::current_exe()
                 .ok()
-                .and_then(|p| {
-                    // 从 Contents/MacOS/synesth 到 Contents/Resources/_up_/_up_/data-pipeline
-                    p.parent()? // Contents/MacOS
-                        .parent()? // Contents
-                        .join("Resources")
-                        .join("_up_")
-                        .join("_up_")
-                        .join("data-pipeline")
-                        .into()
+                .and_then(|exe_path| {
+                    let exe_dir = exe_path.parent()?;
+                    
+                    #[cfg(target_os = "macos")]
+                    {
+                        // macOS: 从 Contents/MacOS/synesth 到 Contents/Resources/_up_/_up_/data-pipeline
+                        exe_dir // Contents/MacOS
+                            .parent()? // Contents
+                            .join("Resources")
+                            .join("_up_")
+                            .join("_up_")
+                            .join("data-pipeline")
+                            .into()
+                    }
+                    
+                    #[cfg(target_os = "windows")]
+                    {
+                        // Windows: 资源在 exe 同目录或 resources 子目录
+                        // 优先查找 resources 子目录
+                        let resources_subdir = exe_dir.join("resources");
+                        if resources_subdir.exists() {
+                            Some(resources_subdir)
+                        } else {
+                            // 降级到 exe 同目录
+                            Some(exe_dir.to_path_buf())
+                        }
+                    }
+                    
+                    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+                    {
+                        // Linux 等其他系统
+                        Some(exe_dir.to_path_buf())
+                    }
                 })
                 .ok_or("Failed to resolve resource directory")?
         };
