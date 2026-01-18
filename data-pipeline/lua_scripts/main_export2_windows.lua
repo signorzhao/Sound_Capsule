@@ -822,19 +822,32 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
     
     -- 获取当前工程路径
     local _, currentProjPath = reaper.EnumProjects(-1, "")
-    if not currentProjPath or currentProjPath == "" then
-        reaper.ShowConsoleMsg("✗ 错误：当前工程未保存\n")
-        return nil
+    local isTemporaryProject = (not currentProjPath or currentProjPath == "")
+    local tempRppPath = nil
+    
+    if isTemporaryProject then
+        -- 临时工程：先保存到临时文件
+        reaper.ShowConsoleMsg("⚠ 检测到临时工程，先保存到临时文件\n")
+        tempRppPath = JoinPath(outputDir, "_temp_source.rpp")
+        
+        -- 设置 RECORD_PATH 为 Audio 文件夹
+        reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "Audio", true)
+        
+        -- 使用 Main_SaveProjectEx 保存到临时文件
+        reaper.Main_SaveProjectEx(0, tempRppPath, 0)
+        currentProjPath = tempRppPath
+        reaper.ShowConsoleMsg("临时工程已保存到: " .. tempRppPath .. "\n")
+    else
+        -- 已保存的工程：正常保存当前状态
+        reaper.ShowConsoleMsg("保存当前工程状态: " .. currentProjPath .. "\n")
+        reaper.Main_SaveProject(0, false)
     end
     
-    -- 先保存当前工程（确保内容是最新的）
-    reaper.Main_SaveProject(0, false)
-    
-    -- 读取原 RPP 内容
-    reaper.ShowConsoleMsg("读取原 RPP: " .. currentProjPath .. "\n")
+    -- 读取 RPP 内容
+    reaper.ShowConsoleMsg("读取 RPP: " .. currentProjPath .. "\n")
     local sourceFile = io.open(currentProjPath, "r")
     if not sourceFile then
-        reaper.ShowConsoleMsg("✗ 无法读取原 RPP\n")
+        reaper.ShowConsoleMsg("✗ 无法读取 RPP\n")
         return nil
     end
     local content = sourceFile:read("*all")
@@ -1075,10 +1088,20 @@ RENDER_STEMS 0
     local targetFile = io.open(targetRPP, "w")
     if not targetFile then
         reaper.ShowConsoleMsg("✗ 无法写入新 RPP\n")
+        -- 清理临时文件
+        if tempRppPath then
+            os.remove(tempRppPath)
+        end
         return nil
     end
     targetFile:write(content)
     targetFile:close()
+    
+    -- 清理临时文件
+    if tempRppPath then
+        os.remove(tempRppPath)
+        reaper.ShowConsoleMsg("✓ 已清理临时 RPP 文件\n")
+    end
     
     reaper.ShowConsoleMsg("✓ RPP 生成成功\n")
     return targetRPP
