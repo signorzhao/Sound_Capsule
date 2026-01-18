@@ -431,7 +431,8 @@ end tell'''
                     # 等待一小段时间确保文件写入完成
                     time.sleep(0.2)
 
-                    with open(result_file, 'r') as f:
+                    # 使用 UTF-8 编码读取（Lua 脚本写入的是 UTF-8）
+                    with open(result_file, 'r', encoding='utf-8') as f:
                         result_data = json.load(f)
 
                     # 清理文件
