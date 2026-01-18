@@ -35,11 +35,11 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "../../data-pipeline/database": "database",
-      "../../data-pipeline/lua_scripts": "lua_scripts",
-      "../public/data/sonic_vectors.json": "data/sonic_vectors.json"
-    },
+    "resources": [
+      "../../data-pipeline/database/**/*",
+      "../../data-pipeline/lua_scripts/**/*",
+      "../public/data/sonic_vectors.json"
+    ],
     "externalBin": [
       "binaries/capsules_api"
     ]

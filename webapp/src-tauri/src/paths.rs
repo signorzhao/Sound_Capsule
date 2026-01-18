@@ -39,42 +39,46 @@ impl AppPaths {
                     
                     #[cfg(target_os = "macos")]
                     {
-                        // macOS: Tauri 2.0 使用扁平化资源结构
-                        // 资源路径: Contents/Resources/
-                        let resources_dir = exe_dir // Contents/MacOS
+                        // macOS: Tauri 2.0 保留相对路径结构
+                        // 资源路径: Contents/Resources/_up_/_up_/data-pipeline/
+                        let resources_base = exe_dir // Contents/MacOS
                             .parent()? // Contents
                             .join("Resources");
                         
-                        // 验证 lua_scripts 目录存在
-                        let lua_scripts = resources_dir.join("lua_scripts");
-                        if lua_scripts.exists() {
-                            Some(resources_dir)
+                        // 优先尝试 Tauri 保留的相对路径结构
+                        let tauri_path = resources_base
+                            .join("_up_")
+                            .join("_up_")
+                            .join("data-pipeline");
+                        
+                        if tauri_path.join("lua_scripts").exists() {
+                            Some(tauri_path)
+                        } else if resources_base.join("lua_scripts").exists() {
+                            // 扁平化结构（备用）
+                            Some(resources_base)
                         } else {
-                            // 降级到旧路径结构（兼容性）
-                            let old_path = exe_dir
-                                .parent()?
-                                .join("Resources")
-                                .join("_up_")
-                                .join("_up_")
-                                .join("data-pipeline");
-                            if old_path.exists() {
-                                Some(old_path)
-                            } else {
-                                Some(resources_dir)
-                            }
+                            // 降级到 Resources 目录
+                            Some(resources_base)
                         }
                     }
                     
                     #[cfg(target_os = "windows")]
                     {
-                        // Windows: Tauri 2.0 使用扁平化资源结构
-                        // 资源路径: exe_dir/resources/
-                        let resources_dir = exe_dir.join("resources");
+                        // Windows: Tauri 2.0 保留相对路径结构
+                        // 资源路径: exe_dir/resources/_up_/_up_/data-pipeline/
+                        let resources_base = exe_dir.join("resources");
                         
-                        // 验证 lua_scripts 目录存在
-                        let lua_scripts = resources_dir.join("lua_scripts");
-                        if lua_scripts.exists() {
-                            Some(resources_dir)
+                        // 优先尝试 Tauri 保留的相对路径结构
+                        let tauri_path = resources_base
+                            .join("_up_")
+                            .join("_up_")
+                            .join("data-pipeline");
+                        
+                        if tauri_path.join("lua_scripts").exists() {
+                            Some(tauri_path)
+                        } else if resources_base.join("lua_scripts").exists() {
+                            // 扁平化结构（备用）
+                            Some(resources_base)
                         } else {
                             // 降级到 exe 同目录（用于开发/调试）
                             Some(exe_dir.to_path_buf())
