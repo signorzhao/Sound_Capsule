@@ -28,6 +28,22 @@ impl SidecarProcess {
     ) -> Result<Self, String> {
         // 获取 Sidecar 可执行文件路径
         let exe_path = get_sidecar_path()?;
+        
+        // 写入日志文件用于调试
+        if let Some(home) = dirs::home_dir() {
+            let log_dir = home.join(".soundcapsule");
+            let _ = std::fs::create_dir_all(&log_dir);
+            let log_path = log_dir.join("tauri_debug.log");
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            {
+                use std::io::Write;
+                let _ = writeln!(file, "[Sidecar] 可执行文件路径: {}", exe_path.display());
+                let _ = writeln!(file, "[Sidecar] 文件存在: {}", exe_path.exists());
+            }
+        }
 
         println!("🚀 启动 Sidecar 进程:");
         println!("   可执行文件: {}", exe_path.display());
@@ -68,12 +84,37 @@ impl SidecarProcess {
 
         // 启动进程
         let child = cmd.spawn().map_err(|e| {
+            // 写入错误日志
+            if let Some(home) = dirs::home_dir() {
+                let log_path = home.join(".soundcapsule").join("tauri_debug.log");
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
+                    use std::io::Write;
+                    let _ = writeln!(file, "[Sidecar] 启动失败: {}", e);
+                }
+            }
             format!(
                 "启动 Sidecar 失败: {}\n可执行文件路径: {}",
                 e,
                 exe_path.display()
             )
         })?;
+
+        // 记录成功启动
+        if let Some(home) = dirs::home_dir() {
+            let log_path = home.join(".soundcapsule").join("tauri_debug.log");
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            {
+                use std::io::Write;
+                let _ = writeln!(file, "[Sidecar] 进程已启动 PID: {:?}", child.id());
+            }
+        }
 
         println!("✓ Sidecar 进程已启动 (PID: {:?})", child.id());
 
