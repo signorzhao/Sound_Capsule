@@ -54,7 +54,7 @@ impl SidecarProcess {
 
         // Phase G: 添加 Supabase 环境变量
         cmd.env("SUPABASE_URL", "https://mngtddqjbbrdwwfxcvxg.supabase.co");
-        cmd.env("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ3RkZHFqYmJyZHd3Znhjdnhn1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczMzg3NzY2NCwiZXhwIjoyMDQ5NDUzNjY0fQ.mZ2u0rWv87PfxZ3K0p8EpxZGn3DvCWQjmOe5F-UH9PU");
+        cmd.env("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ3RkZHFqYmJyZHd3ZnhjdnhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODA0NzQ0NSwiZXhwIjoyMDgzNjIzNDQ1fQ.0RXH_ECqIpQeRwnXbzEOORi7grODOVud8c_96ZIP3VU");
 
         // Windows Release 模式下隐藏控制台窗口
         // 开发模式下保留控制台以便查看日志
