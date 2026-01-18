@@ -79,10 +79,15 @@ class PathManager:
         # -------------------------------------------------------
         # 🛠️ 修复点 3: 自动初始化数据库
         # -------------------------------------------------------
-        # 如果数据库不存在，从 schema 创建空数据库
+        # 检查数据库是否存在且表结构完整
         if not self.db_path.exists():
             print(f"📦 首次启动：初始化数据库...")
             self._init_database()
+        else:
+            # 文件存在，检查表结构是否完整
+            if not self._check_database_schema():
+                print(f"📦 检测到数据库表结构不完整，重新初始化...")
+                self._init_database()
     
     @classmethod
     def initialize(cls, config_dir: str, export_dir: str, resource_dir: str):
@@ -134,6 +139,35 @@ class PathManager:
                 "这是架构铁律：所有路径必须由 Tauri 通过命令行参数传入。"
             )
         return cls._instance
+    
+    def _check_database_schema(self) -> bool:
+        """
+        检查数据库表结构是否完整
+        
+        Returns:
+            True 如果 capsules 表存在，False 否则
+        """
+        import sqlite3
+        
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            
+            # 检查 capsules 表是否存在
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='capsules'")
+            result = cursor.fetchone()
+            
+            conn.close()
+            
+            if result:
+                return True
+            else:
+                print(f"⚠️ 数据库缺少 capsules 表")
+                return False
+                
+        except Exception as e:
+            print(f"⚠️ 检查数据库失败: {e}")
+            return False
     
     def _init_database(self):
         """
