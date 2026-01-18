@@ -3,11 +3,29 @@
 
 use tauri::Manager;
 use std::sync::Mutex;
+use std::fs::OpenOptions;
+use std::io::Write;
 
 mod config;
 mod paths;
 mod sidecar;
 mod port_manager;
+
+// 日志写入文件（用于调试 Release 模式）
+fn log_to_file(message: &str) {
+    if let Some(home) = dirs::home_dir() {
+        let log_dir = home.join(".soundcapsule");
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("tauri_debug.log");
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let _ = writeln!(file, "{}", message);
+        }
+    }
+}
 
 // Sidecar 进程状态（使用 Arc<Mutex<>> 来管理共享状态）
 struct SidecarState {
@@ -48,10 +66,10 @@ fn main() {
             // 生产模式下自动启动
             #[cfg(not(debug_assertions))]
             {
-                println!("🚀 启动 Python 后端...");
-                println!("   配置目录: {}", config_dir);
-                println!("   导出目录: {}", export_dir);
-                println!("   资源目录: {}", resources_dir);
+                log_to_file("🚀 启动 Python 后端...");
+                log_to_file(&format!("   配置目录: {}", config_dir));
+                log_to_file(&format!("   导出目录: {}", export_dir));
+                log_to_file(&format!("   资源目录: {}", resources_dir));
                 
                 match sidecar::SidecarProcess::start(
                     config_dir,
@@ -60,13 +78,13 @@ fn main() {
                     5002
                 ) {
                     Ok(sidecar_process) => {
-                        println!("✅ Python 后端启动成功");
+                        log_to_file("✅ Python 后端启动成功");
                         app.manage(SidecarState {
                             process: Mutex::new(Some(sidecar_process)),
                         });
                     }
                     Err(e) => {
-                        eprintln!("❌ Python 后端启动失败: {}", e);
+                        log_to_file(&format!("❌ Python 后端启动失败: {}", e));
                         app.manage(SidecarState {
                             process: Mutex::new(None),
                         });
