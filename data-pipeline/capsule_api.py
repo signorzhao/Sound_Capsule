@@ -3891,6 +3891,62 @@ def rollback_prism(current_user, prism_id):
         raise APIError(f"回滚棱镜失败: {e}", 500)
 
 
+@app.route('/api/prisms/<prism_id>', methods=['DELETE'])
+@token_required
+def delete_prism(current_user, prism_id):
+    """
+    删除棱镜（从数据库中移除）
+    
+    用于删除测试棱镜或不再需要的棱镜。
+    
+    注意：
+    - 胶囊的标签数据不会被删除（孤儿标签机制）
+    - 此操作不可逆
+    
+    Args:
+        prism_id: 棱镜 ID (如 'test', 'mechanics')
+    
+    需要认证
+    """
+    try:
+        # 检查棱镜是否存在
+        prism = prism_manager.get_prism(prism_id)
+        if not prism:
+            raise APIError(f"棱镜 '{prism_id}' 不存在", 404)
+        
+        user_id = current_user.get('username') or current_user.get('user_id', 'unknown')
+        logger.info(f"用户 {user_id} 删除棱镜: {prism_id}")
+        
+        # 从数据库删除
+        pm = PathManager.get_instance()
+        import sqlite3
+        conn = sqlite3.connect(str(pm.db_path))
+        cursor = conn.cursor()
+        
+        # 删除棱镜记录
+        cursor.execute("DELETE FROM prisms WHERE id = ?", (prism_id,))
+        
+        # 删除版本历史
+        cursor.execute("DELETE FROM prism_versions WHERE prism_id = ?", (prism_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"✓ 棱镜 '{prism_id}' 已从数据库删除")
+        
+        return jsonify({
+            'success': True,
+            'message': f"棱镜 '{prism_id}' 已删除",
+            'note': "胶囊标签数据已保留（孤儿标签）"
+        })
+        
+    except APIError:
+        raise
+    except Exception as e:
+        logger.error(f"删除棱镜失败: {e}")
+        raise APIError(f"删除棱镜失败: {e}", 500)
+
+
 @app.route('/api/embed/coordinate', methods=['POST'])
 def calculate_coordinate_api():
     """

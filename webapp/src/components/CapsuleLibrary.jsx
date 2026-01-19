@@ -444,7 +444,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
       loadTagsForList();
     }
-  }, [viewMode, capsules, refreshTrigger, tagsCache]); // 刷新/列表变更时加载 tags
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, capsules, refreshTrigger]); // 🔥 移除 tagsCache 依赖，避免无限循环
 
   // 过滤后的胶囊列表
   const filteredCapsules = useMemo(() => {
