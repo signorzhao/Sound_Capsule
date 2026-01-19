@@ -92,6 +92,7 @@ export default function InitialSetup({ onComplete }) {
     setError('');
 
     try {
+      // 1. 保存到 Tauri 配置
       await saveAppConfig({
         reaper_path: config.reaper_path,
         reaper_ip: null,  // 不再需要
@@ -99,6 +100,30 @@ export default function InitialSetup({ onComplete }) {
         username: null,  // 不再需要
         language: 'zh-CN'
       });
+
+      console.log('✅ Tauri 配置保存成功');
+
+      // 2. 🔑 关键修复：同步到 Python 后端
+      // 解决初始化后导出目录不更新的问题（后端启动时配置尚不存在）
+      try {
+        const response = await fetch('http://localhost:5002/api/config/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            export_dir: config.export_dir,
+            reaper_path: config.reaper_path
+          })
+        });
+        
+        if (response.ok) {
+          console.log('✅ Python 后端配置已同步');
+        } else {
+          console.warn('⚠️ Python 后端配置同步失败，但 Tauri 配置已保存');
+        }
+      } catch (e) {
+        console.warn('⚠️ 无法连接到 Python 后端:', e.message);
+        // 不阻塞保存流程
+      }
 
       console.log('配置保存成功，准备跳转到主界面');
 
