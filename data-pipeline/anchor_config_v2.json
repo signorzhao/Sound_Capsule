@@ -1044,35 +1044,6 @@
     "lexicon_file": "lexicon_source.csv",
     "name": "Source & Physics (源场)"
   },
-  "spectral": {
-    "anchors": [
-      {
-        "word": "尖锐",
-        "x": 16.711652746081576,
-        "y": 14.746938822793462,
-        "zh": "尖锐"
-      },
-      {
-        "word": "浑厚",
-        "x": 87.44135398445374,
-        "y": 86.51460213384614,
-        "zh": "浑厚"
-      }
-    ],
-    "axes": {
-      "x_label": {
-        "neg": "窄带",
-        "pos": "宽带"
-      },
-      "y_label": {
-        "neg": "稀疏",
-        "pos": "致密"
-      }
-    },
-    "description": "从混音和频率占用的角度出发，描述声音在频域空间里的“体积”和“密度”",
-    "lexicon_file": "lexicon_spectral.csv",
-    "name": "Spectral / (频谱)"
-  },
   "temperament": {
     "anchors": [
       {
