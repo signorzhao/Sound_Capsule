@@ -299,6 +299,14 @@ def update_capsule_tags_api(capsule_id):
                 logger.info(f"[TAGS] ✓ 已标记关键词待同步: 胶囊 {capsule_id}")
             except Exception as e:
                 logger.warning(f"[TAGS] 标记待同步失败: {e}")
+            
+            # 🔑 关键修复：执行 WAL checkpoint，确保标签数据立即对其他连接可见
+            # 这解决了编辑关键词后数据不更新的问题
+            try:
+                db.wal_checkpoint()
+                logger.info(f"[TAGS] ✓ WAL checkpoint 完成，标签数据已同步")
+            except Exception as e:
+                logger.warning(f"[TAGS] WAL checkpoint 失败: {e}")
         else:
             logger.warning(f"⚠️ 胶囊 {capsule_id} 没有标签需要插入")
 

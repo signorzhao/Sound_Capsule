@@ -42,7 +42,12 @@
     ],
     "externalBin": [
       "binaries/capsules_api"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
+    }
   },
   "plugins": {
     "shell": {

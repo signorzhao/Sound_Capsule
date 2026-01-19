@@ -50,6 +50,21 @@ class CapsuleDatabase:
         if self.conn:
             self.conn.close()
 
+    def wal_checkpoint(self):
+        """
+        执行 WAL checkpoint，确保数据立即对其他连接可见
+        
+        修复：解决首次保存胶囊后预览音频无法播放的问题
+        """
+        self.connect()
+        try:
+            self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            logger.info("✓ [DB] WAL checkpoint 完成，数据已同步")
+        except Exception as e:
+            logger.warning(f"⚠️ [DB] WAL checkpoint 失败: {e}")
+        finally:
+            self.close()
+
     def get_capsule_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """
         根据名称获取胶囊

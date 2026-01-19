@@ -1695,6 +1695,15 @@ def webui_export_api():
         }
         suggested_lens = lens_map.get(capsule_type, 'texture')
 
+        # 🔑 关键修复：执行 WAL checkpoint，确保胶囊数据立即对其他连接可见
+        # 这解决了首次保存胶囊后预览音频无法播放的问题
+        try:
+            db = get_database()
+            db.wal_checkpoint()
+            logger.info("✓ [EXPORT] WAL checkpoint 完成，胶囊数据已同步")
+        except Exception as e:
+            logger.warning(f"⚠️ [EXPORT] WAL checkpoint 失败: {e}")
+
         response = jsonify({
             'success': True,
             'capsule_id': final_capsule['id'],
