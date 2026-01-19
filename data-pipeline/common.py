@@ -183,6 +183,27 @@ class PathManager:
             )
         return cls._instance
     
+    def update_export_dir(self, new_export_dir: str):
+        """
+        动态更新导出目录（用于初始化后用户修改路径的场景）
+        
+        Args:
+            new_export_dir: 新的导出目录路径
+            
+        Note:
+            这个方法用于解决后端启动时配置尚未存在的问题。
+            当用户在前端完成初始化后，调用此方法更新内存中的导出目录。
+        """
+        old_dir = self.export_dir
+        self.export_dir = Path(new_export_dir)
+        
+        # 确保目录存在
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"🔄 [PathManager] 导出目录已更新:")
+        print(f"   旧路径: {old_dir}")
+        print(f"   新路径: {self.export_dir}")
+    
     def _check_database_schema(self) -> bool:
         """
         检查数据库表结构是否完整

@@ -3947,6 +3947,17 @@ def save_config():
             json.dump(existing_config, f, indent=2, ensure_ascii=False)
 
         logger.info(f"[CONFIG] 配置已保存到: {config_file}")
+        
+        # 🔑 关键修复：更新 PathManager 的导出目录（解决初始化后路径不更新的问题）
+        if export_dir:
+            try:
+                from common import PathManager
+                pm = PathManager.get_instance()
+                pm.update_export_dir(export_dir)
+                logger.info(f"[CONFIG] ✅ PathManager 导出目录已更新: {export_dir}")
+            except Exception as e:
+                logger.warning(f"[CONFIG] ⚠️ 更新 PathManager 导出目录失败: {e}")
+        
         logger.info(f"[DEBUG] /api/config/save 即将返回响应")
 
         return jsonify({
