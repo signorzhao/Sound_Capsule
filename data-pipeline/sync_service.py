@@ -1620,6 +1620,40 @@ class SyncService:
                             
                             # 🔒 关键决断点：只有所有文件都上传成功，才标记为 synced
                             if all_files_uploaded:
+                                # 🏷️ 自动上传关键词到 cloud_capsule_tags 表
+                                # 确保其他用户同步后能看到关键词
+                                try:
+                                    conn_tags = self._get_connection()
+                                    cursor_tags = conn_tags.cursor()
+                                    cursor_tags.execute("""
+                                        SELECT lens, word_id, word_cn, word_en, x, y
+                                        FROM capsule_tags
+                                        WHERE capsule_id = ?
+                                    """, (record_id,))
+                                    local_tags = []
+                                    for row in cursor_tags.fetchall():
+                                        local_tags.append({
+                                            'lens': row[0],
+                                            'word_id': row[1],
+                                            'word_cn': row[2],
+                                            'word_en': row[3],
+                                            'x': row[4],
+                                            'y': row[5],
+                                        })
+                                    conn_tags.close()
+                                    
+                                    if local_tags and cloud_id:
+                                        print(f"   🏷️  上传 {len(local_tags)} 个关键词到 cloud_capsule_tags...")
+                                        tags_uploaded = supabase.upload_tags(user_id, cloud_id, local_tags)
+                                        if tags_uploaded:
+                                            print(f"   ✓ 关键词上传成功")
+                                        else:
+                                            print(f"   ⚠️ 关键词上传失败（不影响胶囊同步状态）")
+                                    elif not local_tags:
+                                        print(f"   ℹ️  该胶囊暂无关键词")
+                                except Exception as tags_err:
+                                    print(f"   ⚠️ 上传关键词异常: {tags_err}（不影响胶囊同步状态）")
+                                
                                 # 更新 sync_status 表
                                 self.mark_as_synced('capsules', record_id)
                                 
