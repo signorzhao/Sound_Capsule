@@ -285,23 +285,53 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
   };
 
-  // 组件加载时，只加载 metadata，tags 采用懒加载
+  // 组件加载时，优先使用列表返回的 metadata，只有缺失的才调用 API
   useEffect(() => {
     const loadMetadata = async () => {
       console.log('开始加载胶囊 metadata，胶囊数量:', capsules.length);
 
-      // 只加载 metadata（轻量级）
+      // 统计来源
+      let fromList = 0;
+      let fromApi = 0;
+      let skipped = 0;
+
+      // 批量处理：优先使用列表中已包含的 metadata
+      const newCache = { ...metadataCache };
+      const needsApiLoad = [];
+
       for (const capsule of capsules) {
+        if (newCache[capsule.id]) {
+          // 已缓存，跳过
+          skipped++;
+          continue;
+        }
+
+        if (capsule.metadata) {
+          // 列表已返回 metadata，直接使用
+          newCache[capsule.id] = capsule.metadata;
+          fromList++;
+        } else {
+          // 需要调用 API
+          needsApiLoad.push(capsule);
+        }
+      }
+
+      // 批量更新缓存（从列表获取的）
+      if (fromList > 0) {
+        setMetadataCache(newCache);
+      }
+
+      // 逐个调用 API（只有少数缺失的）
+      for (const capsule of needsApiLoad) {
         try {
-          if (!metadataCache[capsule.id]) {
-            await loadCapsuleMetadata(capsule);
-          }
+          await loadCapsuleMetadata(capsule);
+          fromApi++;
         } catch (error) {
           console.error('加载 metadata 失败:', capsule.id, error);
         }
       }
 
-      console.log('所有胶囊 metadata 加载完成');
+      console.log(`Metadata 加载完成: 从列表=${fromList}, 从API=${fromApi}, 已缓存=${skipped}`);
     };
 
     if (capsules.length > 0) {
@@ -334,9 +364,41 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       const loadTagsForList = async () => {
         console.log('列表视图：开始加载胶囊 tags');
 
+        // 优先使用列表中已返回的 tags
+        let fromList = 0;
+        const newCache = { ...tagsCache };
+        
+        for (const capsule of capsules) {
+          if (!newCache[capsule.id] && capsule.tags && capsule.tags.length > 0) {
+            // 列表已返回 tags，转换格式后直接使用
+            const formattedTags = {};
+            for (const tag of capsule.tags) {
+              const lens = tag.lens;
+              if (!formattedTags[lens]) {
+                formattedTags[lens] = [];
+              }
+              formattedTags[lens].push({
+                word_id: tag.word_id,
+                word_cn: tag.word_cn,
+                word_en: tag.word_en,
+                x: tag.x,
+                y: tag.y
+              });
+            }
+            newCache[capsule.id] = formattedTags;
+            fromList++;
+          }
+        }
+
+        // 批量更新缓存（从列表获取的）
+        if (fromList > 0) {
+          setTagsCache(newCache);
+          console.log(`Tags 从列表获取: ${fromList} 个`);
+        }
+
         // 只加载还没有缓存的胶囊 tags
         const capsulesToLoad = capsules.filter(
-          capsule => !tagsCache[capsule.id] && tagsCache[capsule.id] !== 'LOADING'
+          capsule => !newCache[capsule.id] && tagsCache[capsule.id] !== 'LOADING'
         );
 
         if (capsulesToLoad.length === 0) {

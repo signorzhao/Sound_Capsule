@@ -772,6 +772,57 @@ def update_lens(lens_id):
         }), 500
 
 
+@app.route('/api/lenses/<lens_id>/toggle-active', methods=['POST'])
+def toggle_lens_active(lens_id):
+    """
+    切换棱镜的激活/禁用状态
+    
+    Request Body:
+    {
+        "active": true/false
+    }
+    
+    Response:
+    {
+        "success": true,
+        "lens_id": "mechanics",
+        "active": false,
+        "message": "棱镜 'mechanics' 已禁用"
+    }
+    """
+    try:
+        config = load_config_v2()
+        
+        if lens_id not in config:
+            return jsonify({
+                "success": False,
+                "error": f"棱镜 '{lens_id}' 不存在"
+            }), 404
+        
+        data = request.json or {}
+        # 如果没有提供 active，则切换当前状态
+        current_active = config[lens_id].get('active', True)
+        new_active = data.get('active', not current_active)
+        
+        config[lens_id]['active'] = new_active
+        save_config_v2(config)
+        
+        status = '已激活' if new_active else '已禁用'
+        
+        return jsonify({
+            "success": True,
+            "lens_id": lens_id,
+            "active": new_active,
+            "message": f"棱镜 '{lens_id}' {status}"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"切换状态失败: {str(e)}"
+        }), 500
+
+
 @app.route('/api/lenses/<lens_id>/generate-anchors', methods=['POST'])
 def generate_suggested_anchors(lens_id):
     """
@@ -2129,12 +2180,27 @@ HTML_TEMPLATE = r'''
             const lens = config[lens_id];
             const item = document.createElement('div');
             item.className = 'lens-list-item';
+            
+            // 根据激活状态设置样式
+            const isActive = lens.active !== false; // 默认激活
+            if (!isActive) {
+                item.style.opacity = '0.5';
+                item.style.borderStyle = 'dashed';
+            }
 
             const anchorCount = lens.anchors ? lens.anchors.length : 0;
+            const statusText = isActive ? '✅ 已启用' : '⏸️ 已禁用';
+            const statusColor = isActive ? '#10b981' : '#6b7280';
 
             item.innerHTML = `
-                <h4>${lens.name || lens_id}</h4>
-                <p>ID: ${lens_id} | ${anchorCount} 个锚点</p>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h4 style="margin:0;">${lens.name || lens_id}</h4>
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:${statusColor};">
+                        <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleLensActive('${lens_id}', this.checked)" style="width:14px; height:14px; accent-color:#6366f1;">
+                        ${statusText}
+                    </label>
+                </div>
+                <p style="margin:5px 0;">ID: ${lens_id} | ${anchorCount} 个锚点</p>
                 <div class="lens-actions">
                     <button class="btn-sm btn-sec" onclick="editLens('${lens_id}')">编辑</button>
                     <button class="btn-sm btn-danger" onclick="confirmDeleteLens('${lens_id}')">删除</button>
@@ -2142,6 +2208,28 @@ HTML_TEMPLATE = r'''
             `;
             list.appendChild(item);
         });
+    }
+    
+    async function toggleLensActive(lensId, isActive) {
+        try {
+            const res = await fetch(`/api/lenses/${lensId}/toggle-active`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ active: isActive })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                // 更新本地配置
+                config[lensId].active = isActive;
+                showToast(result.message);
+                renderLensList(); // 重新渲染列表
+            } else {
+                showToast('❌ ' + result.error, true);
+            }
+        } catch (e) {
+            showToast('❌ 操作失败: ' + e.message, true);
+        }
     }
 
     function showCreateLensForm() {

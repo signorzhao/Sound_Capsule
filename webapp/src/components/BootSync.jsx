@@ -263,7 +263,7 @@ export default function BootSync({ onComplete, onError }) {
         {/* 提示信息 */}
         <div className="mt-6 text-center text-xs text-zinc-600">
           <p>仅下载云端数据，不会上传本地修改</p>
-          <p className="mt-1">如需上传本地胶囊，请点击胶囊库顶部的云图标按钮</p>
+          <p className="mt-1">如需上传本地胶囊，请在胶囊库中点击胶囊的上传按钮</p>
         </div>
       </div>
     </div>

@@ -3407,8 +3407,7 @@ def set_cache_pinned(capsule_id):
 
 
 @app.route('/api/capsules/<int:capsule_id>/asset-status', methods=['GET'])
-@token_required
-def get_asset_status(current_user, capsule_id):
+def get_asset_status(capsule_id):
     """
     获取胶囊资产状态（Phase B）
 
@@ -3573,17 +3572,39 @@ def get_prisms_field():
     获取所有棱镜的预计算力场坐标 (WebApp 核心加载接口)
     
     格式兼容 sonic_vectors.json
+    
+    🔥 支持 active 状态过滤：从锚点编辑器配置中读取 active 状态
     """
     try:
         prisms = prism_manager.get_all_prisms()
+        
+        # 🔥 读取锚点编辑器配置中的 active 状态
+        anchor_config = {}
+        try:
+            anchor_config_path = Path(__file__).parent / "anchor_config_v2.json"
+            if anchor_config_path.exists():
+                with open(anchor_config_path, 'r', encoding='utf-8') as f:
+                    anchor_config = json.load(f)
+        except Exception as e:
+            logger.warning(f"读取锚点编辑器配置失败: {e}")
+        
         output = {}
         for p in prisms:
             try:
-                output[p['id']] = {
+                prism_id = p['id']
+                
+                # 🔥 检查 active 状态（默认 True）
+                is_active = anchor_config.get(prism_id, {}).get('active', True)
+                if is_active is False:
+                    logger.info(f"跳过禁用的棱镜: {prism_id}")
+                    continue
+                
+                output[prism_id] = {
                     "name": p['name'],
                     "description": p['description'],
                     "axes": json.loads(p.get('axis_config', '{}')),
-                    "points": json.loads(p.get('field_data', '[]'))
+                    "points": json.loads(p.get('field_data', '[]')),
+                    "active": is_active  # 🔥 返回 active 状态给前端
                 }
             except Exception as e:
                 logger.warning(f"解析棱镜 {p.get('id')} 字段失败: {e}")

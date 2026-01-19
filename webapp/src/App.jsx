@@ -212,6 +212,12 @@ export default function App() {
         Object.keys(data).forEach(key => {
           const lensData = data[key];
 
+          // 🔥 跳过禁用的棱镜（active: false）
+          if (lensData.active === false) {
+            console.log(`⏸️ 跳过禁用的棱镜: ${key}`);
+            return;
+          }
+
           // 如果有默认配置就使用，否则动态生成
           if (DEFAULT_LENS_CONFIG[key]) {
             dynamicConfig[key] = { ...DEFAULT_LENS_CONFIG[key] };

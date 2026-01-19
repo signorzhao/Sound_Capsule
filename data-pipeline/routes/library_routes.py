@@ -252,8 +252,8 @@ def update_capsule_tags_api(capsule_id):
 
         for lens, tag_list in tags.items():
             logger.info(f"[TAGS] 处理棱镜 {lens}, 标签数量: {len(tag_list) if tag_list else 0}")
-            if lens not in ['texture', 'source', 'materiality', 'temperament']:
-                continue
+            # 🔥 移除硬编码白名单，允许所有棱镜（包括 mechanics、force_field_test 等）
+            # 遵循架构规范：严禁硬编码棱镜 ID
 
             if not tag_list or len(tag_list) == 0:
                 continue
