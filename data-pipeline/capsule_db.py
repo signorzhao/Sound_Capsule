@@ -318,6 +318,63 @@ class CapsuleDatabase:
         finally:
             self.close()
 
+    def save_capsule_metadata(self, capsule_id: int, metadata: Dict[str, Any]) -> bool:
+        """
+        保存胶囊技术元数据到 capsule_metadata 表（插入或更新）
+        
+        用于同步下载 metadata.json 后写入数据库，或修复缺失的元数据。
+        
+        Args:
+            capsule_id: 胶囊 ID
+            metadata: 元数据字典，包含 bpm, duration, sample_rate, plugin_count, 
+                     plugin_list, has_sends, has_folder_bus, tracks_included 等字段
+        
+        Returns:
+            是否成功
+        """
+        self.connect()
+        try:
+            cursor = self.conn.cursor()
+            
+            # 解析 plugin_list：支持列表或已经是 JSON 字符串
+            plugin_list = metadata.get('plugin_list', [])
+            if isinstance(plugin_list, list):
+                plugin_list_json = json.dumps(plugin_list)
+            elif isinstance(plugin_list, str):
+                # 已经是 JSON 字符串
+                plugin_list_json = plugin_list
+            else:
+                plugin_list_json = '[]'
+            
+            # 使用 INSERT OR REPLACE 实现插入或更新
+            cursor.execute("""
+                INSERT OR REPLACE INTO capsule_metadata (
+                    capsule_id, bpm, duration, sample_rate,
+                    plugin_count, plugin_list, has_sends,
+                    has_folder_bus, tracks_included
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                capsule_id,
+                metadata.get('bpm'),
+                metadata.get('duration'),
+                metadata.get('sample_rate'),
+                metadata.get('plugin_count'),
+                plugin_list_json,
+                metadata.get('has_sends'),
+                metadata.get('has_folder_bus'),
+                metadata.get('tracks_included')
+            ))
+            
+            self.conn.commit()
+            return True
+            
+        except Exception as e:
+            self.conn.rollback()
+            print(f"[DB] 保存胶囊元数据失败 (capsule_id={capsule_id}): {e}")
+            return False
+        finally:
+            self.close()
+
     def add_capsule_tags(self, capsule_id: int, tags: List[Dict[str, Any]]) -> bool:
         """
         添加语义标签

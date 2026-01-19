@@ -94,6 +94,147 @@ class SyncService:
         finally:
             conn.close()
 
+    def _save_metadata_to_db(self, capsule_id: int, metadata_path: Path) -> bool:
+        """
+        从 metadata.json 文件读取技术元数据并写入 capsule_metadata 表
+        
+        Args:
+            capsule_id: 胶囊 ID
+            metadata_path: metadata.json 文件路径
+            
+        Returns:
+            是否成功
+        """
+        try:
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            # 从 metadata.json 提取技术信息
+            tech_metadata = {
+                'bpm': metadata.get('bpm'),
+                'duration': metadata.get('duration'),
+                'sample_rate': metadata.get('sample_rate'),
+                'plugin_count': metadata.get('plugin_count'),
+                'plugin_list': metadata.get('plugin_list', []),
+                'has_sends': metadata.get('has_sends'),
+                'has_folder_bus': metadata.get('has_folder_bus'),
+                'tracks_included': metadata.get('tracks_included')
+            }
+            
+            # 调用数据库方法保存
+            from capsule_db import get_database
+            db = get_database()
+            success = db.save_capsule_metadata(capsule_id, tech_metadata)
+            
+            if success:
+                logger.info(f"   📊 技术元数据已写入数据库")
+            return success
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"   ⚠️  metadata.json 解析失败: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"   ⚠️  保存元数据失败: {e}")
+            return False
+
+    def repair_missing_metadata(self) -> Dict[str, Any]:
+        """
+        修复缺失的 capsule_metadata 数据
+        
+        扫描所有胶囊，检查 capsule_metadata 表是否有对应记录，
+        如果没有，尝试从本地 metadata.json 文件读取并写入数据库。
+        
+        Returns:
+            修复结果统计
+        """
+        from capsule_db import get_database
+        from common import PathManager
+        
+        logger.info("🔧 开始修复缺失的技术元数据...")
+        
+        repaired = 0
+        skipped = 0
+        failed = 0
+        errors = []
+        
+        try:
+            pm = PathManager.get_instance()
+            export_dir = pm.export_dir
+            
+            conn = self._get_connection()
+            try:
+                cursor = conn.cursor()
+                
+                # 查找缺失 capsule_metadata 的胶囊
+                cursor.execute("""
+                    SELECT c.id, c.name, c.file_path
+                    FROM capsules c
+                    LEFT JOIN capsule_metadata m ON c.id = m.capsule_id
+                    WHERE m.capsule_id IS NULL
+                """)
+                missing_capsules = cursor.fetchall()
+                
+            finally:
+                conn.close()
+            
+            if not missing_capsules:
+                logger.info("   ✓ 所有胶囊都有技术元数据，无需修复")
+                return {
+                    'success': True,
+                    'repaired': 0,
+                    'skipped': 0,
+                    'failed': 0,
+                    'message': '所有胶囊都有技术元数据'
+                }
+            
+            logger.info(f"   发现 {len(missing_capsules)} 个胶囊缺失技术元数据")
+            
+            for capsule in missing_capsules:
+                cap_id = capsule['id'] if isinstance(capsule, sqlite3.Row) else capsule[0]
+                cap_name = capsule['name'] if isinstance(capsule, sqlite3.Row) else capsule[1]
+                cap_file_path = capsule['file_path'] if isinstance(capsule, sqlite3.Row) else capsule[2]
+                
+                # 构建 metadata.json 路径
+                capsule_rel_path = cap_file_path or cap_name
+                capsule_dir = Path(export_dir) / capsule_rel_path
+                metadata_path = capsule_dir / "metadata.json"
+                
+                if not metadata_path.exists():
+                    logger.warning(f"   ⚠️  {cap_name}: metadata.json 不存在，跳过")
+                    skipped += 1
+                    continue
+                
+                # 读取并写入数据库
+                success = self._save_metadata_to_db(cap_id, metadata_path)
+                
+                if success:
+                    logger.info(f"   ✓ {cap_name}: 技术元数据已修复")
+                    repaired += 1
+                else:
+                    logger.error(f"   ✗ {cap_name}: 修复失败")
+                    failed += 1
+                    errors.append(f"{cap_name}: 写入数据库失败")
+            
+            logger.info(f"🔧 修复完成: 成功 {repaired}, 跳过 {skipped}, 失败 {failed}")
+            
+            return {
+                'success': True,
+                'repaired': repaired,
+                'skipped': skipped,
+                'failed': failed,
+                'errors': errors
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ 修复失败: {e}")
+            return {
+                'success': False,
+                'repaired': repaired,
+                'skipped': skipped,
+                'failed': failed,
+                'errors': [str(e)]
+            }
+
     def _dedupe_local_capsules(self) -> None:
         """去重本地同名同路径胶囊，保留一条记录"""
         from capsule_db import get_database
@@ -1034,6 +1175,14 @@ class SyncService:
                         except Exception as e:
                             logger.warning(f"   ⚠️  Tags 处理失败: {e}")
 
+                        # 📊 处理技术元数据：从 metadata.json 写入 capsule_metadata 表
+                        try:
+                            metadata_path = capsule_dir / "metadata.json"
+                            if metadata_path.exists():
+                                self._save_metadata_to_db(cap_id, metadata_path)
+                        except Exception as e:
+                            logger.warning(f"   ⚠️  元数据写入失败: {e}")
+
                     except Exception as e:
                         error_msg = f"检查 {cap_name} 资产失败: {e}"
                         errors.append(error_msg)
@@ -1726,9 +1875,14 @@ class SyncService:
                                     tags_service.merge_tags_from_metadata(cap_id, metadata_path)
                         except Exception as e:
                             logger.warning(f"   ⚠️  Tags 处理失败: {e}")
-                        
-                        else:
-                            logger.warning(f"   ⚠️  胶囊 {cap_name} 没有 owner_id，跳过下载")
+
+                        # 📊 处理技术元数据：从 metadata.json 写入 capsule_metadata 表
+                        try:
+                            metadata_path = capsule_dir / "metadata.json"
+                            if metadata_path.exists():
+                                self._save_metadata_to_db(cap_id, metadata_path)
+                        except Exception as e:
+                            logger.warning(f"   ⚠️  元数据写入失败: {e}")
 
                     except Exception as e:
                         error_msg = f"检查 {cap_name} 资产失败: {e}"

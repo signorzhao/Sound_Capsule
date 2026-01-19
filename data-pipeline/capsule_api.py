@@ -2914,6 +2914,62 @@ def sync_metadata_lightweight(current_user):
         raise APIError(f"轻量级同步失败: {e}", 500)
 
 
+@app.route('/api/sync/repair-metadata', methods=['POST'])
+@token_required
+def repair_capsule_metadata(current_user):
+    """
+    修复缺失的胶囊技术元数据
+    
+    扫描所有胶囊，检查 capsule_metadata 表是否有对应记录，
+    如果没有，尝试从本地 metadata.json 文件读取并写入数据库。
+    
+    需要认证
+    
+    响应:
+        {
+            "success": true,
+            "data": {
+                "repaired": 11,
+                "skipped": 0,
+                "failed": 0,
+                "errors": []
+            }
+        }
+    """
+    try:
+        logger.info("\n" + "=" * 60)
+        logger.info("🔧 修复元数据请求")
+        logger.info("=" * 60)
+        logger.info(f"用户: {current_user.get('username')}")
+        
+        from sync_service import get_sync_service
+        sync_service = get_sync_service()
+        result = sync_service.repair_missing_metadata()
+        
+        if result['success']:
+            return jsonify({
+                'success': True,
+                'data': {
+                    'repaired': result['repaired'],
+                    'skipped': result['skipped'],
+                    'failed': result['failed'],
+                    'errors': result.get('errors', [])
+                }
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': '修复过程中出现错误',
+                'data': result
+            }), 500
+            
+    except APIError:
+        raise
+    except Exception as e:
+        logger.error(f"修复元数据失败: {e}")
+        raise APIError(f"修复元数据失败: {e}", 500)
+
+
 # ============================================
 # Phase B: 混合存储策略 - 下载管理 API
 # ============================================
