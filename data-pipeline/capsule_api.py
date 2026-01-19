@@ -3895,13 +3895,14 @@ def rollback_prism(current_user, prism_id):
 @token_required
 def delete_prism(current_user, prism_id):
     """
-    删除棱镜（从数据库中移除）
+    删除棱镜（从本地和云端同时移除）
     
     用于删除测试棱镜或不再需要的棱镜。
     
     注意：
     - 胶囊的标签数据不会被删除（孤儿标签机制）
     - 此操作不可逆
+    - 🔥 同时删除云端数据，防止同步时重新下载
     
     Args:
         prism_id: 棱镜 ID (如 'test', 'mechanics')
@@ -3914,10 +3915,27 @@ def delete_prism(current_user, prism_id):
         if not prism:
             raise APIError(f"棱镜 '{prism_id}' 不存在", 404)
         
+        # 获取用户的 Supabase ID
+        supabase_user_id = current_user.get('supabase_user_id')
         user_id = current_user.get('username') or current_user.get('user_id', 'unknown')
         logger.info(f"用户 {user_id} 删除棱镜: {prism_id}")
         
-        # 从数据库删除
+        cloud_deleted = False
+        
+        # 🔥 先从云端删除（防止同步时重新下载）
+        if supabase_user_id:
+            try:
+                from dal_cloud_prisms import CloudPrismDAL
+                prism_dal = CloudPrismDAL()
+                cloud_deleted = prism_dal.delete_prism(supabase_user_id, prism_id)
+                if cloud_deleted:
+                    logger.info(f"✓ 棱镜 '{prism_id}' 已从云端删除")
+                else:
+                    logger.warning(f"⚠️ 云端删除棱镜 '{prism_id}' 失败（可能不存在）")
+            except Exception as e:
+                logger.warning(f"⚠️ 云端删除棱镜失败: {e}")
+        
+        # 从本地数据库删除
         pm = PathManager.get_instance()
         import sqlite3
         conn = sqlite3.connect(str(pm.db_path))
@@ -3932,11 +3950,12 @@ def delete_prism(current_user, prism_id):
         conn.commit()
         conn.close()
         
-        logger.info(f"✓ 棱镜 '{prism_id}' 已从数据库删除")
+        logger.info(f"✓ 棱镜 '{prism_id}' 已从本地数据库删除")
         
         return jsonify({
             'success': True,
             'message': f"棱镜 '{prism_id}' 已删除",
+            'cloud_deleted': cloud_deleted,
             'note': "胶囊标签数据已保留（孤儿标签）"
         })
         
