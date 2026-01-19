@@ -11,6 +11,17 @@ mod paths;
 mod sidecar;
 mod port_manager;
 
+/// 激活应用窗口（将窗口置于前台）
+/// 用于 REAPER 导出完成后自动切换回应用
+#[tauri::command]
+async fn focus_window(window: tauri::Window) -> Result<(), String> {
+    // 显示窗口（如果最小化）
+    window.unminimize().map_err(|e| e.to_string())?;
+    // 将窗口置于前台
+    window.set_focus().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // 日志写入文件（用于调试 Release 模式）
 fn log_to_file(message: &str) {
     if let Some(home) = dirs::home_dir() {
@@ -134,6 +145,7 @@ fn main() {
             port_manager::get_available_port,
             sidecar::check_sidecar,
             sidecar::open_rpp_in_reaper,
+            focus_window,  // 🔥 新增：激活窗口命令
         ])
         .on_window_event(|window, event| {
             // 当窗口关闭时，停止 sidecar 进程

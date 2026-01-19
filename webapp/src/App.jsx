@@ -13,6 +13,7 @@ import BootSync from './components/BootSync'; // Phase G2: 启动同步
 import { useToast } from './components/Toast';
 import { sendNotification, requestNotificationPermission } from './utils/tauriApi';
 import { getAppConfig } from './utils/configApi';
+import { invoke } from '@tauri-apps/api/core'; // 🔥 用于调用 Rust 命令
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
 import './components/CapsuleTypeCard.css';
@@ -555,6 +556,14 @@ export default function App() {
 
         setSaveStatus('success');
         setCurrentCapsuleId(result.capsule_id);
+
+        // 🔥 将应用窗口置于前台（从 REAPER 切换回来）
+        try {
+          await invoke('focus_window');
+          console.log('🪟 应用窗口已激活');
+        } catch (e) {
+          console.warn('激活窗口失败:', e);
+        }
 
         // 触发数据变更事件，通知 SyncContext 更新同步状态
         window.dispatchEvent(new Event('dataChanged'));

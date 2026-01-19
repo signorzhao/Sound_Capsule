@@ -65,11 +65,12 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 标签缓存（每个胶囊的棱镜标签）
   const [tagsCache, setTagsCache] = useState({});
 
-  // 监听 refreshTrigger 变化，清除 tags 缓存
+  // 监听 refreshTrigger 变化，清除 tags 和 metadata 缓存
   useEffect(() => {
     if (refreshTrigger > 0) {
-      console.log('清除 tags 缓存，触发器:', refreshTrigger);
+      console.log('清除 tags 和 metadata 缓存，触发器:', refreshTrigger);
       setTagsCache({});
+      setMetadataCache({}); // 🔥 同时清除 metadata 缓存
     }
   }, [refreshTrigger]);
 
@@ -286,58 +287,37 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   };
 
   // 组件加载时，优先使用列表返回的 metadata，只有缺失的才调用 API
+  // 🔥 添加 refreshTrigger 依赖，确保刷新时重新加载
   useEffect(() => {
     const loadMetadata = async () => {
-      console.log('开始加载胶囊 metadata，胶囊数量:', capsules.length);
+      console.log('开始加载胶囊 metadata，胶囊数量:', capsules.length, '刷新触发器:', refreshTrigger);
 
       // 统计来源
       let fromList = 0;
       let fromApi = 0;
-      let skipped = 0;
 
-      // 批量处理：优先使用列表中已包含的 metadata
-      const newCache = { ...metadataCache };
-      const needsApiLoad = [];
+      // 🔥 每次刷新时从空缓存开始，避免闭包问题
+      const newCache = {};
 
       for (const capsule of capsules) {
-        if (newCache[capsule.id]) {
-          // 已缓存，跳过
-          skipped++;
-          continue;
-        }
-
         if (capsule.metadata) {
           // 列表已返回 metadata，直接使用
           newCache[capsule.id] = capsule.metadata;
           fromList++;
-        } else {
-          // 需要调用 API
-          needsApiLoad.push(capsule);
         }
       }
 
       // 批量更新缓存（从列表获取的）
-      if (fromList > 0) {
-        setMetadataCache(newCache);
-      }
+      setMetadataCache(newCache);
 
-      // 逐个调用 API（只有少数缺失的）
-      for (const capsule of needsApiLoad) {
-        try {
-          await loadCapsuleMetadata(capsule);
-          fromApi++;
-        } catch (error) {
-          console.error('加载 metadata 失败:', capsule.id, error);
-        }
-      }
-
-      console.log(`Metadata 加载完成: 从列表=${fromList}, 从API=${fromApi}, 已缓存=${skipped}`);
+      console.log(`Metadata 加载完成: 从列表=${fromList}, 从API=${fromApi}`);
     };
 
     if (capsules.length > 0) {
       loadMetadata();
     }
-  }, [capsules]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capsules, refreshTrigger]);
 
   // Phase B.3: 加载资产状态（轻量级）
   useEffect(() => {
@@ -359,17 +339,18 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   }, [capsules]);
 
   // 当切换到列表视图时，懒加载 tags（避免阻塞渲染）
+  // 🔥 修复闭包问题：从 capsules 数据直接获取 tags，不依赖旧缓存
   useEffect(() => {
     if (viewMode === 'list' && capsules.length > 0) {
       const loadTagsForList = async () => {
-        console.log('列表视图：开始加载胶囊 tags');
+        console.log('列表视图：开始加载胶囊 tags，刷新触发器:', refreshTrigger);
 
-        // 优先使用列表中已返回的 tags
+        // 🔥 每次刷新时从空缓存开始，直接使用 capsules 中的 tags
         let fromList = 0;
-        const newCache = { ...tagsCache };
+        const newCache = {};
         
         for (const capsule of capsules) {
-          if (!newCache[capsule.id] && capsule.tags && capsule.tags.length > 0) {
+          if (capsule.tags && capsule.tags.length > 0) {
             // 列表已返回 tags，转换格式后直接使用
             const formattedTags = {};
             for (const tag of capsule.tags) {
@@ -391,18 +372,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         }
 
         // 批量更新缓存（从列表获取的）
-        if (fromList > 0) {
-          setTagsCache(newCache);
-          console.log(`Tags 从列表获取: ${fromList} 个`);
-        }
+        setTagsCache(newCache);
+        console.log(`Tags 从列表获取: ${fromList} 个`);
 
-        // 只加载还没有缓存的胶囊 tags
+        // 只加载还没有 tags 的胶囊
         const capsulesToLoad = capsules.filter(
-          capsule => !newCache[capsule.id] && tagsCache[capsule.id] !== 'LOADING'
+          capsule => !newCache[capsule.id]
         );
 
         if (capsulesToLoad.length === 0) {
-          console.log('列表视图：所有 tags 已缓存');
+          console.log('列表视图：所有 tags 已加载');
           return;
         }
 
