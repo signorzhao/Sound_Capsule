@@ -63,9 +63,15 @@ class AuthManager:
         self.db_path = db_path
 
     def _get_connection(self):
-        """获取数据库连接"""
-        conn = sqlite3.connect(self.db_path)
+        """获取数据库连接（统一使用 WAL 模式，与 capsule_db 保持一致）"""
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=30.0,  # 增加超时时间，避免并发锁等待
+            check_same_thread=False  # 允许多线程访问
+        )
         conn.row_factory = sqlite3.Row
+        # 启用 WAL 模式，降低读写并发锁冲突
+        conn.execute("PRAGMA journal_mode=WAL;")
         return conn
 
     def hash_password(self, password: str) -> str:
@@ -263,6 +269,8 @@ class AuthManager:
         在本地数据库中缓存 Supabase 用户信息
         
         这样即使离线也能识别用户身份
+        
+        修复：使用 WAL checkpoint 确保数据立即可见，避免注册后首次上传失败
         """
         conn = self._get_connection()
         try:
@@ -274,7 +282,9 @@ class AuthManager:
                 (supabase_user_id,)
             )
             
-            if not cursor.fetchone():
+            existing = cursor.fetchone()
+            
+            if not existing:
                 # 使用占位符密码哈希（Supabase 用户不使用本地密码）
                 # 这是为了兼容旧数据库 schema（password_hash 可能是 NOT NULL）
                 placeholder_hash = "SUPABASE_AUTH_USER"
@@ -285,8 +295,24 @@ class AuthManager:
                 """, (username, email, placeholder_hash, username, supabase_user_id))
                 conn.commit()
                 print(f"✓ [Auth] 已缓存用户: {username} ({supabase_user_id[:8]}...)")
+            else:
+                # 用户已存在，更新信息（以防之前缓存不完整）
+                cursor.execute("""
+                    UPDATE users SET username = ?, email = ?, display_name = ?, is_active = 1
+                    WHERE supabase_user_id = ?
+                """, (username, email, username, supabase_user_id))
+                conn.commit()
+                print(f"✓ [Auth] 已更新用户缓存: {username} ({supabase_user_id[:8]}...)")
+            
+            # 🔑 关键修复：执行 WAL checkpoint，确保数据立即对其他连接可见
+            # 这解决了注册/登录后首次上传失败的问题
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            print(f"✓ [Auth] WAL checkpoint 完成，用户数据已同步")
+            
         except Exception as e:
             print(f"⚠️ [Auth] 缓存用户失败: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             conn.close()
 
