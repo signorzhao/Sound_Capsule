@@ -177,27 +177,28 @@ metadata.json：
 5. 性能优化
 当前：启动同步检查所有胶囊的所有文件
 改进方向：本地缓存文件哈希，只检查变更
-6. 🆕 棱镜全局共享 (Prism Global Sync)
-当前问题：棱镜数据是用户级别隔离的 (download_prisms 按 user_id 过滤)
-   - 用户 A 上传棱镜 → 只有用户 A 能下载
-   - 管理员更新棱镜 → 其他用户看不到
-需求：管理员/开发者更新棱镜后，所有用户都能同步到最新数据
-实现方案选择：
-   方案 A：添加"公共棱镜"概念
-     - 云端表添加 is_public 字段或使用 user_id = 'system'
-     - download_prisms 同时获取用户私有棱镜 + 公共棱镜
-     - 公共棱镜优先级高于用户私有（版本冲突时）
-   方案 B：修改 Supabase RLS 策略
-     - 允许所有认证用户读取 cloud_prisms 表
-     - 只有管理员角色可以写入
-     - 用 updated_at 判断是否需要更新本地
-   方案 C：使用 Supabase Storage 静态文件
-     - 将 sonic_vectors.json 上传到 Storage
-     - 客户端启动时下载最新版本
-     - 简单直接，无需复杂同步逻辑
-优先级：高（影响所有用户的棱镜体验）
+6. ✅ 棱镜全局共享 (Prism Global Sync) - 已实现临时方案
+当前实现（2026-01-20）：
+   - 使用管理员账户 (ian@ian.com) 作为唯一棱镜数据源
+   - 所有用户下载时，强制下载管理员的棱镜（dal_cloud_prisms.py: ADMIN_USER_ID）
+   - 只有管理员可以上传棱镜，其他用户的上传请求被静默忽略
+   - 棱镜启用/禁用状态通过 anchor_config_v2.json 打包分发
+遗留问题：
+   - ⚠️ 棱镜启用状态 (active) 目前存储在本地配置文件中，不通过云端同步
+   - 如果管理员在锚点编辑器中禁用某个棱镜，需要重新编译分发才能生效
+   - 未来可考虑将 active 状态加入 cloud_prisms 表，实现实时同步
 
-7. 🆕 空间查询优化 (Capsule Coordinates Sync)
+7. 🆕 棱镜启用状态云端同步 (Prism Active State Sync)
+当前状态：使用本地配置文件 anchor_config_v2.json 管理启用/禁用
+问题：管理员禁用棱镜后，需要重新编译才能对用户生效
+改进方案：
+   - 在 cloud_prisms 表添加 is_active 字段
+   - 上传棱镜时同步 active 状态
+   - 下载棱镜时读取 active 状态并应用
+   - 本地 anchor_config_v2.json 仅作为用户个人偏好（可选覆盖）
+优先级：中（当前通过编译分发可解决，但不够灵活）
+
+8. 🆕 空间查询优化 (Capsule Coordinates Sync)
 当前状态：预留功能，尚未启用
 相关表结构：
    - 本地表 `capsule_coordinates`：存储胶囊在各棱镜的聚合坐标 (texture_x/y, source_x/y 等)

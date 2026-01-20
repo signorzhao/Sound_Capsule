@@ -3597,21 +3597,35 @@ def get_prisms_field():
         prisms = prism_manager.get_all_prisms()
         
         # 🔥 读取锚点编辑器配置中的 active 状态
-        # 优先从用户配置目录读取（编译版本），其次从代码目录读取（开发模式）
+        # 优先从用户配置目录读取，如果没有则从资源目录复制默认配置
         anchor_config = {}
         try:
-            # 1. 尝试用户配置目录（编译版本）
             pm = PathManager.get_instance()
-            anchor_config_path = pm.config_dir / "anchor_config_v2.json"
+            user_config_path = pm.config_dir / "anchor_config_v2.json"
             
-            # 2. 如果用户目录没有，尝试代码目录（开发模式）
-            if not anchor_config_path.exists():
-                anchor_config_path = Path(__file__).parent / "anchor_config_v2.json"
+            # 如果用户目录没有配置文件，从资源目录复制默认配置
+            if not user_config_path.exists():
+                # 尝试从资源目录复制（编译版本）
+                resource_path = pm.resource_dir / "anchor_config_v2.json" if pm.resource_dir else None
+                # 或从代码目录复制（开发模式）
+                dev_path = Path(__file__).parent / "anchor_config_v2.json"
+                
+                source_path = None
+                if resource_path and resource_path.exists():
+                    source_path = resource_path
+                elif dev_path.exists():
+                    source_path = dev_path
+                
+                if source_path:
+                    import shutil
+                    user_config_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source_path, user_config_path)
+                    logger.info(f"[PRISMS] 已复制默认棱镜配置到用户目录: {user_config_path}")
             
-            if anchor_config_path.exists():
-                with open(anchor_config_path, 'r', encoding='utf-8') as f:
+            if user_config_path.exists():
+                with open(user_config_path, 'r', encoding='utf-8') as f:
                     anchor_config = json.load(f)
-                logger.info(f"[PRISMS] 从 {anchor_config_path} 加载棱镜配置")
+                logger.info(f"[PRISMS] 从 {user_config_path} 加载棱镜配置")
         except Exception as e:
             logger.warning(f"读取锚点编辑器配置失败: {e}")
         

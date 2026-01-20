@@ -38,7 +38,8 @@
     "resources": [
       "../../data-pipeline/database/**/*",
       "../../data-pipeline/lua_scripts/**/*",
-      "../public/data/sonic_vectors.json"
+      "../public/data/sonic_vectors.json",
+      "../../data-pipeline/anchor_config_v2.json"
     ],
     "externalBin": [
       "binaries/capsules_api"
