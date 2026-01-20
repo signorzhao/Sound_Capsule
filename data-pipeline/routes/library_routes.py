@@ -74,13 +74,21 @@ def get_capsules():
         if auth_header and auth_header.startswith('Bearer '):
             try:
                 from auth import get_auth_manager
+                auth_manager = get_auth_manager()
                 token = auth_header.split(' ')[1]
-                payload = get_auth_manager().verify_access_token(token)
+                payload = auth_manager.verify_access_token(token)
                 if payload:
-                    user = db.get_user_by_id(payload['user_id'])
-                    if user:
-                        current_user_id = user.get('supabase_user_id') or str(user.get('id'))
-            except:
+                    # 优先使用 payload 中的 supabase_user_id
+                    if 'supabase_user_id' in payload:
+                        current_user_id = payload['supabase_user_id']
+                    elif 'user_id' in payload:
+                        # 如果是本地用户，尝试从 auth_manager 获取
+                        user = auth_manager.get_user_by_id(payload['user_id'])
+                        if user:
+                            current_user_id = user.get('supabase_user_id') or str(user.get('id'))
+                    logger.info(f"[CAPSULES] 当前用户 ID: {current_user_id}")
+            except Exception as e:
+                logger.warning(f"[CAPSULES] Token 验证失败: {e}")
                 pass  # 允许匿名访问
 
         # 为每个胶囊添加完整的 RPP 路径（绝对路径）

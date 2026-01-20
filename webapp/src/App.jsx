@@ -639,7 +639,13 @@ export default function App() {
   // 加载胶囊列表
   const loadCapsules = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:5002/api/capsules?limit=100');
+      // 🔐 添加 Authorization header，用于判断胶囊所有权 (is_mine)
+      const accessToken = localStorage.getItem('access_token');
+      const headers = {};
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      const response = await fetch('http://localhost:5002/api/capsules?limit=100', { headers });
       const data = await response.json();
 
       if (data.success) {
