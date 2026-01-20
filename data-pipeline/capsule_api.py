@@ -3597,12 +3597,21 @@ def get_prisms_field():
         prisms = prism_manager.get_all_prisms()
         
         # 🔥 读取锚点编辑器配置中的 active 状态
+        # 优先从用户配置目录读取（编译版本），其次从代码目录读取（开发模式）
         anchor_config = {}
         try:
-            anchor_config_path = Path(__file__).parent / "anchor_config_v2.json"
+            # 1. 尝试用户配置目录（编译版本）
+            pm = PathManager.get_instance()
+            anchor_config_path = pm.config_dir / "anchor_config_v2.json"
+            
+            # 2. 如果用户目录没有，尝试代码目录（开发模式）
+            if not anchor_config_path.exists():
+                anchor_config_path = Path(__file__).parent / "anchor_config_v2.json"
+            
             if anchor_config_path.exists():
                 with open(anchor_config_path, 'r', encoding='utf-8') as f:
                     anchor_config = json.load(f)
+                logger.info(f"[PRISMS] 从 {anchor_config_path} 加载棱镜配置")
         except Exception as e:
             logger.warning(f"读取锚点编辑器配置失败: {e}")
         

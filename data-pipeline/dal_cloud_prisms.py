@@ -25,6 +25,10 @@ class CloudPrismDAL:
         self.client = get_supabase_client()
         logger.info("✅ CloudPrismDAL 初始化")
 
+    # 🔐 管理员用户 ID - 只有这个用户可以上传棱镜
+    # ian@ian.com 是唯一的棱镜管理员
+    ADMIN_USER_ID = 'cd272ab9-0855-4edd-9b64-9be46952d97e'
+
     def upload_prism(
         self,
         user_id: str,
@@ -32,7 +36,10 @@ class CloudPrismDAL:
         prism_data: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        上传单个棱镜到云端
+        上传单个棱镜到云端（仅管理员可用）
+
+        🔐 全局共享模式：只有管理员（ian@ian.com）可以上传棱镜
+        普通用户的上传请求会被静默忽略
 
         Args:
             user_id: 用户 ID
@@ -42,6 +49,11 @@ class CloudPrismDAL:
         Returns:
             上传的记录，失败返回 None
         """
+        # 🔐 检查是否是管理员
+        if user_id != self.ADMIN_USER_ID:
+            logger.info(f"ℹ️  跳过棱镜上传：用户 {user_id[:8]}... 不是管理员")
+            return None
+
         try:
             # 准备云端记录
             # 注意：不包含 field_data，因为云端 schema 中没有此字段
@@ -80,26 +92,30 @@ class CloudPrismDAL:
         user_id: str
     ) -> List[Dict[str, Any]]:
         """
-        下载用户的所有棱镜
+        下载官方棱镜（全局共享模式）
+
+        🔐 所有用户都下载管理员（ian@ian.com）的棱镜
+        普通用户无法修改棱镜，只有管理员可以通过锚点编辑器更新
 
         Args:
-            user_id: 用户 ID
+            user_id: 用户 ID（忽略，始终下载管理员的棱镜）
 
         Returns:
             棱镜列表
         """
         try:
-            result = self.client.table('cloud_prisms').select('*').eq('user_id', user_id).execute()
+            # 🔐 始终下载管理员的棱镜，实现全局共享
+            result = self.client.table('cloud_prisms').select('*').eq('user_id', self.ADMIN_USER_ID).execute()
 
             if result.data:
-                logger.info(f"✅ 下载 {len(result.data)} 个云端棱镜")
+                logger.info(f"✅ 下载 {len(result.data)} 个官方棱镜 (来自管理员)")
                 return result.data
             else:
-                logger.info("ℹ️  无云端棱镜")
+                logger.info("ℹ️  无官方棱镜")
                 return []
 
         except Exception as e:
-            logger.error(f"❌ 下载云端棱镜失败: {e}")
+            logger.error(f"❌ 下载官方棱镜失败: {e}")
             return []
 
     def get_prism(
