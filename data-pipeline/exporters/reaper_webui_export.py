@@ -211,7 +211,8 @@ class ReaperWebUIExporter:
         theme_name: str,
         render_preview: bool = True,
         capsule_type: str = 'magic',
-        export_dir: str = None
+        export_dir: str = None,
+        username: str = None
     ) -> Dict[str, Any]:
         """
         通过 REAPER Web UI 执行导出
@@ -240,9 +241,13 @@ class ReaperWebUIExporter:
             print(f"⚠ REAPER Web UI 未运行,但这不影响导出功能")
             print(f"  导出将通过 AppleScript/-nonewinst 直接执行")
 
-        # 获取系统用户名
-        import getpass
-        username = getpass.getuser()
+        # 获取用户名：优先使用传入的用户名，否则使用系统用户名
+        if not username:
+            import getpass
+            username = getpass.getuser()
+            print(f"⚠️ 未传入用户名，使用系统用户名: {username}")
+        else:
+            print(f"✓ 使用登录用户名: {username}")
 
         # 0. 清理旧的结果文件（避免读取到旧数据）
         result_file = get_export_temp_dir() / "export_result.json"
@@ -485,7 +490,8 @@ def quick_webui_export(
     render_preview: bool = True,
     webui_port: int = 9000,
     capsule_type: str = 'magic',
-    export_dir: str = None
+    export_dir: str = None,
+    username: str = None
 ) -> Dict[str, Any]:
     """
     快捷 Web UI 导出函数
@@ -497,12 +503,13 @@ def quick_webui_export(
         webui_port: Web UI 端口
         capsule_type: 胶囊类型 (magic/impact/atmosphere)
         export_dir: 导出目录路径（可选）
+        username: 用户名（可选，用于胶囊命名，默认使用系统用户名）
 
     Returns:
         导出结果
     """
     exporter = ReaperWebUIExporter(port=webui_port)
-    return exporter.export_via_webui(project_name, theme_name, render_preview, capsule_type, export_dir)
+    return exporter.export_via_webui(project_name, theme_name, render_preview, capsule_type, export_dir, username)
 
 
 if __name__ == '__main__':

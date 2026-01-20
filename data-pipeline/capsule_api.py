@@ -1463,13 +1463,16 @@ def webui_export_api():
 
         data = request.get_json()
 
-        # 🔐 获取当前用户 ID，用于设置胶囊所有者
+        # 🔐 获取当前用户 ID 和用户名，用于设置胶囊所有者和命名
         current_user = get_current_user()
         owner_supabase_user_id = None
+        capsule_username = None  # 用于胶囊命名的用户名
         if current_user:
             # 优先使用 supabase_user_id，兼容 id 字段
             owner_supabase_user_id = current_user.get('supabase_user_id') or current_user.get('id')
-            print(f"🔐 当前用户: {owner_supabase_user_id}")
+            # 获取用于命名的用户名
+            capsule_username = current_user.get('username') or current_user.get('display_name') or current_user.get('email', '').split('@')[0]
+            print(f"🔐 当前用户: {owner_supabase_user_id}, 用户名: {capsule_username}")
         else:
             print("⚠️ 未认证用户，胶囊将没有所有者")
 
@@ -1567,7 +1570,8 @@ def webui_export_api():
             render_preview=render_preview,
             webui_port=webui_port,
             capsule_type=capsule_type,
-            export_dir=export_dir  # 传递导出目录
+            export_dir=export_dir,  # 传递导出目录
+            username=capsule_username  # 🔐 传递登录用户名，用于胶囊命名
         )
 
         print(f"\n{'='*50}")
