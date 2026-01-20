@@ -191,8 +191,8 @@ export const SyncProvider = ({ children }) => {
       console.log('🔄 [BootSync] 开始仅下载同步...');
 
       // 调用后端的 /api/sync/download-only 端点
-      setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: '正在下载全球胶囊元数据...' }));
-      onProgress?.({ phase: '正在下载全球胶囊元数据...', current: 0, total: 0, percentage: 10 });
+      setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: '正在同步服务器数据...' }));
+      onProgress?.({ phase: '正在同步服务器数据...', current: 0, total: 0, percentage: 10 });
 
       const response = await authFetch('http://localhost:5002/api/sync/download-only', {
         method: 'POST',
@@ -373,7 +373,7 @@ export const SyncProvider = ({ children }) => {
 
       // 调用后端轻量同步端点，它会自动下载所有 OGG 和 RPP 文件
       onProgress?.({
-        phase: '正在同步全球胶囊元数据和轻量资产...',
+        phase: '正在同步服务器数据...',
         current: 0,
         total: 0,
         percentage: 10

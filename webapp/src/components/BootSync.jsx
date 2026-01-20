@@ -136,7 +136,7 @@ export default function BootSync({ onComplete, onError }) {
             <Sparkles className="w-10 h-10 text-purple-400" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-3">Sound Capsule</h1>
-          <p className="text-zinc-400">全球声音资产协作网络</p>
+          <p className="text-zinc-400">声音资产协作平台</p>
         </div>
 
         {/* 同步卡片 */}
@@ -162,7 +162,7 @@ export default function BootSync({ onComplete, onError }) {
           <div className="text-center mb-8">
             <h2 className="text-xl font-semibold text-white mb-2">
               {status === 'initializing' && '初始化同步...'}
-              {status === 'syncing' && '正在下载全球资产...'}
+              {status === 'syncing' && '正在同步服务器数据...'}
               {status === 'completed' && '下载完成'}
               {status === 'error' && '同步失败'}
             </h2>
@@ -200,7 +200,7 @@ export default function BootSync({ onComplete, onError }) {
             <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-6">
               <div className="text-center text-green-400 text-sm">
                 <Check className="w-5 h-5 inline-block mr-2" />
-                全球资产下载完成，可以开始使用
+                服务器数据同步完成，可以开始使用
               </div>
             </div>
           )}

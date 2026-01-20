@@ -407,21 +407,9 @@ const UserMenu = () => {
                   <div className="restart-instructions">
                     <p><strong>⚠️ 重要提示：</strong></p>
                     <div className="info-box">
-                      <p><strong>开发模式</strong>：应用可能已自动重启或即将重启。</p>
-                      <p><strong>生产模式</strong>：请手动重启应用。</p>
+                      <p>文件夹已变更，请<strong>重新启动应用</strong>以使用新路径。</p>
+                      <p>重启后应用将自动从服务器同步数据到新目录。</p>
                     </div>
-                    <p style={{ marginTop: '16px' }}><strong>如需手动重启：</strong></p>
-                    <ol className="restart-steps">
-                      <li>按 <kbd>Cmd</kbd> + <kbd>Q</kbd> 完全关闭应用</li>
-                      <li>
-                        <strong>重新启动 Python 后端</strong>，使用新路径：
-                        <div className="code-block">
-                          python capsule_api.py --export-dir {config.export_dir} --port 5002
-                        </div>
-                      </li>
-                      <li>重新打开应用或刷新浏览器</li>
-                      <li>应用将使用新路径并自动从云端同步数据</li>
-                    </ol>
                   </div>
                 </div>
                 <div className="modal-footer">
