@@ -537,9 +537,15 @@ export default function App() {
 
     try {
       console.log('📡 发送导出请求到 API...');
+      // 获取当前用户的 access_token，用于设置胶囊所有者
+      const accessToken = localStorage.getItem('access_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
       const response = await fetch('http://localhost:5002/api/capsules/webui-export', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(requestData)
       });
 
@@ -989,10 +995,17 @@ export default function App() {
       // 编辑模式使用 PUT（覆盖），新建模式使用 POST
       const method = isEditMode ? 'PUT' : 'POST';
 
+      // 🔐 获取当前用户的 access_token，用于验证胶囊所有权
+      const accessToken = localStorage.getItem('access_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+
       // 调用 API 保存标签
       const response = await fetch(`http://localhost:5002/api/capsules/${currentCapsuleId}/tags`, {
         method: method,
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(allTags)
       });
 

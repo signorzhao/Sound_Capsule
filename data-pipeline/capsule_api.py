@@ -1463,6 +1463,16 @@ def webui_export_api():
 
         data = request.get_json()
 
+        # 🔐 获取当前用户 ID，用于设置胶囊所有者
+        current_user = get_current_user()
+        owner_supabase_user_id = None
+        if current_user:
+            # 优先使用 supabase_user_id，兼容 id 字段
+            owner_supabase_user_id = current_user.get('supabase_user_id') or current_user.get('id')
+            print(f"🔐 当前用户: {owner_supabase_user_id}")
+        else:
+            print("⚠️ 未认证用户，胶囊将没有所有者")
+
         # 获取 capsule_type (可能是 ID 数字或名称字符串)
         capsule_type_input = data.get('capsule_type', 'magic')
         render_preview = data.get('render_preview', True)
@@ -1622,8 +1632,12 @@ def webui_export_api():
         print(f"   用户选择的胶囊类型: {capsule_type}")
         print(f"   当前使用的导出目录: {export_dir}")
 
-        # 尝试导入指定的胶囊（传递导出目录确保一致性）
-        imported_capsule = import_specific_capsule(expected_capsule_name, custom_output_dir=export_dir)
+        # 尝试导入指定的胶囊（传递导出目录和所有者 ID）
+        imported_capsule = import_specific_capsule(
+            expected_capsule_name, 
+            custom_output_dir=export_dir,
+            owner_id=owner_supabase_user_id  # 🔐 传递胶囊所有者
+        )
 
         if not imported_capsule:
             print(f"\n❌ [步骤 2] 导入胶囊失败！")

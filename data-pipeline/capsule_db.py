@@ -219,11 +219,12 @@ class CapsuleDatabase:
             cursor = self.conn.cursor()
 
             # 插入胶囊主表
+            # 🔐 包含 owner_supabase_user_id 用于所有权控制
             cursor.execute("""
                 INSERT INTO capsules (
                     uuid, name, project_name, theme_name, capsule_type,
-                    file_path, preview_audio, rpp_file
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    file_path, preview_audio, rpp_file, owner_supabase_user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 capsule_data['uuid'],
                 capsule_data['name'],
@@ -232,7 +233,8 @@ class CapsuleDatabase:
                 capsule_data.get('capsule_type', 'magic'),  # 默认为 'magic'
                 capsule_data['file_path'],
                 capsule_data.get('preview_audio'),
-                capsule_data.get('rpp_file')
+                capsule_data.get('rpp_file'),
+                capsule_data.get('owner_supabase_user_id')  # 🔐 胶囊所有者
             ))
 
             capsule_id = cursor.lastrowid

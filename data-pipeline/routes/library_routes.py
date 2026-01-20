@@ -209,6 +209,10 @@ def update_capsule_tags_api(capsule_id):
     """
     更新胶囊标签
 
+    🔐 Phase G: 添加所有权检查，只有胶囊所有者才能编辑标签
+    - 对于有 owner_supabase_user_id 的胶囊：只有所有者可以编辑
+    - 对于没有 owner 的旧胶囊：允许所有已认证用户编辑
+
     请求体:
         {
             "tags": {
@@ -238,6 +242,37 @@ def update_capsule_tags_api(capsule_id):
         capsule = db.get_capsule(capsule_id)
         if not capsule:
             raise APIError(f"胶囊不存在: {capsule_id}", 404)
+
+        # 🔐 所有权检查：只有胶囊所有者才能编辑标签
+        current_user_id = None
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            try:
+                from auth import get_auth_manager
+                token = auth_header.split(' ')[1]
+                payload = get_auth_manager().verify_access_token(token)
+                if payload:
+                    user = db.get_user_by_id(payload['user_id'])
+                    if user:
+                        current_user_id = user.get('supabase_user_id') or str(user.get('id'))
+            except Exception as e:
+                logger.warning(f"[TAGS] Token 验证失败: {e}")
+                pass
+
+        owner_id = capsule.get('owner_supabase_user_id')
+        
+        # 检查权限：
+        # 1. 如果胶囊有所有者，必须是所有者才能编辑
+        # 2. 如果胶囊没有所有者（旧数据），允许任何已认证用户编辑
+        if owner_id:
+            if not current_user_id:
+                raise APIError('需要登录才能编辑此胶囊', 401)
+            if current_user_id != owner_id:
+                raise APIError('无权编辑此胶囊：您不是胶囊所有者', 403)
+            logger.info(f"[TAGS] ✓ 所有权验证通过: 用户 {current_user_id} 编辑胶囊 {capsule_id}")
+        else:
+            # 旧胶囊（没有 owner），记录日志但允许编辑
+            logger.info(f"[TAGS] ℹ️ 胶囊 {capsule_id} 没有所有者（旧数据），允许编辑")
 
         print(f"[DEBUG] 胶囊存在: {capsule['name']}")
 

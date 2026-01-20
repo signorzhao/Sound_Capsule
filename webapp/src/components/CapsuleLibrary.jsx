@@ -1077,12 +1077,15 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
             {/* 操作按钮容器 */}
             <div className="bg-zinc-900/90 backdrop-blur-md border border-zinc-700 p-3 rounded-xl shadow-2xl flex flex-col gap-2 w-full max-w-[180px]">
-              <button
-                onClick={() => onEdit && onEdit(capsule)}
-                className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-colors"
-              >
-                <Edit size={14} className="text-blue-400" /> <span>编辑</span>
-              </button>
+              {/* 只有胶囊所有者才能编辑 (is_mine=true 或未设置 owner 的本地胶囊) */}
+              {(capsule.is_mine || capsule.is_mine === undefined || capsule.is_mine === null) && (
+                <button
+                  onClick={() => onEdit && onEdit(capsule)}
+                  className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 transition-colors"
+                >
+                  <Edit size={14} className="text-blue-400" /> <span>编辑</span>
+                </button>
+              )}
               <SmartActionButton
                 status={capsule.asset_status || capsule.cloud_status || 'cloud_only'}
                 onClick={() => handleSmartClick(capsule)}
@@ -1338,13 +1341,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
         {/* 最右侧：操作按钮 */}
         <div className="flex items-center gap-2 pl-4 ml-auto lg:ml-0 border-l border-zinc-800/50 h-full" onClick={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => onEdit && onEdit(capsule)}
-            className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
-            title="编辑"
-          >
-            <Edit size={16} />
-          </button>
+          {/* 只有胶囊所有者才能编辑 (is_mine=true 或未设置 owner 的本地胶囊) */}
+          {(capsule.is_mine || capsule.is_mine === undefined || capsule.is_mine === null) && (
+            <button
+              onClick={() => onEdit && onEdit(capsule)}
+              className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
+              title="编辑"
+            >
+              <Edit size={16} />
+            </button>
+          )}
           <SmartActionButton
             status={capsule.asset_status || capsule.cloud_status || 'cloud_only'}
             onClick={() => handleSmartClick(capsule)}

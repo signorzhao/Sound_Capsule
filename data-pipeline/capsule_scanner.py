@@ -54,13 +54,14 @@ def scan_output_directory():
     return capsules
 
 
-def import_capsule_from_output(capsule_info, custom_output_dir=None):
+def import_capsule_from_output(capsule_info, custom_output_dir=None, owner_id=None):
     """
     从 output 目录导入胶囊到数据库
     
     Args:
         capsule_info: 胶囊信息字典，包含 'dir', 'name', 'metadata'
         custom_output_dir: 可选的自定义导出目录（用于计算相对路径）
+        owner_id: 胶囊所有者的 Supabase 用户 ID（可选）
     """
     db = get_database()
     metadata = capsule_info['metadata']
@@ -96,6 +97,7 @@ def import_capsule_from_output(capsule_info, custom_output_dir=None):
         'preview_audio': metadata.get('preview_audio') or metadata.get('files', {}).get('preview'),
         'rpp_file': metadata.get('rpp_file') or metadata.get('files', {}).get('project'),
         'capsule_type': capsule_type,  # 新增：胶囊类型
+        'owner_supabase_user_id': owner_id,  # 🔐 胶囊所有者
         'metadata': {
             'bpm': metadata.get('info', {}).get('bpm'),
             'duration': metadata.get('info', {}).get('length'),
@@ -196,13 +198,14 @@ def scan_and_import_all():
     return imported
 
 
-def import_specific_capsule(capsule_name, custom_output_dir=None):
+def import_specific_capsule(capsule_name, custom_output_dir=None, owner_id=None):
     """
     导入指定名称的胶囊
 
     Args:
         capsule_name: 要导入的胶囊名称
         custom_output_dir: 可选的自定义导出目录（如果提供则优先使用）
+        owner_id: 胶囊所有者的 Supabase 用户 ID（可选）
 
     Returns:
         完整的胶囊数据，如果失败则返回 None
@@ -261,8 +264,8 @@ def import_specific_capsule(capsule_name, custom_output_dir=None):
             'metadata': metadata
         }
 
-        # 传递 output_dir 以确保相对路径计算正确
-        capsule_id = import_capsule_from_output(capsule_info, custom_output_dir=output_dir)
+        # 传递 output_dir 和 owner_id 以确保相对路径计算正确和设置所有者
+        capsule_id = import_capsule_from_output(capsule_info, custom_output_dir=output_dir, owner_id=owner_id)
         print(f"  ✓ 导入成功: {capsule_name} (ID: {capsule_id})")
 
         # 获取完整的胶囊数据
