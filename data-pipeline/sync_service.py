@@ -109,13 +109,24 @@ class SyncService:
             with open(metadata_path, 'r', encoding='utf-8') as f:
                 metadata = json.load(f)
             
+            # 🔥 修复：支持两种 plugins 格式
+            # 格式 1 (嵌套): {"plugins": {"count": 1, "list": [...]}}
+            # 格式 2 (扁平): {"plugin_count": 1, "plugin_list": [...]}
+            plugins = metadata.get('plugins', {})
+            if isinstance(plugins, dict):
+                plugin_count = plugins.get('count', metadata.get('plugin_count'))
+                plugin_list = plugins.get('list', metadata.get('plugin_list', []))
+            else:
+                plugin_count = metadata.get('plugin_count')
+                plugin_list = metadata.get('plugin_list', [])
+            
             # 从 metadata.json 提取技术信息
             tech_metadata = {
                 'bpm': metadata.get('bpm'),
                 'duration': metadata.get('duration'),
                 'sample_rate': metadata.get('sample_rate'),
-                'plugin_count': metadata.get('plugin_count'),
-                'plugin_list': metadata.get('plugin_list', []),
+                'plugin_count': plugin_count,
+                'plugin_list': plugin_list,
                 'has_sends': metadata.get('has_sends'),
                 'has_folder_bus': metadata.get('has_folder_bus'),
                 'tracks_included': metadata.get('tracks_included')
