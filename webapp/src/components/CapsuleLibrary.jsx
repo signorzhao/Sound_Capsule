@@ -294,7 +294,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
       // 统计来源
       let fromList = 0;
-      let fromApi = 0;
+      let missingMetadata = [];
 
       // 🔥 每次刷新时从空缓存开始，避免闭包问题
       const newCache = {};
@@ -304,13 +304,19 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           // 列表已返回 metadata，直接使用
           newCache[capsule.id] = capsule.metadata;
           fromList++;
+        } else {
+          // 🔥 记录缺失 metadata 的胶囊
+          missingMetadata.push({ id: capsule.id, name: capsule.name });
         }
       }
 
       // 批量更新缓存（从列表获取的）
       setMetadataCache(newCache);
 
-      console.log(`Metadata 加载完成: 从列表=${fromList}, 从API=${fromApi}`);
+      console.log(`Metadata 加载完成: 从列表=${fromList}, 缺失=${missingMetadata.length}`);
+      if (missingMetadata.length > 0) {
+        console.warn('⚠️ 以下胶囊缺少 metadata:', missingMetadata);
+      }
     };
 
     if (capsules.length > 0) {
@@ -731,15 +737,18 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     
     if (status === 'local') {
       // 状态 1: 需上传 - 上传元数据到云端
+      // 🔥 将变量声明移到 try 块外部，确保 catch 和 finally 中可访问
+      let toastId = null;
+      let toastFinalized = false;
+      let stopProgressPoll = null;
+      
       try {
         if (uploadingCapsules[capsule.id]) {
           toast.info('正在上传中，请稍候...');
           return;
         }
         setUploadingCapsules(prev => ({ ...prev, [capsule.id]: true }));
-        let toastId = toast.loading(`正在上传「${capsule.name}」...`);
-        let toastFinalized = false;
-        let stopProgressPoll;
+        toastId = toast.loading(`正在上传「${capsule.name}」...`);
         const { authFetch } = await import('../utils/apiClient.js');
         
         // 使用轻量级同步端点进行上传
@@ -841,15 +850,18 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       }
     } else if (status === 'synced') {
       // 状态 3: 已同步 - 强制重新上传（用于修复文件缺失问题）
+      // 🔥 将变量声明移到 try 块外部，确保 catch 和 finally 中可访问
+      let toastId = null;
+      let toastFinalized = false;
+      let stopProgressPoll = null;
+      
       try {
         if (uploadingCapsules[capsule.id]) {
           toast.info('正在上传中，请稍候...');
           return;
         }
         setUploadingCapsules(prev => ({ ...prev, [capsule.id]: true }));
-        let toastId = toast.loading(`正在重新上传「${capsule.name}」...`);
-        let toastFinalized = false;
-        let stopProgressPoll;
+        toastId = toast.loading(`正在重新上传「${capsule.name}」...`);
         const { authFetch } = await import('../utils/apiClient.js');
 
         // 使用轻量级同步端点进行强制上传

@@ -809,6 +809,13 @@ class CapsuleDatabase:
 
         try:
             cursor = self.conn.cursor()
+            
+            # 🔥 执行 WAL checkpoint，确保读取到最新数据
+            # 解决上传成功后刷新列表时 metadata 可能不可见的问题
+            try:
+                cursor.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception:
+                pass  # 忽略 checkpoint 错误
 
             if lens and x is not None and y is not None:
                 # 空间查询

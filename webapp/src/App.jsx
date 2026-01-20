@@ -637,8 +637,15 @@ export default function App() {
       const data = await response.json();
 
       if (data.success) {
+        // 🔥 调试：检查返回数据中是否包含 metadata
+        const withMetadata = data.capsules.filter(c => c.metadata);
+        const withoutMetadata = data.capsules.filter(c => !c.metadata);
+        console.log(`加载胶囊列表: 共 ${data.capsules.length} 个, 有 metadata: ${withMetadata.length}, 无 metadata: ${withoutMetadata.length}`);
+        if (withoutMetadata.length > 0) {
+          console.warn('⚠️ 以下胶囊后端未返回 metadata:', withoutMetadata.map(c => ({ id: c.id, name: c.name })));
+        }
+        
         setCapsuleList(data.capsules);
-        console.log('加载胶囊列表:', data.capsules.length, '个');
       }
     } catch (error) {
       console.error('加载胶囊列表失败:', error);
