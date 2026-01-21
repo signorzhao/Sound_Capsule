@@ -260,12 +260,9 @@ class CapsuleDatabase:
                     metadata.get('tracks_included')
                 ))
 
-            # 创建同步状态记录 - 新胶囊默认为待同步状态
-            cursor.execute("""
-                INSERT OR REPLACE INTO sync_status
-                (table_name, record_id, sync_state, local_version, cloud_version, created_at, updated_at)
-                VALUES ('capsules', ?, 'pending', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """, (capsule_id,))
+            # 注意：不再为新胶囊创建 sync_status 记录
+            # 云图标只显示关键词同步状态，胶囊上传通过单独的上传按钮完成
+            # 这样 pending_count 只反映关键词待同步数量
 
             self.conn.commit()
             return capsule_id
@@ -299,11 +296,13 @@ class CapsuleDatabase:
             # 删除元数据
             cursor.execute('DELETE FROM capsule_metadata WHERE capsule_id = ?', (capsule_id,))
             
-            # 删除同步状态
+            # 删除同步状态（包括 capsules 和 capsule_tags 的记录）
+            # 注意：mark_for_sync('capsule_tags', capsule_id) 存的是 capsule_id，所以用 capsule_id 匹配
             try:
                 cursor.execute("DELETE FROM sync_status WHERE table_name='capsules' AND record_id=?", (capsule_id,))
+                cursor.execute("DELETE FROM sync_status WHERE table_name='capsule_tags' AND record_id=?", (capsule_id,))
             except Exception:
-                pass # 表可能不存在
+                pass  # 表可能不存在
 
             # 删除胶囊
             cursor.execute('DELETE FROM capsules WHERE id = ?', (capsule_id,))
@@ -461,6 +460,13 @@ class CapsuleDatabase:
             # 删除该胶囊的所有标签
             cursor.execute("DELETE FROM capsule_tags WHERE capsule_id = ?", (capsule_id,))
 
+            # 删除标签的同步状态（防止孤儿记录）
+            # 注意：mark_for_sync('capsule_tags', capsule_id) 存的是 capsule_id
+            try:
+                cursor.execute("DELETE FROM sync_status WHERE table_name='capsule_tags' AND record_id=?", (capsule_id,))
+            except Exception:
+                pass  # 表可能不存在
+
             self.conn.commit()
             print(f"✓ 删除胶囊 {capsule_id} 的所有标签")
             return True
@@ -490,6 +496,10 @@ class CapsuleDatabase:
 
             # 先删除该胶囊的所有旧标签
             cursor.execute("DELETE FROM capsule_tags WHERE capsule_id = ?", (capsule_id,))
+
+            # 注意：不需要删除 sync_status，因为：
+            # 1. mark_for_sync('capsule_tags', capsule_id) 用的是 capsule_id
+            # 2. 替换标签后会重新调用 mark_for_sync，会更新或重建记录
 
             # 添加新标签
             for tag in tags:

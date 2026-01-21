@@ -953,49 +953,17 @@ function GenerateMetadata(itemName, startTime, endTime, plugins, routingInfo, ou
         pluginList = ""
     end
     
-    -- 检查是否存在预览文件
-    -- Reaper 使用 RENDER_PATTERN 会生成 "{胶囊名}.ogg" 格式的文件
-    local previewFileName = nil
-
-    -- 尝试多种可能的预览文件名和位置
-    local possibleNames = {
-        {name = itemName .. ".ogg", subdir = ""},                       -- 胶囊名.ogg（新格式）
-        {name = itemName .. "_preview.ogg", subdir = ""},              -- 胶囊名_preview.ogg（旧格式）
-        {name = itemName .. "_preview.ogg", subdir = "preview.wav"},  -- 在 preview.wav 子目录中（旧格式兼容）
-        {name = "preview.ogg", subdir = "preview.wav"},                 -- 在 preview.wav 子目录中
-        {name = "preview.ogg", subdir = ""},                            -- 固定名称
-        {name = itemName .. "_preview.mp3", subdir = ""},              -- MP3 格式
-        {name = "preview.mp3", subdir = ""}                             -- 固定 MP3
-    }
-
-    for _, item in ipairs(possibleNames) do
-        local name = item.name
-        local subdir = item.subdir
-        local testPath = outputDir .. "/" .. (subdir ~= "" and subdir .. "/" or "") .. name
-        local testFile = io.open(testPath, "r")
-        if testFile then
-            testFile:close()
-            -- 如果文件在子目录中，保存相对路径
-            previewFileName = (subdir ~= "" and subdir .. "/" or "") .. name
-            reaper.ShowConsoleMsg("  找到预览文件: " .. previewFileName .. "\n")
-            break
-        end
-    end
+    -- 直接使用胶囊名作为预览文件名（与 Windows 版一致）
+    -- 格式: {胶囊名}.ogg
+    local previewFileName = itemName .. ".ogg"
+    reaper.ShowConsoleMsg("  预览文件名: " .. previewFileName .. "\n")
     
     -- 构建JSON字符串
-    local filesSection = ""
-    local actualRppFileName = rppFileName or "source.rpp"
-    if previewFileName then
-        filesSection = string.format('  "files": {\n    "preview": "%s",\n    "project": "%s"\n  },', previewFileName, actualRppFileName)
-    else
-        filesSection = string.format('  "files": {\n    "project": "%s"\n  },', actualRppFileName)
-    end
+    local actualRppFileName = rppFileName or (itemName .. ".rpp")
+    local filesSection = string.format('  "files": {\n    "preview": "%s",\n    "project": "%s"\n  },', previewFileName, actualRppFileName)
 
-    -- 构建顶部预览字段（如果存在预览文件）
-    local previewSection = ""
-    if previewFileName then
-        previewSection = string.format('  "preview_audio": "%s",\n', previewFileName)
-    end
+    -- 构建顶部预览字段
+    local previewSection = string.format('  "preview_audio": "%s",\n', previewFileName)
 
     local json = string.format([[
 {
@@ -1223,11 +1191,12 @@ function FixRPPRenderSettings(rppPath, outputPath, startTime, endTime, capsuleNa
     local content = file:read("*all")
     file:close()
 
-    -- 检查是否已经修复过（防止重复修改）
-    if string.find(content, "dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==") then
-        reaper.ShowConsoleMsg("  ✓ RENDER_CFG 已经是 OGG 格式，跳过修复\n")
-        return true
+    -- 检查 RENDER_CFG 是否已经是 OGG 格式
+    local hasOggRenderCfg = string.find(content, "dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==") ~= nil
+    if hasOggRenderCfg then
+        reaper.ShowConsoleMsg("  ✓ RENDER_CFG 已经是 OGG 格式\n")
     end
+    -- 注意：即使 RENDER_CFG 正确，仍需要修复 RENDER_FILE 和 RENDER_PATTERN
 
     local modified = false
     
@@ -1327,20 +1296,22 @@ function FixRPPRenderSettings(rppPath, outputPath, startTime, endTime, capsuleNa
 
     -- 使用胶囊名（不带扩展名）作为 RENDER_PATTERN
     -- capsuleName 格式: type_user_timestamp，可能是纯文件名或包含路径
-    -- 提取不带扩展名的文件名（如果 capsuleName 包含路径）
-    local baseName = string.match(capsuleName, ".*/([^/]*)$") or capsuleName
-
-    -- 从 capsuleName 中提取输出目录（如果包含路径），否则从 outputPath 提取
-    local outputDir_for_render = ""
-    if string.match(capsuleName, ".*/") then
-        -- capsuleName 包含路径，直接使用
-        outputDir_for_render = string.match(capsuleName, "^(.*)/[^/]*$") or ""
+    -- 如果 capsuleName 为 nil，从 outputPath 提取文件名
+    local baseName
+    if capsuleName and capsuleName ~= "" then
+        -- 提取不带扩展名的文件名（如果 capsuleName 包含路径）
+        baseName = string.match(capsuleName, ".*/([^/]*)$") or capsuleName
     else
-        -- capsuleName 只是文件名，从 outputPath 提取目录
-        -- 但要注意：outputPath 可能是临时文件路径（如 preview_temp.wav）
-        -- 所以我们需要提取其父目录，而不是文件名
-        outputDir_for_render = string.match(outputPath, "^(.*)/[^/]*$") or ""
+        -- 从 outputPath 提取文件名（不带扩展名）
+        -- outputPath 可能是 /path/to/capsuleName.ogg 或 /path/to/capsuleName_temp.wav
+        local fileName = string.match(outputPath, ".*/([^/]*)$") or outputPath
+        baseName = string.gsub(fileName, "_temp%.wav$", "")
+        baseName = string.gsub(baseName, "%.ogg$", "")
+        baseName = string.gsub(baseName, "%.wav$", "")
     end
+
+    -- 从 outputPath 提取输出目录
+    local outputDir_for_render = string.match(outputPath, "^(.*)/[^/]*$") or ""
 
     local renderSettings = string.format([[
 RENDER_FILE %s

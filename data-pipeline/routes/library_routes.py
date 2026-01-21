@@ -330,6 +330,8 @@ def update_capsule_tags_api(capsule_id):
         print(f"[DEBUG] all_tags 内容: {all_tags[:3] if all_tags else []}")
 
         # 批量插入所有标签
+        pending_sync = False  # 默认不需要同步
+        
         if all_tags:
             print(f"[DEBUG] 开始插入 {len(all_tags)} 个标签...")
             db.add_capsule_tags(capsule_id, all_tags)
@@ -341,12 +343,18 @@ def update_capsule_tags_api(capsule_id):
             db.aggregate_and_update_keywords(capsule_id)
             print(f"[DEBUG] 关键词聚合完成")
             
-            # 🌐 标记关键词为待同步状态（等待用户点击顶部同步按钮时同步）
+            # 🌐 只有已上传到云端的胶囊（有 cloud_id）才标记关键词待同步
+            # 新胶囊的关键词会随整个胶囊一起上传，不需要单独同步
             try:
-                from sync_service import get_sync_service
-                sync_service = get_sync_service()
-                sync_service.mark_for_sync('capsule_tags', capsule_id, 'update')
-                logger.info(f"[TAGS] ✓ 已标记关键词待同步: 胶囊 {capsule_id}")
+                capsule = db.get_capsule(capsule_id)
+                if capsule and capsule.get('cloud_id'):
+                    from sync_service import get_sync_service
+                    sync_service = get_sync_service()
+                    sync_service.mark_for_sync('capsule_tags', capsule_id, 'update')
+                    pending_sync = True
+                    logger.info(f"[TAGS] ✓ 已标记关键词待同步: 胶囊 {capsule_id} (cloud_id: {capsule.get('cloud_id')})")
+                else:
+                    logger.info(f"[TAGS] 胶囊 {capsule_id} 未上传到云端，跳过标记同步")
             except Exception as e:
                 logger.warning(f"[TAGS] 标记待同步失败: {e}")
             
@@ -365,7 +373,7 @@ def update_capsule_tags_api(capsule_id):
             'message': '标签已更新',
             'capsule_id': capsule_id,
             'tags_count': len(all_tags),
-            'pending_sync': True  # 标签已标记为待同步
+            'pending_sync': pending_sync  # 只有已上传的胶囊修改关键词才需要同步
         })
 
     except APIError:

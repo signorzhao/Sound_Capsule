@@ -782,10 +782,11 @@ class SyncService:
             cursor = conn.cursor()
 
             # 统计各种状态的记录数
+            # 🔧 只统计 capsule_tags 的 pending 状态，云图标只显示关键词同步状态
             cursor.execute("""
                 SELECT
                     COUNT(CASE WHEN sync_state = 'synced' THEN 1 END) as synced_count,
-                    COUNT(CASE WHEN sync_state = 'pending' THEN 1 END) as pending_count,
+                    COUNT(CASE WHEN sync_state = 'pending' AND table_name = 'capsule_tags' THEN 1 END) as pending_count,
                     COUNT(CASE WHEN sync_state = 'conflict' THEN 1 END) as conflict_count,
                     MAX(last_sync_at) as last_sync_at
                 FROM sync_status
