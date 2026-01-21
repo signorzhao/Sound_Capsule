@@ -23,9 +23,6 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             sidecar_name: capsules_api-aarch64-apple-darwin
-          - platform: macos-13
-            target: x86_64-apple-darwin
-            sidecar_name: capsules_api-x86_64-apple-darwin
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             sidecar_name: capsules_api-x86_64-pc-windows-msvc.exe
@@ -81,9 +78,6 @@ jobs:
           - platform: macos-latest
             target: aarch64-apple-darwin
             sidecar_name: capsules_api-aarch64-apple-darwin
-          - platform: macos-13
-            target: x86_64-apple-darwin
-            sidecar_name: capsules_api-x86_64-apple-darwin
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             sidecar_name: capsules_api-x86_64-pc-windows-msvc.exe
