@@ -213,6 +213,7 @@ def rebuild_lens_v2_gen(lens_key, config, override_categories=None, model_name="
     
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, indent=2, ensure_ascii=False)
+    _write_sonic_vectors_to_app_config(output_data)
         
     # --- Phase C4: 将预计算的力场同步到数据库，以便推送到云端 ---
     try:
@@ -238,6 +239,37 @@ def rebuild_lens_v2_gen(lens_key, config, override_categories=None, model_name="
 # ==========================================
 # 辅助函数
 # ==========================================
+
+def _app_config_data_dir():
+    """胶囊 app 的 data 目录，用于写入 sonic_vectors 使 app 能读到编辑器更新的力场。"""
+    import sys
+    if sys.platform == "darwin":
+        base = Path.home() / "Library/Application Support/com.soundcapsule.app"
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))
+        base = Path(appdata) / "com.soundcapsule.app"
+    else:
+        base = Path.home() / ".config/com.soundcapsule.app"
+    return base / "data"
+
+def _write_sonic_vectors_to_app_config(output_data):
+    """将力场数据同步到胶囊 app 配置目录，使 app 内棱镜能显示词（与 get_prisms_field 回落一致）。"""
+    data_dir = _app_config_data_dir()
+    path = data_dir / "sonic_vectors.json"
+    try:
+        existing = {}
+        if path.exists():
+            with open(path, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        for k, v in (output_data or {}).items():
+            if isinstance(v, dict):
+                existing[k] = v
+        data_dir.mkdir(parents=True, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(existing, f, indent=2, ensure_ascii=False)
+        print(f"✅ 已同步力场到 app 配置: {path}")
+    except Exception as e:
+        print(f"⚠️  同步力场到 app 配置失败: {e}")
 
 def load_lexicon(filepath):
     words = []
@@ -410,9 +442,46 @@ def auto_translate(word):
         return word, word # 没找到翻译则暂时保持原样
     return word, None
 
+def _load_field_data_for_lenses(lens_ids):
+    """从数据库或 sonic_vectors.json 加载各棱镜的力场关键词 (field_data)。返回 { lens_id: [points] }"""
+    result = {}
+    # 1. 尝试从本地数据库 prisms.field_data 读取（与 rebuild 写入的库一致）
+    db_path = BASE_DIR / "database" / "capsules.db"
+    if db_path.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            for lid in lens_ids:
+                row = conn.execute("SELECT field_data FROM prisms WHERE id = ?", (lid,)).fetchone()
+                if row and row[0]:
+                    raw = row[0]
+                    result[lid] = json.loads(raw) if isinstance(raw, str) else raw
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ 从数据库读取 field_data 失败: {e}")
+    # 2. 缺失的棱镜从 sonic_vectors.json 补全
+    if OUTPUT_FILE.exists():
+        try:
+            with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+                vector_data = json.load(f)
+            for lid in lens_ids:
+                if lid not in result and lid in vector_data:
+                    result[lid] = vector_data[lid].get('points', [])
+        except Exception as e:
+            print(f"⚠️ 从 sonic_vectors 读取力场失败: {e}")
+    return result
+
+
 @app.route('/api/config', methods=['GET'])
 def get_config():
     conf = load_config_v2()
+    # 合并力场关键词 (field_data)：从数据库或 sonic_vectors 注入到每个棱镜
+    field_by_lens = _load_field_data_for_lenses(list(conf.keys()))
+    for lens_key, lens_data in conf.items():
+        if lens_key in field_by_lens:
+            lens_data['field_data'] = field_by_lens[lens_key]
+        else:
+            lens_data['field_data'] = lens_data.get('field_data', [])
     # Enrich anchors with Chinese translations from lexicons
     for lens_key, lens_data in conf.items():
         lex_file = BASE_DIR / lens_data.get('lexicon_file', '')
@@ -481,6 +550,59 @@ def rebuild_stream(lens):
     model_name = request.args.get('model', 'paraphrase-multilingual-MiniLM-L12-v2')
 
     return Response(rebuild_lens_v2_gen(lens, config, categories, model_name), mimetype='text/event-stream')
+
+
+@app.route('/api/lenses/<lens_id>/field', methods=['GET'])
+def get_lens_field(lens_id):
+    """获取指定棱镜的力场关键词分布 (field_data)，供重构后在编辑器中显示与调整。"""
+    config = load_config_v2()
+    if lens_id not in config:
+        return jsonify({"success": False, "error": "棱镜不存在"}), 404
+    field_by_lens = _load_field_data_for_lenses([lens_id])
+    points = field_by_lens.get(lens_id, [])
+    return jsonify({"success": True, "lens_id": lens_id, "points": points})
+
+
+@app.route('/api/lenses/<lens_id>/field', methods=['PUT'])
+def update_lens_field(lens_id):
+    """保存用户在编辑器中对力场关键词位置的调整。请求体: { "points": [ {id, word, zh, x, y}, ... ] }"""
+    config = load_config_v2()
+    if lens_id not in config:
+        return jsonify({"success": False, "error": "棱镜不存在"}), 404
+    data = request.get_json()
+    if not data or 'points' not in data:
+        return jsonify({"success": False, "error": "缺少 points 数组"}), 400
+    points = data['points']
+    # 写入数据库 prisms.field_data
+    db_path = BASE_DIR / "database" / "capsules.db"
+    if db_path.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("""
+                UPDATE prisms SET field_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+            """, (json.dumps(points, ensure_ascii=False), lens_id))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            return jsonify({"success": False, "error": f"写入数据库失败: {e}"}), 500
+    # 同步到 sonic_vectors.json
+    try:
+        if OUTPUT_FILE.exists():
+            with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+                output_data = json.load(f)
+        else:
+            output_data = {}
+        if lens_id not in output_data:
+            output_data[lens_id] = {"name": config[lens_id].get("name", lens_id), "description": "", "axes": {}, "points": []}
+        output_data[lens_id]['points'] = points
+        OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+        _write_sonic_vectors_to_app_config(output_data)
+    except Exception as e:
+        return jsonify({"success": False, "error": f"写入 sonic_vectors 失败: {e}"}), 500
+    return jsonify({"success": True, "message": "关键词位置已保存", "count": len(points)})
 
 def _resolve_sync_db_path():
     """
@@ -1463,6 +1585,38 @@ HTML_TEMPLATE = r'''
         .pin.selected .pin-dot { background: #f43f5e; border-color: #fca5a5; }
         .pin.selected .pin-label { color: #f43f5e; }
 
+        /* 力场关键词点（重构后显示在棱镜上的分布） */
+        .field-dot-wrap {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            z-index: 5;
+            pointer-events: auto;
+        }
+        .field-dot-wrap:active { cursor: grabbing; z-index: 15; }
+        .field-dot {
+            width: 6px; height: 6px;
+            background: #64748b;
+            border: 1px solid #94a3b8;
+            border-radius: 50%;
+            opacity: 0.85;
+        }
+        .field-dot-wrap:hover .field-dot { background: #94a3b8; opacity: 1; transform: scale(1.3); }
+        .field-dot-label {
+            position: absolute;
+            top: -16px; left: 50%; transform: translateX(-50%);
+            background: rgba(15,23,42,0.95);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 9px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+            z-index: 20;
+        }
+        .field-dot-wrap:hover .field-dot-label { opacity: 1; }
+
         /* 右侧：控制面板 */
         .sidebar { width: 320px; background: var(--panel); border-left: 1px solid #334155; display: flex; flex-direction: column; }
         .tabs { display: flex; border-bottom: 1px solid #334155; }
@@ -1659,9 +1813,13 @@ HTML_TEMPLATE = r'''
                         <option value="shibing624/text2vec-base-chinese">Chinese Optimized (中文增强)</option>
                     </select>
                 </div>
+                <div class="category-selector" style="margin-bottom:10px;">
+                    <label><input type="checkbox" id="showFieldKeywords" checked onchange="toggleShowFieldKeywords()"> <span>显示力场关键词分布</span></label>
+                </div>
                 <button class="btn-primary" onclick="rebuildLens()">🚀 保存并重构力场</button>
+                <button class="btn-sec" id="saveFieldBtn" onclick="saveFieldPositions()" style="margin-top:6px; display:none;">📌 保存关键词位置</button>
                 <button class="btn-sec" style="margin-top:10px; background:#2563eb;" onclick="syncToCloud()">☁️ 同步到云端 (Supabase)</button>
-                <button class="btn-sec" onclick="saveOnly()">💾 仅保存位置</button>
+                <button class="btn-sec" onclick="saveOnly()">💾 仅保存锚点位置</button>
             </div>
         </div>
 
@@ -1937,9 +2095,9 @@ HTML_TEMPLATE = r'''
     
     function renderMap() {
         const map = document.getElementById('map');
-        // Keep grid lines, remove pins
+        // Remove pins and field-dot-wraps, keep axis labels and grid
         Array.from(map.children).forEach(c => {
-            if(c.classList.contains('pin')) c.remove();
+            if (c.classList.contains('pin') || c.classList.contains('field-dot-wrap')) c.remove();
         });
         
         const anchors = config[currentLens].anchors || [];
@@ -1953,14 +2111,12 @@ HTML_TEMPLATE = r'''
                 <div class="pin-dot"></div>
             `;
             
-            // Add click handler for selection
             let mouseDownPos = null;
             pin.onmousedown = (e) => {
                 mouseDownPos = { x: e.clientX, y: e.clientY };
                 startDrag(e, idx);
             };
             pin.onmouseup = (e) => {
-                // If mouse hasn't moved much, treat as click (not drag)
                 if (mouseDownPos && 
                     Math.abs(e.clientX - mouseDownPos.x) < 5 && 
                     Math.abs(e.clientY - mouseDownPos.y) < 5) {
@@ -1971,6 +2127,80 @@ HTML_TEMPLATE = r'''
             
             map.appendChild(pin);
         });
+        
+        // 力场关键词分布（重构后显示）
+        const showField = document.getElementById('showFieldKeywords') && document.getElementById('showFieldKeywords').checked;
+        const fieldData = config[currentLens].field_data || [];
+        if (showField && fieldData.length > 0) {
+            document.getElementById('saveFieldBtn').style.display = 'block';
+            fieldData.forEach((pt, idx) => {
+                const wrap = document.createElement('div');
+                wrap.className = 'field-dot-wrap';
+                wrap.style.left = `${pt.x}%`;
+                wrap.style.top = `${pt.y}%`;
+                wrap.dataset.idx = idx;
+                wrap.innerHTML = `
+                    <span class="field-dot-label">${pt.word || ''} ${(pt.zh || '') ? '(' + pt.zh + ')' : ''}</span>
+                    <div class="field-dot"></div>
+                `;
+                wrap.onmousedown = (e) => { e.stopPropagation(); startFieldDotDrag(e, idx); };
+                map.appendChild(wrap);
+            });
+        } else {
+            document.getElementById('saveFieldBtn').style.display = fieldData.length > 0 ? 'block' : 'none';
+        }
+    }
+    
+    function toggleShowFieldKeywords() {
+        renderMap();
+    }
+    
+    let fieldDotDragging = false;
+    function startFieldDotDrag(e, idx) {
+        fieldDotDragging = true;
+        const map = document.getElementById('map');
+        const rect = map.getBoundingClientRect();
+        const points = config[currentLens].field_data || [];
+        if (idx >= points.length) return;
+        
+        function move(ev) {
+            if (!fieldDotDragging) return;
+            let x = ((ev.clientX - rect.left) / rect.width) * 100;
+            let y = ((ev.clientY - rect.top) / rect.height) * 100;
+            x = Math.max(0, Math.min(100, x));
+            y = Math.max(0, Math.min(100, y));
+            points[idx].x = x;
+            points[idx].y = y;
+            const wrap = map.querySelector('.field-dot-wrap[data-idx="' + idx + '"]');
+            if (wrap) { wrap.style.left = x + '%'; wrap.style.top = y + '%'; }
+        }
+        function stop() {
+            fieldDotDragging = false;
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', stop);
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', stop);
+    }
+    
+    async function saveFieldPositions() {
+        const points = config[currentLens].field_data || [];
+        if (points.length === 0) { showToast('当前棱镜无力场关键词数据', true); return; }
+        try {
+            const res = await fetch(`/api/lenses/${currentLens}/field`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ points: points })
+            });
+            const result = await res.json();
+            if (result.success) {
+                showToast('✅ ' + (result.message || '关键词位置已保存'));
+            } else {
+                showToast('❌ ' + (result.error || '保存失败'), true);
+            }
+        } catch (err) {
+            showToast('❌ 保存失败: ' + err.message, true);
+        }
     }
     
     function renderList() {
@@ -2133,12 +2363,15 @@ HTML_TEMPLATE = r'''
             }
             
             if (data.message) {
-                // 完成
+                // 重构完成：拉取最新 config（含 field_data）并刷新地图显示关键词分布
                 eventSource.close();
-                setTimeout(() => {
-                    overlay.classList.remove('show');
-                    showToast('✅ ' + data.message);
-                }, 500);
+                overlay.classList.remove('show');
+                showToast('✅ ' + data.message);
+                fetch('/api/config').then(r => r.json()).then(newConfig => {
+                    config = newConfig;
+                    renderMap();
+                    renderList();
+                }).catch(() => {});
             }
         };
         

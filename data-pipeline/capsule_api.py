@@ -3613,6 +3613,45 @@ def _normalize_axes(axes_raw):
     }
 
 
+def _load_sonic_vectors_fallback():
+    """
+    加载力场关键词的回落数据（与锚点编辑器写入的 sonic_vectors.json 一致）。
+    返回: { prism_id: { "points": [...], "name": ..., "axes": ... }, ... }
+    """
+    merged = {}
+    pm = PathManager.get_instance()
+    base = Path(__file__).resolve().parent
+    candidates = [
+        pm.config_dir / "data" / "sonic_vectors.json",
+        base.parent / "webapp" / "public" / "data" / "sonic_vectors.json",
+    ]
+    if getattr(pm, "resource_dir", None):
+        candidates.append(pm.resource_dir.parent / "webapp" / "public" / "data" / "sonic_vectors.json")
+    for path in candidates:
+        if not path.exists():
+            continue
+        if not path.exists():
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            for lid, entry in (data.items() if isinstance(data, dict) else []):
+                if not isinstance(entry, dict):
+                    continue
+                pts = entry.get('points', [])
+                if lid not in merged or (pts and (not merged[lid].get('points'))):
+                    merged[lid] = {
+                        "points": pts,
+                        "name": entry.get('name', lid),
+                        "axes": entry.get('axes', {}),
+                    }
+        except Exception as e:
+            logger.debug(f"读取 sonic_vectors 回落失败 {path!s}: {e}")
+    if merged:
+        logger.info(f"[PRISMS] 力场回落已加载 {len(merged)} 个棱镜: {list(merged.keys())}")
+    return merged
+
+
 @app.route('/api/prisms/field', methods=['GET'])
 def get_prisms_field():
     """
@@ -3622,16 +3661,16 @@ def get_prisms_field():
     
     🔥 支持 active 状态过滤：从锚点编辑器配置中读取 active 状态
     🔥 轴端点词：优先 DB axis_config → 用户目录 anchor_config_v2.json → 服务端默认
+    🔥 力场回落：DB 无 field_data 或棱镜不在 DB 时，从 sonic_vectors.json 合并（编辑器更新后 app 可见）
     """
     try:
         prisms = prism_manager.get_all_prisms()
-        
-        # 🔥 读取锚点编辑器配置中的 active 状态（及 axes 作回退）
+        pm = PathManager.get_instance()
+
+        # 🔥 读取锚点编辑器配置（含 active、axes），并合并 repo 内配置以便显示仅存在于编辑器的棱镜（如 Tactility）
         anchor_config = {}
         try:
-            pm = PathManager.get_instance()
             user_config_path = pm.config_dir / "anchor_config_v2.json"
-            
             if not user_config_path.exists():
                 resource_path = pm.resource_dir / "anchor_config_v2.json" if pm.resource_dir else None
                 dev_path = Path(__file__).parent / "anchor_config_v2.json"
@@ -3641,14 +3680,26 @@ def get_prisms_field():
                     user_config_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source_path, user_config_path)
                     logger.info(f"[PRISMS] 已复制默认棱镜配置到用户目录: {user_config_path}")
-            
             if user_config_path.exists():
                 with open(user_config_path, 'r', encoding='utf-8') as f:
                     anchor_config = json.load(f)
-                logger.info(f"[PRISMS] 从 {user_config_path} 加载棱镜配置")
+            # 开发/同机：合并 repo 内 anchor_config，使编辑器新增棱镜（如 tactility）在 app 中也有条目
+            dev_anchor = Path(__file__).parent / "anchor_config_v2.json"
+            if dev_anchor.exists() and dev_anchor != user_config_path:
+                try:
+                    with open(dev_anchor, 'r', encoding='utf-8') as f:
+                        dev_cfg = json.load(f)
+                    for k, v in dev_cfg.items():
+                        if k not in anchor_config:
+                            anchor_config[k] = v
+                except Exception:
+                    pass
         except Exception as e:
             logger.warning(f"读取锚点编辑器配置失败: {e}")
-        
+
+        # 回落：编辑器写入的力场数据（app DB 与编辑器 DB 分离时用）
+        fallback_vectors = _load_sonic_vectors_fallback()
+
         output = {}
         for p in prisms:
             try:
@@ -3657,8 +3708,6 @@ def get_prisms_field():
                 if is_active is False:
                     logger.info(f"跳过禁用的棱镜: {prism_id}")
                     continue
-                
-                # 轴端点词：DB axis_config → 用户目录 anchor_config 的 axes → 服务端默认
                 axes_raw = json.loads(p.get('axis_config', '{}') or '{}')
                 if not isinstance(axes_raw, dict):
                     axes_raw = {}
@@ -3669,17 +3718,41 @@ def get_prisms_field():
                     else:
                         axes_raw = DEFAULT_PRISM_AXES.get(prism_id, {})
                 axes_out = _normalize_axes(axes_raw)
-                
+                points = json.loads(p.get('field_data', '[]') or '[]')
+                # 若 DB 无力场数据，用编辑器生成的 sonic_vectors 回落
+                if not points and prism_id in fallback_vectors and fallback_vectors[prism_id].get('points'):
+                    points = fallback_vectors[prism_id]['points']
+                    logger.info(f"[PRISMS] 棱镜 {prism_id} 使用 sonic_vectors 回落，共 {len(points)} 个词")
                 output[prism_id] = {
                     "name": p['name'],
                     "description": p['description'],
                     "axes": axes_out,
-                    "points": json.loads(p.get('field_data', '[]') or '[]'),
+                    "points": points,
                     "active": is_active,
                 }
             except Exception as e:
                 logger.warning(f"解析棱镜 {p.get('id')} 字段失败: {e}")
-                
+
+        # 补充仅存在于编辑器配置中的棱镜（如 Tactility），使 app 能显示词
+        for prism_id, entry in anchor_config.items():
+            if prism_id in output:
+                continue
+            is_active = entry.get('active', True)
+            if is_active is False:
+                continue
+            axes_out = _normalize_axes(entry.get('axes') or DEFAULT_PRISM_AXES.get(prism_id, {}))
+            points = []
+            if prism_id in fallback_vectors and fallback_vectors[prism_id].get('points'):
+                points = fallback_vectors[prism_id]['points']
+                logger.info(f"[PRISMS] 从回落补充棱镜 {prism_id}，共 {len(points)} 个词")
+            output[prism_id] = {
+                "name": entry.get('name', prism_id),
+                "description": entry.get('description', ''),
+                "axes": axes_out,
+                "points": points,
+                "active": True,
+            }
+
         return jsonify(output)
     except Exception as e:
         logger.error(f"获取力场数据失败: {e}")

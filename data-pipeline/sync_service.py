@@ -461,7 +461,9 @@ class SyncService:
             finally:
                 conn.close()
 
-            logger.info(f"🏷️  开始关键词同步，共 {len(local_capsules)} 个胶囊")
+            logger.info(f"🏷️  开始关键词同步，共 {len(local_capsules)} 个已关联云端的胶囊（有 cloud_id）")
+            if not local_capsules:
+                logger.warning("🏷️  没有已同步到云端的胶囊（cloud_id 为空），请先对胶囊执行一次「同步到云端」再修改关键词并同步")
 
             for row in local_capsules:
                 cap_id, cap_name, cloud_id, local_updated_at = row
@@ -487,6 +489,7 @@ class SyncService:
                     # 简单策略：以本地为准上传（因为用户只在本地修改）
                     if local_tags:
                         # 将本地标签上传到云端
+                        logger.info(f"   → 上传标签: {cap_name} (cloud_id={cloud_id}, {len(local_tags)} 个)")
                         success = supabase.upload_tags(user_id, cloud_id, local_tags)
                         if success:
                             uploaded += 1
@@ -497,7 +500,9 @@ class SyncService:
                                 supabase.update_capsule_keywords(user_id, cap_id, local_keywords)
                                 logger.info(f"   ✓ 更新云端 keywords: {local_keywords[:30]}...")
                         else:
-                            errors.append(f"{cap_name}: 标签上传失败")
+                            err_msg = f"{cap_name}: 标签上传失败（请查看后端日志；若为 column 不存在，请在 Supabase 执行 005_cloud_capsule_tags_add_keyword_columns.sql）"
+                            errors.append(err_msg)
+                            logger.warning(f"   ✗ {err_msg}")
                     elif cloud_tags:
                         # 本地没有标签，从云端下载
                         conn = self._get_connection()

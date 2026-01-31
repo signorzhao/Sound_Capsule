@@ -1,5 +1,41 @@
 use std::process::{Child, Command};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::io::BufRead;
+
+/// 从配置目录读取 .env.supabase 或 supabase.env，解析 SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY。
+/// 返回 (url, key)；若任一缺失则返回 None，调用方使用默认值。
+fn load_supabase_env_from_config_dir(config_dir: &str) -> Option<(String, String)> {
+    let base = Path::new(config_dir);
+    let candidates = [".env.supabase", "supabase.env"];
+    let mut url = None::<String>;
+    let mut key = None::<String>;
+    for name in candidates.iter() {
+        let path = base.join(name);
+        if let Ok(f) = std::fs::File::open(&path) {
+            let reader = std::io::BufReader::new(f);
+            for line in reader.lines().filter_map(Result::ok) {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if let Some(eq) = line.find('=') {
+                    let k = line[..eq].trim();
+                    let v = line[eq + 1..].trim().trim_matches('"').trim_matches('\'').to_string();
+                    if k == "SUPABASE_URL" && !v.is_empty() {
+                        url = Some(v);
+                    } else if k == "SUPABASE_SERVICE_ROLE_KEY" && !v.is_empty() {
+                        key = Some(v);
+                    }
+                }
+            }
+            break;
+        }
+    }
+    match (url, key) {
+        (Some(u), Some(k)) => Some((u, k)),
+        _ => None,
+    }
+}
 
 /// Sidecar 进程管理器
 ///
@@ -68,9 +104,13 @@ impl SidecarProcess {
             cmd.arg("--resource-dir").arg(res_dir);
         }
 
-        // Phase G: 添加 Supabase 环境变量
-        cmd.env("SUPABASE_URL", "https://mngtddqjbbrdwwfxcvxg.supabase.co");
-        cmd.env("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ3RkZHFqYmJyZHd3ZnhjdnhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODA0NzQ0NSwiZXhwIjoyMDgzNjIzNDQ1fQ.0RXH_ECqIpQeRwnXbzEOORi7grODOVud8c_96ZIP3VU");
+        // Phase G: Supabase 环境变量 — 优先从配置目录 .env.supabase 读取（私有化部署）
+        const DEFAULT_SUPABASE_URL: &str = "https://mngtddqjbbrdwwfxcvxg.supabase.co";
+        const DEFAULT_SUPABASE_SERVICE_ROLE_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ3RkZHFqYmJyZHd3ZnhjdnhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODA0NzQ0NSwiZXhwIjoyMDgzNjIzNDQ1fQ.0RXH_ECqIpQeRwnXbzEOORi7grODOVud8c_96ZIP3VU";
+        let (supabase_url, supabase_key) = load_supabase_env_from_config_dir(&config_dir)
+            .unwrap_or_else(|| (DEFAULT_SUPABASE_URL.to_string(), DEFAULT_SUPABASE_SERVICE_ROLE_KEY.to_string()));
+        cmd.env("SUPABASE_URL", &supabase_url);
+        cmd.env("SUPABASE_SERVICE_ROLE_KEY", &supabase_key);
 
         // Windows Release 模式下隐藏控制台窗口
         // 开发模式下保留控制台以便查看日志

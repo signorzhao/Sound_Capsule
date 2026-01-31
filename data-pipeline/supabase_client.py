@@ -138,6 +138,28 @@ class SupabaseClient:
                 return {'success': False, 'error': '该邮箱已被注册'}
             return {'success': False, 'error': f'注册失败: {error_msg}'}
 
+    def auth_admin_confirm_user_by_email(self, email: str) -> bool:
+        """
+        使用 Service Role 按邮箱找到未确认用户并设为已确认（不发邮件）。
+        用于自建 Supabase 未配 SMTP 时，注册虽创建用户但返回 500 的场景。
+
+        Returns:
+            True 表示已找到并确认，False 表示未找到或操作失败
+        """
+        try:
+            # list_users 返回分页，先取一页按邮箱过滤
+            r = self._client.auth.admin.list_users(per_page=1000)
+            if not getattr(r, 'users', None):
+                return False
+            for u in r.users:
+                if getattr(u, 'email', None) and u.email.lower() == email.lower():
+                    self._client.auth.admin.update_user_by_id(u.id, {"email_confirm": True})
+                    return True
+            return False
+        except Exception as e:
+            print(f"[Supabase] auth_admin_confirm_user_by_email 失败: {e}")
+            return False
+
     def auth_sign_in(self, email: str, password: str) -> Dict[str, Any]:
         """
         使用 Supabase Auth 登录用户
@@ -529,7 +551,9 @@ class SupabaseClient:
             return True
 
         except Exception as e:
+            import traceback
             print(f"✗ 上传标签失败: {e}")
+            traceback.print_exc()
             return False
 
     def download_tags(self, user_id: str) -> List[Dict[str, Any]]:

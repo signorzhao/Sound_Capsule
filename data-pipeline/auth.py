@@ -194,7 +194,36 @@ class AuthManager:
                         }
                     }
                 else:
-                    raise ValueError(result.get('error', '注册失败'))
+                    err = result.get('error', '注册失败')
+                    # 自建 Supabase 未配 SMTP：signup 会创建用户但返回 500（发信失败），用户处于未确认状态
+                    # 用 Admin API 将该邮箱用户设为已确认，再尝试登录
+                    if 'confirmation email' in err.lower():
+                        if supabase.auth_admin_confirm_user_by_email(email):
+                            signin = supabase.auth_sign_in(email, password)
+                            if signin.get('success') and signin.get('user'):
+                                self._cache_supabase_user(
+                                    supabase_user_id=signin['user']['id'],
+                                    username=username,
+                                    email=email
+                                )
+                                return {
+                                    "success": True,
+                                    "user": {
+                                        "id": signin['user']['id'],
+                                        "username": username,
+                                        "email": email,
+                                        "display_name": username,
+                                        "supabase_user_id": signin['user']['id']
+                                    },
+                                    "tokens": {
+                                        "access_token": signin.get('session', {}).get('access_token'),
+                                        "refresh_token": signin.get('session', {}).get('refresh_token'),
+                                        "expires_in": signin.get('session', {}).get('expires_in', 3600)
+                                    }
+                                }
+                        else:
+                            err = "注册暂不可用。请让管理员在 Supabase Dashboard → Authentication → Users → Add user 添加账号后，用该邮箱和密码直接登录。"
+                    raise ValueError(err)
             except ValueError:
                 raise
             except Exception as e:
