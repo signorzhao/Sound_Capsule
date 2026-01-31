@@ -2897,7 +2897,7 @@ def sync_metadata_lightweight(current_user):
 
         # 同时也同步棱镜配置 (Phase C)
         try:
-            sync_service.sync_prisms(user_id)
+            sync_service.sync_prisms(user_id, upload=False)  # 胶囊客户端只下载棱镜，不上传
         except Exception as e:
             logger.warning(f"棱镜同步失败 (非阻断): {e}")
 

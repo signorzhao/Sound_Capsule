@@ -1026,9 +1026,9 @@ def sync_metadata_lightweight(current_user):
             capsule_ids=capsule_ids  # 传递指定的胶囊 ID 列表
         )
 
-        # 同时也同步棱镜配置 (Phase C)
+        # 同时也同步棱镜配置 (Phase C)，胶囊客户端只下载棱镜，不上传
         try:
-            sync_service.sync_prisms(user_id)
+            sync_service.sync_prisms(user_id, upload=False)
         except Exception as e:
             logger.warning(f"棱镜同步失败 (非阻断): {e}")
 
@@ -1205,9 +1205,9 @@ def download_only(current_user):
             include_previews=include_previews
         )
 
-        # 同时也同步棱镜配置 (Phase C)
+        # 同时也同步棱镜配置 (Phase C)，胶囊客户端只下载棱镜，不上传
         try:
-            sync_service.sync_prisms(user_id)
+            sync_service.sync_prisms(user_id, upload=False)
         except Exception as e:
             logger.warning(f"棱镜同步失败 (非阻断): {e}")
 

@@ -1,5 +1,6 @@
 {
   "materiality": {
+    "active": false,
     "anchors": [
       {
         "word": "close",
@@ -577,10 +578,10 @@
     },
     "description": "声音的空间材质与距离特征",
     "lexicon_file": "lexicon_materiality.csv",
-    "name": "空间",
-    "active": false
+    "name": "空间"
   },
   "source": {
+    "active": true,
     "anchors": [
       {
         "word": "static",
@@ -1045,6 +1046,7 @@
     "name": "Source & Physics (源场)"
   },
   "temperament": {
+    "active": false,
     "anchors": [
       {
         "word": "cold",
@@ -1360,10 +1362,10 @@
     },
     "description": "声音的性情与气质特征",
     "lexicon_file": "lexicon_temperament.csv",
-    "name": "Temperament / 性情",
-    "active": false
+    "name": "Temperament / 性情"
   },
   "texture": {
+    "active": true,
     "anchors": [
       {
         "word": "dark",

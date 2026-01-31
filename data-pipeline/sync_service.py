@@ -2351,19 +2351,20 @@ class SyncService:
 
     # ========== Phase C1: 棱镜配置同步 ==========
 
-    def sync_prisms(self, user_id: str) -> Dict[str, Any]:
+    def sync_prisms(self, user_id: str, upload: bool = True) -> Dict[str, Any]:
         """
         同步棱镜配置到云端
 
         Phase C1: 棱镜版本控制
 
         策略: Last Write Wins
-        - 上传本地变更（version > 云端 version）
+        - 上传本地变更（仅锚点编辑器调用时执行，胶囊客户端只下载）
         - 下载云端变更（应用 Last Write Wins）
         - 冲突自动解决，无需手动干预
 
         Args:
             user_id: Supabase 用户 ID
+            upload: 是否上传本地棱镜到云端。仅锚点编辑器应传 True；胶囊客户端必须传 False，只下载。
 
         Returns:
             同步结果：{
@@ -2413,36 +2414,39 @@ class SyncService:
                 except Exception:
                     pass
 
-            # 1. 上传本地变更
-            print("📤 步骤 1: 上传本地棱镜变更...")
-            dirty_prisms = prism_manager.get_dirty_prisms()
+            # 1. 上传本地变更（仅锚点编辑器调用时执行；胶囊客户端只下载，不上传）
+            if upload:
+                print("📤 步骤 1: 上传本地棱镜变更...")
+                dirty_prisms = prism_manager.get_dirty_prisms()
 
-            if dirty_prisms:
-                print(f"   发现 {len(dirty_prisms)} 个本地变更")
+                if dirty_prisms:
+                    print(f"   发现 {len(dirty_prisms)} 个本地变更")
 
-                for prism in dirty_prisms:
-                    try:
-                        # 棱镜启用状态从 anchor_config 注入，供云端同步
-                        prism['is_active'] = anchor_config.get(prism['id'], {}).get('active', True)
-                        # 使用 DAL 上传（含 field_data、is_active）
-                        result = prism_dal.upload_prism(
-                            user_id,
-                            prism['id'],
-                            prism  # 直接传递完整的 prism 字典
-                        )
+                    for prism in dirty_prisms:
+                        try:
+                            # 棱镜启用状态从 anchor_config 注入，供云端同步
+                            prism['is_active'] = anchor_config.get(prism['id'], {}).get('active', True)
+                            # 使用 DAL 上传（含 field_data、is_active）
+                            result = prism_dal.upload_prism(
+                                user_id,
+                                prism['id'],
+                                prism  # 直接传递完整的 prism 字典
+                            )
 
-                        if result:
-                            uploaded += 1
-                            print(f"   ✅ 上传棱镜 '{prism['id']}' (v{prism['version']})")
-                        else:
-                            errors.append(f"上传棱镜 '{prism['id']}' 失败")
+                            if result:
+                                uploaded += 1
+                                print(f"   ✅ 上传棱镜 '{prism['id']}' (v{prism['version']})")
+                            else:
+                                errors.append(f"上传棱镜 '{prism['id']}' 失败")
 
-                    except Exception as e:
-                        error_msg = f"上传棱镜 '{prism['id']}' 失败: {e}"
-                        errors.append(error_msg)
-                        print(f"   ❌ {error_msg}")
+                        except Exception as e:
+                            error_msg = f"上传棱镜 '{prism['id']}' 失败: {e}"
+                            errors.append(error_msg)
+                            print(f"   ❌ {error_msg}")
+                else:
+                    print("   ✅ 无本地变更需要上传")
             else:
-                print("   ✅ 无本地变更需要上传")
+                print("📥 胶囊客户端：仅下载棱镜，不上传")
 
             print()
 
