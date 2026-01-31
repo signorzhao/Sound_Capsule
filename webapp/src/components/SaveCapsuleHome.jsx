@@ -3,6 +3,7 @@ import { Package, Sparkles, Flame, Music, Activity, Settings, X } from 'lucide-r
 import CapsuleCard from './CapsuleCard';
 import CapsuleTypeManager from './CapsuleTypeManager';
 import UserMenu from './UserMenu';
+import { getApiUrl } from '../utils/apiClient';
 
 /**
  * 保存胶囊首页组件 - 重新设计版
@@ -23,7 +24,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
   // 从API加载胶囊类型
   const loadCapsuleTypes = async () => {
     try {
-      const response = await fetch('http://localhost:5002/api/capsule-types');
+      const response = await fetch(getApiUrl('/api/capsule-types'));
       const data = await response.json();
 
       if (data.success) {

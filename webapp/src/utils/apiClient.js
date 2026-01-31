@@ -2,9 +2,31 @@
  * API 客户端
  *
  * 提供自动处理认证和 token 刷新的 fetch 封装
+ * API 基地址可从应用配置 api_base_url 读取（开发/私有部署时连到本机或局域网服务器）
  */
 
-const API_BASE_URL = 'http://localhost:5002/api';
+const DEFAULT_API_BASE = 'http://localhost:5002';
+
+/** 从配置注入的基地址（App 启动时从 get_app_config 写入） */
+function getApiBaseUrl() {
+  return (typeof window !== 'undefined' && window.__API_BASE_URL) || DEFAULT_API_BASE;
+}
+
+/** 拼出完整 API URL（如 getApiUrl('/api/prisms/field')） */
+export function getApiUrl(path) {
+  const base = getApiBaseUrl().replace(/\/$/, '');
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${p}`;
+}
+
+/** 供 App 启动时注入配置用 */
+export function setApiBaseFromConfig(apiBaseUrl) {
+  if (typeof window !== 'undefined') {
+    window.__API_BASE_URL = apiBaseUrl && apiBaseUrl.trim() ? apiBaseUrl.trim().replace(/\/$/, '') : DEFAULT_API_BASE;
+  }
+}
+
+const API_BASE_URL = DEFAULT_API_BASE + '/api';
 
 /**
  * 刷新 access token
@@ -16,7 +38,7 @@ async function refreshAccessToken() {
     throw new Error('No refresh token available');
   }
 
-  const response = await fetch(`http://localhost:5002/api/auth/refresh`, {
+  const response = await fetch(getApiUrl('/api/auth/refresh'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken })
@@ -131,6 +153,6 @@ export async function authFetch(url, options = {}) {
 }
 
 /**
- * 导出 base URL 供其他地方使用
+ * 导出 base URL 供其他地方使用（注意：优先用 getApiUrl(path) 以尊重配置）
  */
-export { API_BASE_URL };
+export { API_BASE_URL, getApiBaseUrl, getApiUrl, setApiBaseFromConfig };

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig, resetAppConfig } from '../utils/configApi';
+import { getApiUrl, setApiBaseFromConfig } from '../utils/apiClient';
 
 /**
  * 设置面板组件
@@ -12,7 +13,8 @@ function SettingsPanel({ onClose }) {
     reaper_ip: '',
     export_dir: '',
     username: '',
-    language: 'zh-CN'
+    language: 'zh-CN',
+    api_base_url: ''
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -31,7 +33,8 @@ function SettingsPanel({ onClose }) {
         reaper_ip: savedConfig.reaper_ip || '',
         export_dir: savedConfig.export_dir || '',
         username: savedConfig.username || '',
-        language: savedConfig.language || 'zh-CN'
+        language: savedConfig.language || 'zh-CN',
+        api_base_url: savedConfig.api_base_url || ''
       });
     } catch (error) {
       showMessage('error', '加载配置失败: ' + error.message);
@@ -61,11 +64,12 @@ function SettingsPanel({ onClose }) {
 
       // 1. 保存到 Tauri 配置
       await saveAppConfig(config);
+      setApiBaseFromConfig(config.api_base_url);
       console.log('✓ Tauri 配置已保存');
 
       // 2. 同时同步到 Python 后端（不需要认证）
       try {
-        const response = await fetch('http://localhost:5002/api/config/save', {
+        const response = await fetch(getApiUrl('/api/config/save'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -105,7 +109,8 @@ function SettingsPanel({ onClose }) {
           reaper_ip: '',
           export_dir: '',
           username: '',
-          language: 'zh-CN'
+          language: 'zh-CN',
+          api_base_url: ''
         });
         showMessage('success', '配置已重置');
       } catch (error) {
@@ -200,6 +205,21 @@ function SettingsPanel({ onClose }) {
                 placeholder="127.0.0.1"
               />
               <small>如果通过网络连接 REAPER，请填写 IP 地址</small>
+            </div>
+          </section>
+
+          {/* API 服务器（开发/私有部署） */}
+          <section className="settings-section">
+            <h3>API 服务器</h3>
+            <div className="form-group">
+              <label>API 服务器地址（可选）</label>
+              <input
+                type="text"
+                value={config.api_base_url}
+                onChange={(e) => setConfig({ ...config, api_base_url: e.target.value })}
+                placeholder="http://localhost:5002 或 http://192.168.x.x:5002"
+              />
+              <small>不填则默认连本机 5002；Windows 开发版连「本地部署的服务器」时填该机地址，如 http://192.168.1.100:5002</small>
             </div>
           </section>
 
