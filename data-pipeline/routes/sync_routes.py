@@ -427,7 +427,8 @@ def upload_to_cloud(current_user):
                                                         logger.info(f"[SYNC]     - 大小: {preview_result.get('size', 0):,} bytes")
                                                         logger.info(f"[SYNC]     - 路径: {preview_result.get('storage_path', 'N/A')}")
                                                     else:
-                                                        logger.warning(f"[SYNC]   ⚠ 预览音频上传失败")
+                                                        _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                        logger.warning(f"[SYNC]   ⚠ 预览音频上传失败" + (f": {_err}" if _err else ""))
                                             else:
                                                 logger.warning(f"[SYNC]   ⚠ 预览音频文件不存在: {preview_path}")
 
@@ -451,7 +452,8 @@ def upload_to_cloud(current_user):
                                                         logger.info(f"[SYNC]     - 大小: {rpp_result.get('size', 0):,} bytes")
                                                         logger.info(f"[SYNC]     - 路径: {rpp_result.get('storage_path', 'N/A')}")
                                                     else:
-                                                        logger.warning(f"[SYNC]   ⚠ RPP 文件上传失败")
+                                                        _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                        logger.warning(f"[SYNC]   ⚠ RPP 文件上传失败" + (f": {_err}" if _err else ""))
                                             else:
                                                 logger.warning(f"[SYNC]   ⚠ RPP 文件不存在: {rpp_path}")
 
@@ -473,7 +475,8 @@ def upload_to_cloud(current_user):
                                                     logger.info(f"[SYNC]     - 大小: {metadata_result.get('size', 0):,} bytes")
                                                     logger.info(f"[SYNC]     - 路径: {metadata_result.get('storage_path', 'N/A')}")
                                                 else:
-                                                    logger.warning(f"[SYNC]   ⚠ metadata.json 上传失败")
+                                                    _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                    logger.warning(f"[SYNC]   ⚠ metadata.json 上传失败" + (f": {_err}" if _err else ""))
                                         else:
                                             logger.warning(f"[SYNC]   ⚠ metadata.json 文件不存在: {metadata_file}")
 
@@ -503,7 +506,8 @@ def upload_to_cloud(current_user):
                                                     if audio_result.get('errors'):
                                                         logger.warning(f"[SYNC]     - 失败: {len(audio_result.get('errors', []))} 个文件")
                                                 else:
-                                                    logger.warning(f"[SYNC]   ⚠ Audio 文件夹上传失败")
+                                                    _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                    logger.warning(f"[SYNC]   ⚠ Audio 文件夹上传失败" + (f": {_err}" if _err else ""))
                                         else:
                                             logger.info(f"[SYNC]   ℹ 无 Audio 文件夹，跳过")
                                     else:

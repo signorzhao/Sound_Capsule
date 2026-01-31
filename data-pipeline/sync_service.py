@@ -1433,9 +1433,10 @@ class SyncService:
                                                         'message': '预览音频上传完成'
                                                     })
                                                 else:
-                                                    print(f"   ✗ 预览音频上传失败")
+                                                    _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                    print(f"   ✗ 预览音频上传失败" + (f": {_err}" if _err else ""))
                                                     all_files_uploaded = False
-                                                    upload_errors.append("预览音频上传失败")
+                                                    upload_errors.append("预览音频上传失败" + (f": {_err}" if _err else ""))
                                             except Exception as e:
                                                 print(f"   ✗ 预览音频上传异常: {e}")
                                                 all_files_uploaded = False
@@ -1480,9 +1481,10 @@ class SyncService:
                                                         'message': 'RPP 上传完成'
                                                     })
                                                 else:
-                                                    print(f"   ✗ RPP 文件上传失败")
+                                                    _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                    print(f"   ✗ RPP 文件上传失败" + (f": {_err}" if _err else ""))
                                                     all_files_uploaded = False
-                                                    upload_errors.append("RPP 文件上传失败")
+                                                    upload_errors.append("RPP 文件上传失败" + (f": {_err}" if _err else ""))
                                             except Exception as e:
                                                 print(f"   ✗ RPP 文件上传异常: {e}")
                                                 all_files_uploaded = False
@@ -1524,9 +1526,10 @@ class SyncService:
                                                     'message': 'metadata.json 上传完成'
                                                 })
                                             else:
-                                                print(f"   ✗ metadata.json 上传失败")
+                                                _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                print(f"   ✗ metadata.json 上传失败" + (f": {_err}" if _err else ""))
                                                 all_files_uploaded = False
-                                                upload_errors.append("metadata.json 上传失败")
+                                                upload_errors.append("metadata.json 上传失败" + (f": {_err}" if _err else ""))
                                         except Exception as e:
                                             print(f"   ✗ metadata.json 上传异常: {e}")
                                             all_files_uploaded = False
@@ -1615,9 +1618,10 @@ class SyncService:
                                                         'message': 'Audio 上传完成'
                                                     })
                                                 else:
-                                                    print(f"   ✗ Audio 文件夹上传失败")
+                                                    _err = getattr(supabase, 'get_last_storage_error', lambda: '')()
+                                                    print(f"   ✗ Audio 文件夹上传失败" + (f": {_err}" if _err else ""))
                                                     all_files_uploaded = False
-                                                    upload_errors.append("Audio 文件夹上传失败")
+                                                    upload_errors.append("Audio 文件夹上传失败" + (f": {_err}" if _err else ""))
                                             except Exception as e:
                                                 print(f"   ✗ Audio 文件夹上传异常: {e}")
                                                 all_files_uploaded = False

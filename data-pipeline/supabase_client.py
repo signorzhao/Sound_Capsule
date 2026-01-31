@@ -423,6 +423,7 @@ class SupabaseClient:
                     if progress_callback:
                         progress_callback(files_uploaded, total_files, audio_file.name)
                 except Exception as e:
+                    self._last_storage_error = str(e)
                     errors.append(f"{audio_file.name}: {e}")
 
             return {
@@ -432,6 +433,7 @@ class SupabaseClient:
                 'errors': errors
             }
         except Exception as e:
+            self._last_storage_error = str(e)
             print(f"✗ 上传音频文件失败: {e}")
             return {'success': False, 'files_uploaded': 0}
 
@@ -728,6 +730,7 @@ class SupabaseClient:
         Returns:
             上传结果，包含路径等信息
         """
+        self._last_storage_error = None
         try:
             import os
             from pathlib import Path
@@ -790,10 +793,17 @@ class SupabaseClient:
             }
 
         except Exception as e:
-            print(f"✗ 上传文件失败: {e}")
+            self._last_storage_error = str(e)
+            import logging
             import traceback
+            logging.getLogger(__name__).error("Storage 上传文件失败: %s\n%s", e, traceback.format_exc())
+            print(f"✗ 上传文件失败: {e}")
             traceback.print_exc()
             return None
+
+    def get_last_storage_error(self) -> str:
+        """返回最近一次 Storage 操作失败时的错误信息，便于同步流程上报"""
+        return getattr(self, '_last_storage_error', None) or ''
 
     def _upload_audio_folder(self, user_id: str, capsule_folder_name: str, audio_folder_path: str, progress_callback=None) -> Dict[str, Any]:
         """
@@ -881,6 +891,7 @@ class SupabaseClient:
             }
 
         except Exception as e:
+            self._last_storage_error = str(e)
             print(f"✗ 上传 Audio 文件夹失败: {e}")
             import traceback
             traceback.print_exc()
