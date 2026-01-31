@@ -77,3 +77,4 @@ docs/*.md
 !docs/DEVELOPMENT_GUIDE.md
 !docs/USAGE_GUIDE.md
 !docs/WINDOWS_SETUP.md
+data-pipeline/anchor_config_v2.json

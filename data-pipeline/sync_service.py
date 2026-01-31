@@ -2539,6 +2539,27 @@ class SyncService:
                             errors.append(error_msg)
                             print(f"   ❌ {error_msg}")
 
+                    # 以云端为准：删除本地存在但云端不存在的棱镜（如旧测试棱镜 mechanics、force_field_test）
+                    cloud_ids = [p['prism_id'] for p in cloud_prisms]
+                    try:
+                        conn = sqlite3.connect(self.db_path)
+                        try:
+                            cursor = conn.cursor()
+                            placeholders = ','.join('?' * len(cloud_ids))
+                            cursor.execute(f"DELETE FROM prism_versions WHERE prism_id NOT IN ({placeholders})", cloud_ids)
+                            cursor.execute(f"DELETE FROM prisms WHERE id NOT IN ({placeholders})", cloud_ids)
+                            removed = cursor.rowcount
+                            conn.commit()
+                            if removed > 0:
+                                print(f"   🗑️ 已移除 {removed} 个本地多余棱镜（以云端为准）")
+                        finally:
+                            conn.close()
+                    except Exception as e:
+                        logger.warning(f"[PRISMS] 清理本地多余棱镜失败: {e}")
+
+                    # 写回 anchor_config 时只保留云端棱镜，避免旧测试棱镜仍显示
+                    anchor_config_to_save = {k: v for k, v in anchor_config_to_save.items() if k in cloud_ids}
+
                     # 将云端棱镜的 is_active 写回本地 anchor_config_v2.json（使用与读取时相同的路径）
                     if anchor_config_to_save:
                         try:
