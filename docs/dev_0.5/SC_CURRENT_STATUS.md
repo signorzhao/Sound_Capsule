@@ -177,26 +177,22 @@ metadata.json：
 5. 性能优化
 当前：启动同步检查所有胶囊的所有文件
 改进方向：本地缓存文件哈希，只检查变更
-6. ✅ 棱镜全局共享 (Prism Global Sync) - 已实现临时方案
-当前实现（2026-01-20）：
+6. ✅ 棱镜全局共享 (Prism Global Sync) - 已实现
+当前实现（2026-01）：
    - 使用管理员账户 (ian@ian.com) 作为唯一棱镜数据源
    - 所有用户下载时，强制下载管理员的棱镜（dal_cloud_prisms.py: ADMIN_USER_ID）
    - 只有管理员可以上传棱镜，其他用户的上传请求被静默忽略
-   - 棱镜启用/禁用状态通过 anchor_config_v2.json 打包分发
-遗留问题：
-   - ⚠️ 棱镜启用状态 (active) 目前存储在本地配置文件中，不通过云端同步
-   - 如果管理员在锚点编辑器中禁用某个棱镜，需要重新编译分发才能生效
-   - 未来可考虑将 active 状态加入 cloud_prisms 表，实现实时同步
+   - 首次安装不提供棱镜数据：安装包不写入默认棱镜，用户登录后点「同步」从云端拉取最新棱镜（capsule_api.py 不再从 sonic_vectors.json 导入）
+   - 棱镜启用状态 (is_active)、棱镜关键词 (field_data) 已同步到云端，见下条
 
-7. 🆕 棱镜启用状态云端同步 (Prism Active State Sync)
-当前状态：使用本地配置文件 anchor_config_v2.json 管理启用/禁用
-问题：管理员禁用棱镜后，需要重新编译才能对用户生效
-改进方案：
-   - 在 cloud_prisms 表添加 is_active 字段
-   - 上传棱镜时同步 active 状态
-   - 下载棱镜时读取 active 状态并应用
-   - 本地 anchor_config_v2.json 仅作为用户个人偏好（可选覆盖）
-优先级：中（当前通过编译分发可解决，但不够灵活）
+7. ✅ 棱镜启用状态 + 棱镜关键词云端同步 - 已实现（2026-01）
+棱镜启用状态 (is_active)：
+   - cloud_prisms 表增加 is_active 列（Supabase 执行 data-pipeline/database/supabase_migrations/004_cloud_prisms_add_is_active_and_field_data.sql）
+   - 锚点编辑器「同步到云端」时从 anchor_config_v2.json 读取 active 并上传
+   - 客户端同步时从云端拉取 is_active 并写回本地 anchor_config_v2.json，无需重新编译即可生效
+棱镜关键词 (field_data)：
+   - cloud_prisms 表增加 field_data 列，存力场词+坐标 JSON
+   - 锚点编辑器生成的棱镜关键词上传到云端，客户端同步时拉取并写入本地 prisms.field_data，分发给所有客户端
 
 8. 🆕 空间查询优化 (Capsule Coordinates Sync)
 当前状态：预留功能，尚未启用

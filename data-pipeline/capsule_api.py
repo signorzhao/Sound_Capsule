@@ -4334,34 +4334,7 @@ if __name__ == '__main__':
                 except Exception as e:
                     print(f"   ✗ 插入默认胶囊类型失败: {e}")
             
-            # 插入默认棱镜数据（如果是新创建的）
-            if 'prisms' in tables_to_create:
-                try:
-                    default_prisms = [
-                        ('texture', 'Texture / Timbre', '描述声音的质感特征', 
-                         '{"x_label": {"pos": "Light / 光明治愈", "neg": "Dark / 黑暗恐惧"}, "y_label": {"pos": "Playful / 趣味活跃", "neg": "Serious / 写实严肃"}}',
-                         '[]', '[]', 1),
-                        ('source', 'Source & Physics', '描述声音的来源和物理特性',
-                         '{"x_label": {"pos": "Transient / 瞬态冲击", "neg": "Static / 静态铺底"}, "y_label": {"pos": "Sci-Fi / 科幻合成", "neg": "Organic / 有机自然"}}',
-                         '[]', '[]', 1),
-                        ('materiality', 'Materiality / Room', '描述声音的材质和空间感',
-                         '{"x_label": {"pos": "Distant / 遥远湿润", "neg": "Close / 贴耳干涩"}, "y_label": {"pos": "Warm / 暖软吸音", "neg": "Cold / 冷硬反射"}}',
-                         '[]', '[]', 1),
-                        ('temperament', 'Temperament', '描述声音的情绪和性格',
-                         '{"x_label": {"pos": "Calm / 平静", "neg": "Intense / 激烈"}, "y_label": {"pos": "Positive / 积极", "neg": "Negative / 消极"}}',
-                         '[]', '[]', 1),
-                        ('spectral', 'Spectral', '描述声音的频谱特征',
-                         '{"x_label": {"pos": "Bright / 明亮", "neg": "Dark / 暗淡"}, "y_label": {"pos": "Thin / 纤细", "neg": "Thick / 厚重"}}',
-                         '[]', '[]', 1)
-                    ]
-                    for prism in default_prisms:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO prisms (id, name, description, axis_config, anchors, field_data, version)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, prism)
-                    print(f"   ✓ 插入默认棱镜数据 ({len(default_prisms)} 个)")
-                except Exception as e:
-                    print(f"   ✗ 插入默认棱镜数据失败: {e}")
+            # 注意：不再插入默认棱镜数据。首次安装棱镜表为空，用户登录后通过「同步」从云端拉取最新棱镜。
             
             # 自动添加缺失的字段
             if health['missing_fields']:
@@ -4403,123 +4376,13 @@ if __name__ == '__main__':
         else:
             print("✅ 数据库 schema 完整")
         
-        # 检查 prisms 表是否为空或缺少 field_data，如果是则从 sonic_vectors.json 导入
+        # 棱镜数据：安装包不提供。首次安装 prisms 表为空，用户登录后点「同步」从云端拉取最新棱镜。
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        
-        # 检查总数和有完整数据的数量
         cursor.execute("SELECT COUNT(*) FROM prisms")
         total_prisms = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM prisms WHERE field_data IS NOT NULL AND field_data != '[]' AND length(field_data) > 10")
-        prisms_with_data = cursor.fetchone()[0]
-        
-        print(f"检查棱镜数据完整性...")
-        print(f"   总棱镜数: {total_prisms}")
-        print(f"   有完整词数据的棱镜数: {prisms_with_data}")
-        
-        # 如果没有任何棱镜有完整的 field_data，需要从 sonic_vectors.json 导入
-        if prisms_with_data == 0:
-            print("⚠️  prisms 表缺少词数据，尝试从 sonic_vectors.json 导入...")
-            print(f"   RESOURCE_DIR = {RESOURCE_DIR}")
-            
-            # 尝试多个可能的路径
-            sonic_vectors_paths = [
-                # 开发环境: data-pipeline -> synesth/webapp/public/data
-                Path(RESOURCE_DIR).parent / 'webapp' / 'public' / 'data' / 'sonic_vectors.json',
-                Path(__file__).parent.parent / 'webapp' / 'public' / 'data' / 'sonic_vectors.json',
-                # Windows 打包: exe_dir/_up_/_up_/data-pipeline -> exe_dir/_up_/public/data
-                # RESOURCE_DIR.parent.parent = exe_dir/_up_
-                Path(RESOURCE_DIR).parent.parent / 'public' / 'data' / 'sonic_vectors.json',
-                # 直接在 exe_dir 下的 _up_ 结构
-                Path(RESOURCE_DIR).parent.parent.parent / '_up_' / 'public' / 'data' / 'sonic_vectors.json',
-            ]
-            
-            # 打印所有尝试的路径用于调试
-            print("   尝试的路径:")
-            for i, sv_path in enumerate(sonic_vectors_paths):
-                exists = sv_path.exists()
-                print(f"   [{i+1}] {sv_path}")
-                print(f"       存在: {exists}")
-            
-            sonic_vectors_data = None
-            for sv_path in sonic_vectors_paths:
-                if sv_path.exists():
-                    print(f"   ✓ 使用 sonic_vectors.json: {sv_path}")
-                    with open(sv_path, 'r', encoding='utf-8') as f:
-                        sonic_vectors_data = json.load(f)
-                    break
-            
-            if sonic_vectors_data:
-                # 使用 INSERT OR REPLACE 来更新或插入数据
-                # 这样可以保留已有记录的其他字段（如果有的话）
-                imported_count = 0
-                updated_count = 0
-                
-                for prism_id, prism_data in sonic_vectors_data.items():
-                    axis_config = json.dumps(prism_data.get('axes', {}), ensure_ascii=False)
-                    field_data = json.dumps(prism_data.get('points', []), ensure_ascii=False)
-                    points_count = len(prism_data.get('points', []))
-                    
-                    # 检查是否已存在该棱镜
-                    cursor.execute("SELECT id FROM prisms WHERE id = ?", (prism_id,))
-                    existing = cursor.fetchone()
-                    
-                    if existing:
-                        # 已存在：只更新 field_data（保留云同步的其他配置）
-                        cursor.execute("""
-                            UPDATE prisms SET field_data = ? WHERE id = ?
-                        """, (field_data, prism_id))
-                        updated_count += 1
-                        print(f"   ✓ 更新棱镜 field_data: {prism_id} ({points_count} 个词)")
-                    else:
-                        # 不存在：完整插入
-                        cursor.execute("""
-                            INSERT INTO prisms (id, name, description, axis_config, anchors, field_data, version)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            prism_id,
-                            prism_data.get('name', prism_id),
-                            prism_data.get('description', ''),
-                            axis_config,
-                            '[]',
-                            field_data,
-                            1
-                        ))
-                        imported_count += 1
-                        print(f"   ✓ 导入棱镜: {prism_id} ({points_count} 个词)")
-                
-                conn.commit()
-                print(f"   ✅ 完成! 新增 {imported_count} 个, 更新 {updated_count} 个棱镜")
-            else:
-                print("   ⚠️  未找到 sonic_vectors.json，使用默认空数据")
-                # 插入默认空数据
-                default_prisms = [
-                    ('texture', 'Texture / Timbre', '描述声音的质感特征', 
-                     '{"x_label": {"pos": "Light / 光明治愈", "neg": "Dark / 黑暗恐惧"}, "y_label": {"pos": "Playful / 趣味活跃", "neg": "Serious / 写实严肃"}}',
-                     '[]', '[]', 1),
-                    ('source', 'Source & Physics', '描述声音的来源和物理特性',
-                     '{"x_label": {"pos": "Transient / 瞬态冲击", "neg": "Static / 静态铺底"}, "y_label": {"pos": "Sci-Fi / 科幻合成", "neg": "Organic / 有机自然"}}',
-                     '[]', '[]', 1),
-                    ('materiality', 'Materiality / Room', '描述声音的材质和空间感',
-                     '{"x_label": {"pos": "Distant / 遥远湿润", "neg": "Close / 贴耳干涩"}, "y_label": {"pos": "Warm / 暖软吸音", "neg": "Cold / 冷硬反射"}}',
-                     '[]', '[]', 1),
-                    ('temperament', 'Temperament', '描述声音的情绪和性格',
-                     '{"x_label": {"pos": "Calm / 平静", "neg": "Intense / 激烈"}, "y_label": {"pos": "Positive / 积极", "neg": "Negative / 消极"}}',
-                     '[]', '[]', 1),
-                    ('spectral', 'Spectral', '描述声音的频谱特征',
-                     '{"x_label": {"pos": "Bright / 明亮", "neg": "Dark / 暗淡"}, "y_label": {"pos": "Thin / 纤细", "neg": "Thick / 厚重"}}',
-                     '[]', '[]', 1)
-                ]
-                for prism in default_prisms:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO prisms (id, name, description, axis_config, anchors, field_data, version)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, prism)
-                conn.commit()
-                print(f"   ✓ 已插入 {len(default_prisms)} 个默认棱镜（无词数据）")
-        else:
-            print(f"✅ prisms 表已有 {prisms_with_data} 个带词数据的棱镜")
         conn.close()
+        print(f"棱镜表记录数: {total_prisms}（首次安装为 0，同步后从云端拉取）")
 
     # 启动服务器（使用命令行参数中的端口）
     port = ARGS.port

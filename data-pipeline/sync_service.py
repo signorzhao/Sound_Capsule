@@ -2393,6 +2393,26 @@ class SyncService:
             prism_manager = PrismVersionManager(self.db_path)
             prism_dal = get_cloud_prism_dal()
 
+            # 加载 anchor_config（用于上传时带上 is_active，下载后写回 is_active）
+            anchor_config = {}
+            anchor_config_path = None
+            try:
+                from common import PathManager
+                pm = PathManager.get_instance()
+                anchor_config_path = pm.config_dir / "anchor_config_v2.json"
+                if anchor_config_path.exists():
+                    with open(anchor_config_path, 'r', encoding='utf-8') as f:
+                        anchor_config = json.load(f)
+            except Exception:
+                try:
+                    p = Path(__file__).parent / "anchor_config_v2.json"
+                    if p.exists():
+                        anchor_config_path = p
+                        with open(p, 'r', encoding='utf-8') as f:
+                            anchor_config = json.load(f)
+                except Exception:
+                    pass
+
             # 1. 上传本地变更
             print("📤 步骤 1: 上传本地棱镜变更...")
             dirty_prisms = prism_manager.get_dirty_prisms()
@@ -2402,7 +2422,9 @@ class SyncService:
 
                 for prism in dirty_prisms:
                     try:
-                        # 使用 DAL 上传
+                        # 棱镜启用状态从 anchor_config 注入，供云端同步
+                        prism['is_active'] = anchor_config.get(prism['id'], {}).get('active', True)
+                        # 使用 DAL 上传（含 field_data、is_active）
                         result = prism_dal.upload_prism(
                             user_id,
                             prism['id'],
@@ -2433,11 +2455,22 @@ class SyncService:
 
                 if cloud_prisms:
                     print(f"   发现 {len(cloud_prisms)} 个云端棱镜")
+                    # 在现有 anchor_config 上只更新各棱镜的 active（保留 name/axes 等）
+                    anchor_config_to_save = dict(anchor_config) if anchor_config else {}
 
                     for cloud_prism in cloud_prisms:
                         try:
+                            prism_id = cloud_prism['prism_id']
+                            # 棱镜关键词 field_data（云端 JSON 字符串 → 解析为 list）
+                            raw_field = cloud_prism.get('field_data')
+                            field_data = json.loads(raw_field) if isinstance(raw_field, str) and raw_field else (raw_field if isinstance(raw_field, list) else [])
+                            # 棱镜启用状态
+                            is_active = cloud_prism.get('is_active')
+                            if is_active is None:
+                                is_active = True
+
                             # 检查本地版本
-                            local_prism = prism_manager.get_prism(cloud_prism['prism_id'])
+                            local_prism = prism_manager.get_prism(prism_id)
 
                             if local_prism:
                                 # 版本比较
@@ -2445,52 +2478,81 @@ class SyncService:
                                 cloud_version = cloud_prism['version']
 
                                 if cloud_version > local_version:
-                                    # 云端版本更新，应用云端配置（Last Write Wins）
+                                    # 云端版本更新，应用云端配置（含 field_data、Last Write Wins）
                                     prism_data = {
                                         'name': cloud_prism['name'],
                                         'description': cloud_prism['description'],
-                                        'axis_config': json.loads(cloud_prism['axis_config']),
-                                        'anchors': json.loads(cloud_prism['anchors'])
+                                        'axis_config': json.loads(cloud_prism['axis_config']) if isinstance(cloud_prism.get('axis_config'), str) else (cloud_prism.get('axis_config') or {}),
+                                        'anchors': json.loads(cloud_prism['anchors']) if isinstance(cloud_prism.get('anchors'), str) else (cloud_prism.get('anchors') or []),
+                                        'field_data': field_data,
                                     }
 
                                     prism_manager.create_or_update_prism(
-                                        cloud_prism['prism_id'],
+                                        prism_id,
                                         prism_data,
                                         user_id='cloud_sync'
                                     )
+                                    if prism_id not in anchor_config_to_save:
+                                        anchor_config_to_save[prism_id] = {}
+                                    anchor_config_to_save[prism_id]['active'] = is_active
 
                                     downloaded += 1
                                     conflicts_resolved += 1
-                                    print(f"   ✅ 下载棱镜 '{cloud_prism['prism_id']}' (v{local_version} → v{cloud_version})")
+                                    print(f"   ✅ 下载棱镜 '{prism_id}' (v{local_version} → v{cloud_version})")
 
                                 elif cloud_version < local_version:
-                                    # 本地版本更新，已在步骤1上传
-                                    print(f"   ℹ️  棱镜 '{cloud_prism['prism_id']}' 本地版本更新 (v{local_version} > v{cloud_version})")
+                                    # 本地版本更新，已在步骤1上传；仍应用云端 is_active
+                                    if prism_id not in anchor_config_to_save:
+                                        anchor_config_to_save[prism_id] = {}
+                                    anchor_config_to_save[prism_id]['active'] = is_active
+                                    print(f"   ℹ️  棱镜 '{prism_id}' 本地版本更新 (v{local_version} > v{cloud_version})")
                                 else:
-                                    # 版本相同，无需同步
-                                    print(f"   ℹ️  棱镜 '{cloud_prism['prism_id']}' 版本一致 (v{local_version})")
+                                    # 版本相同，仍应用云端 is_active 到本地配置
+                                    if prism_id not in anchor_config_to_save:
+                                        anchor_config_to_save[prism_id] = {}
+                                    anchor_config_to_save[prism_id]['active'] = is_active
+                                    print(f"   ℹ️  棱镜 '{prism_id}' 版本一致 (v{local_version})")
                             else:
-                                # 本地不存在，直接创建
+                                # 本地不存在，直接创建（含 field_data）
                                 prism_data = {
                                     'name': cloud_prism['name'],
                                     'description': cloud_prism['description'],
-                                    'axis_config': json.loads(cloud_prism['axis_config']),
-                                    'anchors': json.loads(cloud_prism['anchors'])
+                                    'axis_config': json.loads(cloud_prism['axis_config']) if isinstance(cloud_prism.get('axis_config'), str) else (cloud_prism.get('axis_config') or {}),
+                                    'anchors': json.loads(cloud_prism['anchors']) if isinstance(cloud_prism.get('anchors'), str) else (cloud_prism.get('anchors') or []),
+                                    'field_data': field_data,
                                 }
 
                                 prism_manager.create_or_update_prism(
-                                    cloud_prism['prism_id'],
+                                    prism_id,
                                     prism_data,
                                     user_id='cloud_sync'
                                 )
+                                if prism_id not in anchor_config_to_save:
+                                    anchor_config_to_save[prism_id] = {}
+                                anchor_config_to_save[prism_id]['active'] = is_active
 
                                 downloaded += 1
-                                print(f"   ✅ 下载新棱镜 '{cloud_prism['prism_id']}' (v{cloud_prism['version']})")
+                                print(f"   ✅ 下载新棱镜 '{prism_id}' (v{cloud_prism['version']})")
 
                         except Exception as e:
                             error_msg = f"处理棱镜 '{cloud_prism['prism_id']}' 失败: {e}"
                             errors.append(error_msg)
                             print(f"   ❌ {error_msg}")
+
+                    # 将云端棱镜的 is_active 写回本地 anchor_config_v2.json（使用与读取时相同的路径）
+                    if anchor_config_to_save:
+                        try:
+                            write_path = anchor_config_path
+                            if write_path is None:
+                                from common import PathManager
+                                pm = PathManager.get_instance()
+                                write_path = pm.config_dir / "anchor_config_v2.json"
+                            write_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(write_path, 'w', encoding='utf-8') as f:
+                                json.dump(anchor_config_to_save, f, ensure_ascii=False, indent=2)
+                            logger.info(f"[PRISMS] 已写回棱镜启用状态到 {write_path}")
+                        except Exception as e:
+                            logger.warning(f"[PRISMS] 写回 anchor_config 失败: {e}")
                 else:
                     print("   ✅ 无云端棱镜")
 

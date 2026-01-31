@@ -55,8 +55,7 @@ class CloudPrismDAL:
             return None
 
         try:
-            # 准备云端记录
-            # 注意：不包含 field_data，因为云端 schema 中没有此字段
+            # 准备云端记录（含 is_active、field_data，用于棱镜启用状态与关键词云端同步）
             cloud_record = {
                 'user_id': user_id,
                 'prism_id': prism_id,
@@ -64,10 +63,11 @@ class CloudPrismDAL:
                 'description': prism_data.get('description'),
                 'axis_config': prism_data.get('axis_config'),  # JSON 字符串
                 'anchors': prism_data.get('anchors'),  # JSON 字符串
-                # 'field_data' 已从云端 schema 移除，不再上传
+                'field_data': prism_data.get('field_data'),  # 棱镜关键词/力场词 JSON 字符串
                 'version': prism_data.get('version', 1),
                 'updated_at': prism_data.get('updated_at'),
-                'updated_by': prism_data.get('updated_by')
+                'updated_by': prism_data.get('updated_by'),
+                'is_active': prism_data.get('is_active', True),  # 棱镜启用状态
             }
 
             # 使用 upsert（插入或更新）
