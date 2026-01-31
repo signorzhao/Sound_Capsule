@@ -77,4 +77,6 @@ docs/*.md
 !docs/DEVELOPMENT_GUIDE.md
 !docs/USAGE_GUIDE.md
 !docs/WINDOWS_SETUP.md
+# 棱镜/锚点本地配置与力场预计算结果（不提交，以云端为准）
 data-pipeline/anchor_config_v2.json
+webapp/public/data/sonic_vectors.json

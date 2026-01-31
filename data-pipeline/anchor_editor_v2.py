@@ -482,28 +482,56 @@ def rebuild_stream(lens):
 
     return Response(rebuild_lens_v2_gen(lens, config, categories, model_name), mimetype='text/event-stream')
 
+def _resolve_sync_db_path():
+    """
+    解析同步使用的数据库路径：优先使用胶囊客户端（Tauri）的 DB，
+    这样在客户端用管理员登录后，锚点编辑器能读到同一用户并成功上传。
+    """
+    import sys
+    # 1. PathManager 已初始化时（如由 Tauri 侧启动）使用其 db_path
+    try:
+        from common import PathManager
+        pm = PathManager.get_instance()
+        p = Path(pm.db_path)
+        if p.exists():
+            return str(p)
+    except Exception:
+        pass
+    # 2. 使用与 Tauri 一致的应用数据目录（用户在客户端登录会写这里）
+    if sys.platform == "darwin":
+        app_db = Path.home() / "Library/Application Support/com.soundcapsule.app/database/capsules.db"
+    elif sys.platform == "win32":
+        appdata = os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))
+        app_db = Path(appdata) / "com.soundcapsule.app/database/capsules.db"
+    else:
+        app_db = Path.home() / ".config/com.soundcapsule.app/database/capsules.db"
+    if app_db.exists():
+        return str(app_db)
+    # 3. 回退到仓库内 data-pipeline 的 DB（开发或未安装客户端时）
+    return str(BASE_DIR / "database" / "capsules.db")
+
+
 @app.route('/api/sync/cloud', methods=['POST'])
 def sync_to_cloud():
     """同步棱镜配置和坐标到云端 (Supabase)"""
     try:
         from sync_service import SyncService
         from prism_version_manager import PrismVersionManager
+        from dal_cloud_prisms import CloudPrismDAL
         
-        db_path = str(BASE_DIR / "database" / "capsules.db")
+        db_path = _resolve_sync_db_path()
         sync_svc = SyncService(db_path)
         pm = PrismVersionManager(db_path)
         
-        # 1. 获取当前活跃用户
+        # 锚点编辑器独立运行，无 Tauri 入口时无法读到客户端登录态。
+        # 棱镜同步到云端始终以管理员身份上传（官方棱镜源），不依赖当前登录用户。
+        prism_user_id = CloudPrismDAL.ADMIN_USER_ID
         import sqlite3
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         user = conn.execute("SELECT supabase_user_id FROM users WHERE is_active = 1").fetchone()
         conn.close()
-        
-        if not user or not user['supabase_user_id']:
-            return jsonify({"success": False, "error": "请先在胶囊客户端登录 Supabase 账号"})
-            
-        user_id = user['supabase_user_id']
+        meta_user_id = user['supabase_user_id'] if user and user['supabase_user_id'] else prism_user_id
         
         # 2. 将本地 JSON 配置同步到本地数据库（作为同步源）
         # 增加逻辑：从外部 sonic_vectors.json 获取预计算坐标，合并回配置中
@@ -525,13 +553,13 @@ def sync_to_cloud():
             pm.create_or_update_prism(lens_id, lens_data, user_id="editor_sync")
             
         # 3. 执行同步
-        print(f"🚀 开始为用户 {user_id} 同步数据到云端...")
+        print(f"🚀 开始同步到云端（棱镜以管理员身份上传）...")
         
-        # 同步棱镜
-        prism_result = sync_svc.sync_prisms(user_id)
+        # 同步棱镜（始终用管理员 ID，保证锚点编辑器独立运行时也能成功）
+        prism_result = sync_svc.sync_prisms(prism_user_id)
         
         # 同步坐标 (元数据)
-        capsule_result = sync_svc.sync_metadata_lightweight(user_id)
+        capsule_result = sync_svc.sync_metadata_lightweight(meta_user_id)
         
         return jsonify({
             "success": True,
