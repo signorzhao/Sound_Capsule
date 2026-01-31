@@ -80,3 +80,6 @@ docs/*.md
 # 棱镜/锚点本地配置与力场预计算结果（不提交，以云端为准）
 data-pipeline/anchor_config_v2.json
 webapp/public/data/sonic_vectors.json
+# 棱镜词库与锚点相关 CSV（本地修改锚点编辑器内容，不提交）
+data-pipeline/*.csv
+data-pipeline/**/*.csv

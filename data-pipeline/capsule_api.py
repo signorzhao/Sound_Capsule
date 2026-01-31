@@ -3584,6 +3584,35 @@ def get_prisms():
         # 这里假设 APIError 已在上下文定义，如果没有定义则直接抛出或返回 500
         return jsonify({"success": False, "error": str(e)}), 500
 
+# 默认棱镜轴端点词（与前端 DEFAULT_LENS_CONFIG 一致，当 DB 无 axis_config 时回退）
+DEFAULT_PRISM_AXES = {
+    "texture": {
+        "x_label": {"neg": "Dark / 黑暗恐惧", "pos": "Light / 光明治愈"},
+        "y_label": {"neg": "Serious / 写实严肃", "pos": "Playful / 趣味活跃"},
+    },
+    "source": {
+        "x_label": {"neg": "Static / 静态铺底", "pos": "Transient / 瞬态冲击"},
+        "y_label": {"neg": "Organic / 有机自然", "pos": "Sci-Fi / 科幻合成"},
+    },
+    "materiality": {
+        "x_label": {"neg": "Close / 贴耳干涩", "pos": "Distant / 遥远湿润"},
+        "y_label": {"neg": "Warm / 暖软吸音", "pos": "Cold / 冷硬反射"},
+    },
+}
+
+
+def _normalize_axes(axes_raw):
+    """将扁平的 x_label_pos 等转为嵌套 x_label.pos，供前端使用。"""
+    if not axes_raw or not isinstance(axes_raw, dict):
+        return axes_raw or {}
+    if axes_raw.get("x_label") or axes_raw.get("y_label"):
+        return axes_raw
+    return {
+        "x_label": {"neg": axes_raw.get("x_label_neg", ""), "pos": axes_raw.get("x_label_pos", "")},
+        "y_label": {"neg": axes_raw.get("y_label_neg", ""), "pos": axes_raw.get("y_label_pos", "")},
+    }
+
+
 @app.route('/api/prisms/field', methods=['GET'])
 def get_prisms_field():
     """
@@ -3592,30 +3621,21 @@ def get_prisms_field():
     格式兼容 sonic_vectors.json
     
     🔥 支持 active 状态过滤：从锚点编辑器配置中读取 active 状态
+    🔥 轴端点词：优先 DB axis_config → 用户目录 anchor_config_v2.json → 服务端默认
     """
     try:
         prisms = prism_manager.get_all_prisms()
         
-        # 🔥 读取锚点编辑器配置中的 active 状态
-        # 优先从用户配置目录读取，如果没有则从资源目录复制默认配置
+        # 🔥 读取锚点编辑器配置中的 active 状态（及 axes 作回退）
         anchor_config = {}
         try:
             pm = PathManager.get_instance()
             user_config_path = pm.config_dir / "anchor_config_v2.json"
             
-            # 如果用户目录没有配置文件，从资源目录复制默认配置
             if not user_config_path.exists():
-                # 尝试从资源目录复制（编译版本）
                 resource_path = pm.resource_dir / "anchor_config_v2.json" if pm.resource_dir else None
-                # 或从代码目录复制（开发模式）
                 dev_path = Path(__file__).parent / "anchor_config_v2.json"
-                
-                source_path = None
-                if resource_path and resource_path.exists():
-                    source_path = resource_path
-                elif dev_path.exists():
-                    source_path = dev_path
-                
+                source_path = (resource_path if resource_path and resource_path.exists() else None) or (dev_path if dev_path.exists() else None)
                 if source_path:
                     import shutil
                     user_config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3633,19 +3653,29 @@ def get_prisms_field():
         for p in prisms:
             try:
                 prism_id = p['id']
-                
-                # 🔥 检查 active 状态（默认 True）
                 is_active = anchor_config.get(prism_id, {}).get('active', True)
                 if is_active is False:
                     logger.info(f"跳过禁用的棱镜: {prism_id}")
                     continue
                 
+                # 轴端点词：DB axis_config → 用户目录 anchor_config 的 axes → 服务端默认
+                axes_raw = json.loads(p.get('axis_config', '{}') or '{}')
+                if not isinstance(axes_raw, dict):
+                    axes_raw = {}
+                if not (axes_raw.get('x_label') or axes_raw.get('x_label_pos') is not None):
+                    entry = anchor_config.get(prism_id, {})
+                    if entry.get('axes'):
+                        axes_raw = entry['axes']
+                    else:
+                        axes_raw = DEFAULT_PRISM_AXES.get(prism_id, {})
+                axes_out = _normalize_axes(axes_raw)
+                
                 output[prism_id] = {
                     "name": p['name'],
                     "description": p['description'],
-                    "axes": json.loads(p.get('axis_config', '{}')),
-                    "points": json.loads(p.get('field_data', '[]')),
-                    "active": is_active  # 🔥 返回 active 状态给前端
+                    "axes": axes_out,
+                    "points": json.loads(p.get('field_data', '[]') or '[]'),
+                    "active": is_active,
                 }
             except Exception as e:
                 logger.warning(f"解析棱镜 {p.get('id')} 字段失败: {e}")

@@ -75,10 +75,11 @@ class PrismVersionManager:
         创建或更新棱镜配置（自动处理版本号）
         策略：Last Write Wins (自动增加版本号)
         """
-        # 准备数据
+        # 准备数据（锚点编辑器用 axes，API/云端用 axis_config，兼容两者）
         name = prism_data.get('name', prism_id)
         description = prism_data.get('description', '')
-        axis_config = json.dumps(prism_data.get('axis_config', {}), ensure_ascii=False)
+        axis_config_obj = prism_data.get('axis_config') or prism_data.get('axes', {})
+        axis_config = json.dumps(axis_config_obj, ensure_ascii=False)
         anchors = json.dumps(prism_data.get('anchors', []), ensure_ascii=False)
         
         field_data = json.dumps(prism_data.get('field_data', []), ensure_ascii=False)

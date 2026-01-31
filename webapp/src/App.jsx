@@ -210,6 +210,18 @@ export default function App() {
         const dynamicConfig = {};
         let colorIndex = 0;
 
+        // 从 API axes 构建轴端点词（支持嵌套 x_label.pos / 或扁平 x_label_pos，无则用默认或 X+/Y+）
+        const buildAxisFromApi = (lensData, defaultAxis) => {
+          const ax = lensData?.axes;
+          if (!ax || typeof ax !== 'object') return defaultAxis || { top: 'Y+', bottom: 'Y-', left: 'X-', right: 'X+' };
+          return {
+            top: ax.y_label?.pos ?? ax.y_label_pos ?? defaultAxis?.top ?? 'Y+',
+            bottom: ax.y_label?.neg ?? ax.y_label_neg ?? defaultAxis?.bottom ?? 'Y-',
+            left: ax.x_label?.neg ?? ax.x_label_neg ?? defaultAxis?.left ?? 'X-',
+            right: ax.x_label?.pos ?? ax.x_label_pos ?? defaultAxis?.right ?? 'X+'
+          };
+        };
+
         Object.keys(data).forEach(key => {
           const lensData = data[key];
 
@@ -219,15 +231,17 @@ export default function App() {
             return;
           }
 
-          // 如果有默认配置就使用，否则动态生成
-          if (DEFAULT_LENS_CONFIG[key]) {
-            dynamicConfig[key] = { ...DEFAULT_LENS_CONFIG[key] };
+          const defaultEntry = DEFAULT_LENS_CONFIG[key];
+          const axisFromApi = buildAxisFromApi(lensData, defaultEntry?.axis);
+
+          // 如果有默认配置就使用（名称/图标等），但轴端点词优先用 API
+          if (defaultEntry) {
+            dynamicConfig[key] = { ...defaultEntry, axis: axisFromApi };
           } else {
             // 动态生成新棱镜配置
             const colorSet = COLOR_PALETTE[colorIndex % COLOR_PALETTE.length];
             colorIndex++;
 
-            // 解析名称
             const name = lensData.name || key;
             const nameParts = name.split('/');
             const nameCn = nameParts[1]?.trim().split(' ')[0] || key;
@@ -239,12 +253,7 @@ export default function App() {
               icon: 'CircleDot',
               color: colorSet.color,
               accentColor: colorSet.accent,
-              axis: {
-                top: lensData.axes?.y_label?.pos || 'Y+',
-                bottom: lensData.axes?.y_label?.neg || 'Y-',
-                left: lensData.axes?.x_label?.neg || 'X-',
-                right: lensData.axes?.x_label?.pos || 'X+'
-              }
+              axis: axisFromApi
             };
           }
         });
