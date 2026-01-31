@@ -10,7 +10,6 @@ import {
   Moon, Snowflake
 } from 'lucide-react';
 import { useToast } from './Toast';
-import { getApiUrl } from '../utils/apiClient';
 
 // 图标映射
 const ICON_MAP = {
@@ -120,7 +119,7 @@ function CapsuleTypeManager({ onClose }) {
   const loadCapsuleTypes = async () => {
     try {
       setLoading(true);
-      const response = await fetch(getApiUrl('/api/capsule-types'));
+      const response = await fetch('http://localhost:5002/api/capsule-types');
       const data = await response.json();
 
       if (data.success) {
@@ -181,8 +180,8 @@ function CapsuleTypeManager({ onClose }) {
       }
 
       const url = isCreating
-        ? getApiUrl('/api/capsule-types')
-        : getApiUrl(`/api/capsule-types/${editingType.id}`);
+        ? 'http://localhost:5002/api/capsule-types'
+        : `http://localhost:5002/api/capsule-types/${editingType.id}`;
 
       const method = isCreating ? 'POST' : 'PUT';
 
@@ -215,7 +214,7 @@ function CapsuleTypeManager({ onClose }) {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/capsule-types/${typeId}`), {
+      const response = await fetch(`http://localhost:5002/api/capsule-types/${typeId}`, {
         method: 'DELETE'
       });
 

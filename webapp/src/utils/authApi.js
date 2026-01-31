@@ -1,14 +1,14 @@
 /**
- * 认证相关 API 调用（使用可配置 API 基地址）
+ * 认证相关 API 调用
  */
 
-import { getApiUrl } from './apiClient';
+const API_BASE_URL = 'http://localhost:5002/api';
 
 /**
  * 用户注册
  */
 export async function register(username, email, password) {
-  const response = await fetch(getApiUrl('/api/auth/register'), {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, email, password })
@@ -27,7 +27,7 @@ export async function register(username, email, password) {
  * 用户登录
  */
 export async function login(login, password) {
-  const response = await fetch(getApiUrl('/api/auth/login'), {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login, password })
@@ -46,7 +46,7 @@ export async function login(login, password) {
  * 刷新 Token
  */
 export async function refreshAccessToken(refreshToken) {
-  const response = await fetch(getApiUrl('/api/auth/refresh'), {
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken })
@@ -65,7 +65,7 @@ export async function refreshAccessToken(refreshToken) {
  * 用户注销
  */
 export async function logout(refreshToken) {
-  const response = await fetch(getApiUrl('/api/auth/logout'), {
+  const response = await fetch(`${API_BASE_URL}/auth/logout`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken })
@@ -84,7 +84,7 @@ export async function logout(refreshToken) {
  * 获取当前用户信息
  */
 export async function getCurrentUser(accessToken) {
-  const response = await fetch(getApiUrl('/api/auth/me'), {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -105,7 +105,7 @@ export async function getCurrentUser(accessToken) {
  * 更新用户信息
  */
 export async function updateUserProfile(accessToken, updates) {
-  const response = await fetch(getApiUrl('/api/auth/me'), {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -127,7 +127,7 @@ export async function updateUserProfile(accessToken, updates) {
  * 修改密码
  */
 export async function changePassword(accessToken, oldPassword, newPassword) {
-  const response = await fetch(getApiUrl('/api/auth/password'), {
+  const response = await fetch(`${API_BASE_URL}/auth/password`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',

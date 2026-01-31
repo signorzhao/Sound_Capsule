@@ -10,7 +10,6 @@
 
 import { useState, useEffect } from 'react';
 import { HardDrive, Trash2, RefreshCw, AlertTriangle } from 'lucide-react';
-import { getApiUrl } from '../utils/apiClient';
 
 export default function CacheManager({ onClose }) {
   const [cacheStats, setCacheStats] = useState(null);
@@ -20,7 +19,7 @@ export default function CacheManager({ onClose }) {
   // 加载缓存统计
   const loadCacheStats = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/cache/stats'));
+      const response = await fetch('http://localhost:5002/api/cache/stats');
       const data = await response.json();
 
       if (data.success) {
@@ -51,7 +50,7 @@ export default function CacheManager({ onClose }) {
     setPurging(true);
 
     try {
-      const response = await fetch(getApiUrl('/api/cache/purge'), {
+      const response = await fetch('http://localhost:5002/api/cache/purge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,7 +79,7 @@ export default function CacheManager({ onClose }) {
   // 固定/取消固定缓存
   const handleTogglePin = async (capsuleId, file_type, currentPinned) => {
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsuleId}/cache-pin`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsuleId}/cache-pin`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

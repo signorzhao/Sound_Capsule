@@ -1,5 +1,4 @@
 import React from 'react';
-import { getApiUrl } from '../utils/apiClient';
 
 /**
  * 调试面板 - 显示当前导出状态
@@ -114,7 +113,7 @@ export default function DebugStatePanel({
               <>
                 <div>文件名: {currentCapsule.preview_audio}</div>
                 <div style={{ marginTop: '4px', fontSize: '10px', color: '#aaa' }}>
-                  完整URL: {currentCapsule?.preview_audio ? getApiUrl(`/api/capsules/${currentCapsuleId}/preview/${currentCapsule.preview_audio}`) : '-'}
+                  完整URL: http://localhost:5002/api/capsules/{currentCapsuleId}/preview/{currentCapsule.preview_audio}
                 </div>
               </>
             ) : (

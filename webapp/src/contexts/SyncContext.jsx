@@ -9,7 +9,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { authFetch, getApiUrl } from '../utils/apiClient';
+import { authFetch } from '../utils/apiClient';
 
 // 创建 SyncContext
 const SyncContext = createContext(undefined);
@@ -53,7 +53,7 @@ export const SyncProvider = ({ children }) => {
     }
 
     try {
-      const response = await authFetch(getApiUrl('/api/sync/status'), {
+      const response = await authFetch('http://localhost:5002/api/sync/status', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -115,7 +115,7 @@ export const SyncProvider = ({ children }) => {
       // 调用后端关键词同步接口
       setSyncStatus(prev => ({ ...prev, syncProgress: 30, syncStep: '正在比对关键词变更...' }));
       
-      const response = await authFetch(getApiUrl('/api/sync/sync-tags'), {
+      const response = await authFetch('http://localhost:5002/api/sync/sync-tags', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -194,7 +194,7 @@ export const SyncProvider = ({ children }) => {
       setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: '正在同步服务器数据...' }));
       onProgress?.({ phase: '正在同步服务器数据...', current: 0, total: 0, percentage: 10 });
 
-      const response = await authFetch(getApiUrl('/api/sync/download-only'), {
+      const response = await authFetch('http://localhost:5002/api/sync/download-only', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -254,7 +254,7 @@ export const SyncProvider = ({ children }) => {
    */
   const markForSync = useCallback(async (tableName, recordId, operation = 'update') => {
     try {
-      const response = await fetch(getApiUrl('/api/sync/mark-pending'), {
+      const response = await fetch('http://localhost:5002/api/sync/mark-pending', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -288,7 +288,7 @@ export const SyncProvider = ({ children }) => {
    */
   const getConflicts = useCallback(async () => {
     try {
-      const response = await fetch(getApiUrl('/api/sync/conflicts'), {
+      const response = await fetch('http://localhost:5002/api/sync/conflicts', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -313,7 +313,7 @@ export const SyncProvider = ({ children }) => {
    */
   const resolveConflict = useCallback(async (conflictId, resolution) => {
     try {
-      const response = await fetch(getApiUrl('/api/sync/resolve-conflict'), {
+      const response = await fetch('http://localhost:5002/api/sync/resolve-conflict', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,7 +379,7 @@ export const SyncProvider = ({ children }) => {
         percentage: 10
       });
 
-      const response = await authFetch(getApiUrl('/api/sync/lightweight'), {
+      const response = await authFetch('http://localhost:5002/api/sync/lightweight', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

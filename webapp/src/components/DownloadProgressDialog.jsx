@@ -10,7 +10,6 @@
 
 import { useState, useEffect } from 'react';
 import { X, Pause, Play, XCircle } from 'lucide-react';
-import { getApiUrl } from '../utils/apiClient';
 
 export default function DownloadProgressDialog({
   capsuleId,
@@ -36,7 +35,7 @@ export default function DownloadProgressDialog({
     const pollInterval = setInterval(async () => {
       try {
         // 使用后端 API 而不是 Tauri 命令
-        const response = await fetch(getApiUrl(`/api/downloads/status/${capsuleId}`));
+        const response = await fetch(`http://localhost:5002/api/downloads/status/${capsuleId}`);
         const result = await response.json();
 
         if (result.status === 'not_started') {
@@ -105,7 +104,7 @@ export default function DownloadProgressDialog({
   // 暂停下载（使用后端 API）
   const handlePause = async () => {
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsuleId}/pause-download`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsuleId}/pause-download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -121,7 +120,7 @@ export default function DownloadProgressDialog({
   // 恢复下载（使用后端 API）
   const handleResume = async () => {
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsuleId}/resume-download`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsuleId}/resume-download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -137,7 +136,7 @@ export default function DownloadProgressDialog({
   // 取消下载（使用后端 API）
   const handleCancel = async () => {
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsuleId}/cancel-download`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsuleId}/cancel-download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });

@@ -14,7 +14,6 @@ import { useToast } from './components/Toast';
 import { sendNotification, requestNotificationPermission } from './utils/tauriApi';
 import { getAppConfig } from './utils/configApi';
 import { invoke } from '@tauri-apps/api/core'; // 🔥 用于调用 Rust 命令
-import { setApiBaseFromConfig, getApiUrl } from './utils/apiClient';
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
 import './components/CapsuleTypeCard.css';
@@ -182,16 +181,12 @@ export default function App() {
   useEffect(() => {
     async function loadData() {
       try {
-        // 先注入 API 基地址（开发/私有部署时连到本机或局域网服务器）
-        try {
-          const config = await invoke('get_app_config');
-          setApiBaseFromConfig(config?.api_base_url);
-        } catch (_) {}
+        // 请求通知权限
         await requestNotificationPermission();
 
         // 1. 从 API 加载棱镜和力场数据 (不再使用本地静态 JSON)
         console.log('📡 正在从 API 加载棱镜力场数据...');
-        const response = await fetch(getApiUrl('/api/prisms/field'));
+        const response = await fetch('http://localhost:5002/api/prisms/field');
         if (!response.ok) {
           throw new Error('API 无法提供力场数据');
         }
@@ -557,7 +552,7 @@ export default function App() {
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
-      const response = await fetch(getApiUrl('/api/capsules/webui-export'), {
+      const response = await fetch('http://localhost:5002/api/capsules/webui-export', {
         method: 'POST',
         headers,
         body: JSON.stringify(requestData)
@@ -598,7 +593,7 @@ export default function App() {
         // 从 API 获取完整的胶囊数据（包含 preview_audio 等字段）
         console.log('📡 获取完整胶囊数据...');
         try {
-          const capsuleResponse = await fetch(getApiUrl(`/api/capsules/${result.capsule_id}`));
+          const capsuleResponse = await fetch(`http://localhost:5002/api/capsules/${result.capsule_id}`);
           const responseData = await capsuleResponse.json();
           const capsuleData = responseData.capsule; // 从响应中提取 capsule 对象
           console.log('✅ 完整胶囊数据:', JSON.stringify(capsuleData, null, 2));
@@ -659,7 +654,7 @@ export default function App() {
       if (accessToken) {
         headers['Authorization'] = `Bearer ${accessToken}`;
       }
-      const response = await fetch(getApiUrl('/api/capsules?limit=100'), { headers });
+      const response = await fetch('http://localhost:5002/api/capsules?limit=100', { headers });
       const data = await response.json();
 
       if (data.success) {
@@ -699,7 +694,7 @@ export default function App() {
       }
 
       // 获取胶囊的标签数据
-      const response = await fetch(getApiUrl(`/api/capsules/${capsule.id}/tags`));
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/tags`);
       const data = await response.json();
       console.log('获取标签响应:', data);
 
@@ -782,7 +777,7 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsule.id}`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}`, {
         method: 'DELETE'
       });
 
@@ -840,7 +835,7 @@ export default function App() {
     try {
       // 使用实际的文件名，添加时间戳防止浏览器缓存
       const timestamp = Date.now();
-      const audioUrl = getApiUrl(`/api/capsules/${currentCapsuleId}/preview/${currentCapsule.preview_audio}?t=${timestamp}`);
+      const audioUrl = `http://localhost:5002/api/capsules/${currentCapsuleId}/preview/${currentCapsule.preview_audio}?t=${timestamp}`;
       console.log('播放音频:', audioUrl);
       console.log('胶囊ID:', currentCapsuleId);
       console.log('预览文件:', currentCapsule.preview_audio);
@@ -1023,7 +1018,7 @@ export default function App() {
       }
 
       // 调用 API 保存标签
-      const response = await fetch(getApiUrl(`/api/capsules/${currentCapsuleId}/tags`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${currentCapsuleId}/tags`, {
         method: method,
         headers,
         body: JSON.stringify(allTags)

@@ -14,8 +14,6 @@ pub struct AppConfig {
     pub username: Option<String>,
     /// 语言设置
     pub language: Option<String>,
-    /// API 服务器基地址（开发/私有部署时连到本机或局域网服务器，如 http://192.168.1.100:5002，不填则默认 http://localhost:5002）
-    pub api_base_url: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -26,7 +24,6 @@ impl Default for AppConfig {
             export_dir: None,
             username: None,
             language: Some("zh-CN".to_string()),
-            api_base_url: None,
         }
     }
 }

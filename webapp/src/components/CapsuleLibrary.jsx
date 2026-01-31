@@ -13,7 +13,6 @@ import DownloadProgressDialog from './DownloadProgressDialog';
 import SmartActionButton from './SmartActionButton';
 import DownloadConfirmModal from './DownloadConfirmModal';
 import CloudSyncIcon from './CloudSyncIcon';
-import { getApiUrl, getApiBaseUrl } from '../utils/apiClient';
 import './CapsuleLibrary.css';
 
 // 图标映射表 - 用于动态加载图标
@@ -95,7 +94,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 加载胶囊类型数据
   const loadCapsuleTypes = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/capsule-types'));
+      const response = await fetch('http://localhost:5002/api/capsule-types');
       const data = await response.json();
       if (data.success && data.types && data.types.length > 0) {
         setCapsuleTypes(data.types);
@@ -155,7 +154,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
     try {
       const { authFetch } = await import('../utils/apiClient.js');
-      const response = await authFetch(getApiUrl(`/api/capsules/${capsuleId}/asset-status`));
+      const response = await authFetch(`http://localhost:5002/api/capsules/${capsuleId}/asset-status`);
       if (!response.ok) {
         // 如果端点不存在，回退到旧的逻辑
         return { asset_status: 'local', file_sync_status: 'full' };
@@ -264,7 +263,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
 
     try {
-      const response = await fetch(getApiUrl(`/api/capsules/${capsule.id}/metadata`));
+      const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/metadata`);
       if (!response.ok) {
         // 404 是正常的，很多胶囊没有 metadata
         return null;
@@ -395,7 +394,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         // 并发加载所有 tags，但使用 Promise.allSettled 避免单个失败影响全部
         const promises = capsulesToLoad.map(async (capsule) => {
           try {
-            const response = await fetch(getApiUrl(`/api/capsules/${capsule.id}/tags`));
+            const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/tags`);
 
             if (!response.ok) {
               console.warn(`加载胶囊 ${capsule.id} tags 失败: HTTP ${response.status}`);
@@ -602,8 +601,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 获取音频URL
   const getAudioUrl = (capsule) => {
     const apiBase = window.location.hostname === 'localhost'
-      ? getApiBaseUrl()
-      : getApiBaseUrl();
+      ? 'http://localhost:5002'
+      : 'http://localhost:5002';
     // 添加时间戳防止浏览器缓存
     const timestamp = Date.now();
     return `${apiBase}/api/capsules/${capsule.id}/preview?t=${timestamp}`;
@@ -640,7 +639,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
     try {
       // 调用后端开始下载完整资源
-      const response = await fetch(getApiUrl(`/api/capsules/${modalCapsule.id}/download-assets`), {
+      const response = await fetch(`http://localhost:5002/api/capsules/${modalCapsule.id}/download-assets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -687,7 +686,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       const pollOnce = async () => {
         if (!active) return;
         try {
-          const response = await authFetch(getApiUrl(`/api/sync/upload-progress?capsule_id=${capsuleId}`), {
+          const response = await authFetch(`http://localhost:5002/api/sync/upload-progress?capsule_id=${capsuleId}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -753,7 +752,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const { authFetch } = await import('../utils/apiClient.js');
         
         // 使用轻量级同步端点进行上传
-        const requestPromise = authFetch(getApiUrl('/api/sync/lightweight'), {
+        const requestPromise = authFetch('http://localhost:5002/api/sync/lightweight', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -821,7 +820,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const { authFetch } = await import('../utils/apiClient.js');
         
         // 使用轻量级同步端点拉取最新数据
-        const response = await authFetch(getApiUrl('/api/sync/lightweight'), {
+        const response = await authFetch('http://localhost:5002/api/sync/lightweight', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -866,7 +865,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const { authFetch } = await import('../utils/apiClient.js');
 
         // 使用轻量级同步端点进行强制上传
-        const requestPromise = authFetch(getApiUrl('/api/sync/lightweight'), {
+        const requestPromise = authFetch('http://localhost:5002/api/sync/lightweight', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -941,7 +940,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     } else {
       // 默认实现：调用API
       try {
-        const response = await fetch(getApiUrl(`/api/capsules/${capsule.id}/open`), {
+        const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/open`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ skip_wav_check: skipWavCheck })

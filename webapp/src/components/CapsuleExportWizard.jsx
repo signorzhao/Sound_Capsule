@@ -14,7 +14,6 @@ import {
   Info
 } from 'lucide-react';
 import { getAppConfig } from '../utils/configApi';
-import { getApiUrl } from '../utils/apiClient';
 
 // ==========================================
 // 辅助组件
@@ -263,7 +262,7 @@ const ImportStatusStep = ({ data, status, error, onComplete, onStatusChange }) =
 
       // 调用自动导出 API (使用 webui-export 端点)
       // 不再发送 project_name 和 theme_name，后端会使用 capsule_type 生成名称
-      const exportResponse = await fetch(getApiUrl('/api/capsules/webui-export'), {
+      const exportResponse = await fetch('http://localhost:5002/api/capsules/webui-export', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -312,7 +311,7 @@ const ImportStatusStep = ({ data, status, error, onComplete, onStatusChange }) =
 
         // 如果没有自动导入数据，从数据库获取最新的胶囊
         try {
-          const capsulesResponse = await fetch(getApiUrl('/api/capsules'));
+          const capsulesResponse = await fetch('http://localhost:5002/api/capsules');
           const capsulesResult = await capsulesResponse.json();
 
           if (capsulesResult.success && capsulesResult.capsules && capsulesResult.capsules.length > 0) {
@@ -530,7 +529,7 @@ export default function CapsuleExportWizard({ onClose, onSuccess, currentCapsule
   useEffect(() => {
     const checkReaperTrigger = async () => {
       try {
-        const response = await fetch(getApiUrl('/api/capsules/check-reaper-trigger'));
+        const response = await fetch('http://localhost:5002/api/capsules/check-reaper-trigger');
         const result = await response.json();
 
         if (result.has_trigger) {
