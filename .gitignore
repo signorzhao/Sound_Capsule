@@ -83,6 +83,8 @@ webapp/public/data/sonic_vectors.json
 # 棱镜词库与锚点相关 CSV（本地修改锚点编辑器内容，不提交）
 data-pipeline/*.csv
 data-pipeline/**/*.csv
+# PyInstaller 打包需要，必须提交以便 GitHub 编译通过
+!data-pipeline/master_lexicon_v3.csv
 
 # 开发过程文档（仅本地保留，不提交到 GitHub）
 /PHASE_*.md
