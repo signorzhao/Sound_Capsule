@@ -540,8 +540,18 @@ function FixFolderHierarchy(keepTracks)
     reaper.ShowConsoleMsg("✓ 文件夹层次结构已修复\n")
 end
 
--- 从RPP文件中提取所有媒体文件路径
-function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
+-- 获取当前工程在 Project Settings 里设置的媒体文件夹名（非 Audio 时也能正确解析路径）
+function GetProjectMediaFolderName()
+    local ret, recPath = reaper.GetSetProjectInfo_String(0, "RECORD_PATH", "", false)
+    if not recPath or recPath == "" then return "Audio" end
+    -- 取路径最后一段（支持 / 和 \）
+    local last = recPath:match("([^/\\]+)[/\\]?$") or recPath:match("([^/\\]+)$")
+    return (last and last ~= "" and last) or "Audio"
+end
+
+-- 从RPP文件中提取所有媒体文件路径（sourceMediaFolder 可选，为当前工程的媒体文件夹名，默认 Audio）
+function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir, sourceMediaFolder)
+    if sourceMediaFolder == nil then sourceMediaFolder = "Audio" end
     local mediaFiles = {}
     local file = io.open(rppPath, "r")
     if not file then
@@ -606,18 +616,17 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
             local mediaPath = fileMatch
             local baseName = string.match(mediaPath, "([^/\\]+)$") or mediaPath
             
-            -- 如果是相对路径（包含Audio/或audio/），转换为绝对路径
+            -- 如果是相对路径（任意媒体文件夹名，如 Audio/Media/Wav），转换为绝对路径
             if not string.match(mediaPath, "^/") and not string.match(mediaPath, "^[A-Z]:") then
-                -- 提取相对路径中的文件名（去掉Audio/前缀）
-                local relativeFileName = string.match(mediaPath, "Audio[/\\](.+)") or 
-                                         string.match(mediaPath, "audio[/\\](.+)") or 
-                                         mediaPath
+                -- 提取相对路径中的文件名（去掉首段文件夹前缀，如 Audio/、Media/、Wav/）
+                local relativeFileName = string.match(mediaPath, "[^/\\]+[/\\](.+)") or mediaPath
                 
-                -- 尝试多种可能的路径
+                -- 尝试多种可能的路径（优先使用当前工程设置的媒体文件夹名）
                 local testPaths = {}
                 
                 -- 如果提供了源项目目录，优先使用（使用跨平台 JoinPath）
                 if sourceProjectDir and sourceProjectDir ~= "" then
+                    table.insert(testPaths, JoinPath(sourceProjectDir, sourceMediaFolder, relativeFileName))
                     table.insert(testPaths, JoinPath(sourceProjectDir, "audio", relativeFileName))
                     table.insert(testPaths, JoinPath(sourceProjectDir, "Audio", relativeFileName))
                     table.insert(testPaths, JoinPath(sourceProjectDir, relativeFileName))
@@ -625,6 +634,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 
                 -- 也尝试RPP文件所在目录
                 if rppDir ~= "" then
+                    table.insert(testPaths, JoinPath(rppDir, sourceMediaFolder, relativeFileName))
                     table.insert(testPaths, JoinPath(rppDir, "audio", relativeFileName))
                     table.insert(testPaths, JoinPath(rppDir, "Audio", relativeFileName))
                     table.insert(testPaths, JoinPath(rppDir, relativeFileName))
@@ -635,6 +645,7 @@ function ExtractMediaFilesFromRPP(rppPath, sourceProjectDir)
                 if origProj ~= "" then
                     local origDir = GetDirectoryPath(origProj)
                     if origDir ~= "" then
+                        table.insert(testPaths, JoinPath(origDir, sourceMediaFolder, relativeFileName))
                         table.insert(testPaths, JoinPath(origDir, "audio", relativeFileName))
                         table.insert(testPaths, JoinPath(origDir, "Audio", relativeFileName))
                         table.insert(testPaths, JoinPath(origDir, relativeFileName))
@@ -722,8 +733,10 @@ function CollectSelectedItemsMedia()
                     if isAbsolute then
                         fullPath = fileName
                     else
-                        -- 相对路径：从项目目录解析
+                        -- 相对路径：使用当前工程的媒体文件夹名 + audio/Audio 解析
+                        local sourceMediaFolder = GetProjectMediaFolderName()
                         local testPaths = {
+                            JoinPath(currentProjDir, sourceMediaFolder, fileName),
                             JoinPath(currentProjDir, fileName),
                             JoinPath(currentProjDir, "audio", fileName),
                             JoinPath(currentProjDir, "Audio", fileName),
@@ -1230,10 +1243,12 @@ function CollectMediaFilesFromProject()
     local mediaFiles = {}  -- {absolutePath = baseName}
     local _, currentProjPath = reaper.EnumProjects(-1, "")
     local currentProjDir = GetDirectoryPath(currentProjPath)
+    local sourceMediaFolder = GetProjectMediaFolderName()
     
     reaper.ShowConsoleMsg("=== 收集媒体文件 ===\n")
     reaper.ShowConsoleMsg("当前工程: " .. (currentProjPath or "未知") .. "\n")
     reaper.ShowConsoleMsg("工程目录: " .. (currentProjDir or "未知") .. "\n")
+    reaper.ShowConsoleMsg("媒体文件夹: " .. sourceMediaFolder .. "\n")
     
     local trackCount = reaper.CountTracks(0)
     for i = 0, trackCount - 1 do
@@ -1257,8 +1272,9 @@ function CollectMediaFilesFromProject()
                                 if isAbsolute then
                                     fullPath = fileName
                                 else
-                                    -- 相对路径：尝试从项目目录解析
+                                    -- 相对路径：使用当前工程的媒体文件夹名 + audio/Audio 解析
                                     local testPaths = {
+                                        JoinPath(currentProjDir, sourceMediaFolder, fileName),
                                         JoinPath(currentProjDir, fileName),
                                         JoinPath(currentProjDir, "audio", fileName),
                                         JoinPath(currentProjDir, "Audio", fileName),
@@ -1304,6 +1320,10 @@ end
 function SaveProjectWithMedia(targetPath)
     reaper.ShowConsoleMsg("\n=== SaveProjectWithMedia (Windows) ===\n")
     reaper.ShowConsoleMsg("目标路径: " .. targetPath .. "\n")
+
+    -- 在覆盖 RECORD_PATH 之前读取当前工程的媒体文件夹名（用于后续 RPP 中相对路径替换）
+    local sourceMediaFolder = GetProjectMediaFolderName()
+    reaper.ShowConsoleMsg("当前工程媒体文件夹: " .. sourceMediaFolder .. "\n")
 
     -- 获取项目目录（跨平台）
     local projectDir = GetDirectoryPath(targetPath)
@@ -1381,7 +1401,7 @@ function SaveProjectWithMedia(targetPath)
         end
     end
     
-    -- ★ 关键步骤 4：更新 RPP 文件中的路径为相对路径 Audio/文件名
+    -- ★ 关键步骤 4：更新 RPP 文件中的路径为相对路径 Audio/文件名（使用开头保存的 sourceMediaFolder）
     reaper.ShowConsoleMsg("\n=== 更新 RPP 文件中的媒体路径 ===\n")
     local rppFile = io.open(targetPath, "r")
     if rppFile then
@@ -1390,18 +1410,29 @@ function SaveProjectWithMedia(targetPath)
         local modified = false
         
         for sourcePath, baseName in pairs(mediaFiles) do
-            -- 转义路径中的特殊字符
+            -- 替换绝对路径为相对路径 Audio/文件名
             local escapedPath = string.gsub(sourcePath, "([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
-            -- 同时转义反斜杠（Windows 路径）
             escapedPath = string.gsub(escapedPath, "\\", "\\\\")
-            
-            -- 替换为相对路径 Audio/文件名
             local relativePath = "Audio/" .. baseName
             local newContent = string.gsub(content, escapedPath, relativePath)
             if newContent ~= content then
                 content = newContent
                 modified = true
                 reaper.ShowConsoleMsg("  更新: " .. baseName .. " -> " .. relativePath .. "\n")
+            end
+            -- 若 RPP 里是用户工程的相对路径（如 Media\xxx 或 Media/xxx），也替换为 Audio/文件名，避免打开临时工程时报丢失媒体
+            if sourceMediaFolder ~= "Audio" then
+                local escFolder = string.gsub(sourceMediaFolder, "([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+                local escBase = string.gsub(baseName, "([%(%)%.%+%-%*%?%[%^%$%%])", "%%%1")
+                for _, sep in ipairs({ "\\\\", "/" }) do  -- 反斜杠在 pattern 中要写成 \\\\
+                    local oldRel = escFolder .. sep .. escBase
+                    local newContent2 = string.gsub(content, oldRel, relativePath)
+                    if newContent2 ~= content then
+                        content = newContent2
+                        modified = true
+                        reaper.ShowConsoleMsg("  更新相对路径: " .. sourceMediaFolder .. (sep == "\\\\" and "\\" or sep) .. baseName .. " -> " .. relativePath .. "\n")
+                    end
+                end
             end
         end
         
