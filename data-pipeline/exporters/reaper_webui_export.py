@@ -15,6 +15,30 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 
+def run_lua_on_mac_safely(lua_script_path: str) -> tuple:
+    """
+    在 macOS 上通过系统「打开文件」机制执行 Lua 脚本（Standard Suite，所有 App 都支持）。
+    REAPER 注册了 .lua 文件关联，open -a REAPER script.lua 会由 REAPER 打开并运行该脚本。
+    不发送代码字符串，无需 AppleScript 转义，路径用标准 Unix 路径即可。
+    返回 (success: bool, stderr_or_none: Optional[str])
+    """
+    abs_path = os.path.abspath(lua_script_path)
+    cmd = ["open", "-a", "REAPER", abs_path]
+    print(f"macOS: 通过系统 open 命令触发: {' '.join(cmd)}")
+    try:
+        subprocess.run(cmd, check=True, timeout=10)
+        print("✓ 命令已发送")
+        return True, None
+    except subprocess.CalledProcessError as e:
+        err = str(e) or "open 执行失败"
+        print(f"✗ 执行失败: {err}")
+        return False, err
+    except subprocess.TimeoutExpired:
+        return False, "执行超时"
+    except Exception as e:
+        return False, str(e)
+
+
 def get_export_temp_dir() -> Path:
     """
     获取跨平台的临时导出目录
@@ -331,35 +355,17 @@ class ReaperWebUIExporter:
                     print(f"  标准错误: {result.stderr}")
                     
             else:
-                # macOS: 使用 AppleScript
-                print(f"✓ macOS 平台，使用 AppleScript 执行脚本...")
+                # macOS: 使用系统 open -a REAPER script.lua（打开文件机制，无需 AppleScript）
+                print(f"✓ macOS 平台，使用 open -a REAPER 执行脚本...")
+                ok, err = run_lua_on_mac_safely(str(script_path))
+                if ok:
+                    print(f"✓ open 命令已发送")
+                else:
+                    print(f"✗ open 失败: {err}")
 
-                script_content = f'''tell application "REAPER"
-    do Lua script "{script_path}"
-end tell'''
-
-                apple_script_cmd = [
-                    'osascript',
-                    '-e',
-                    script_content
-                ]
-
-                result = subprocess.run(
-                    apple_script_cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-
-                print(f"✓ AppleScript 命令已发送")
-                print(f"  返回码: {result.returncode}")
-                print(f"  标准输出: {result.stdout}")
-                if result.stderr:
-                    print(f"  标准错误: {result.stderr}")
-
-                # 如果 AppleScript 失败，回退到命令行方法
-                if result.returncode != 0:
-                    print(f"⚠️  AppleScript 失败，尝试命令行方法...")
+                # 如果 open 失败，回退到命令行方法（优先带工程路径：在指定工程中运行脚本）
+                if not ok:
+                    print(f"⚠️  open 失败，尝试命令行方法...")
 
                     # 查找 REAPER 可执行文件
                     import shutil
@@ -375,8 +381,19 @@ end tell'''
 
                     print(f"✓ REAPER 路径: {reaper_cmd}")
 
-                    # 使用 -nonewinst 参数在当前实例中执行脚本
+                    # 优先使用缓存的工程路径：reaper -nonewinst project.rpp script.lua 可在该工程中运行脚本
+                    project_path_file = get_export_temp_dir() / "current_project_path.txt"
                     cmd = [reaper_cmd, "-nonewinst", str(script_path)]
+                    if project_path_file.exists():
+                        try:
+                            project_path = project_path_file.read_text().strip()
+                            if project_path and Path(project_path).exists():
+                                cmd = [reaper_cmd, "-nonewinst", project_path, str(script_path)]
+                                print(f"✓ 使用缓存的工程路径: {project_path}")
+                        except Exception:
+                            pass
+                    if len(cmd) == 3:
+                        print(f"⚠️  无工程路径缓存，脚本将作为工程打开，可能无法获取选中 Item")
 
                     print(f"✓ 执行命令: {' '.join(cmd)}")
 

@@ -87,7 +87,10 @@ local function WriteResult(success, capsule_name, error_msg)
             result_file:write(content)
             Log("  ✓ 写入成功: " .. content .. "\n")
         else
-            local content = string.format('{"success": false, "error": "%s"}', error_msg or "未知错误")
+            local msg = error_msg or "未知错误"
+            if type(msg) ~= "string" then msg = tostring(msg) end
+            msg = msg:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "\\r")
+            local content = string.format('{"success": false, "error": "%s"}', msg)
             result_file:write(content)
             Log("  ✓ 写入失败信息: " .. content .. "\n")
         end
@@ -105,6 +108,18 @@ local function Main()
     Log("时间戳: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
     Log("脚本路径: " .. debug.getinfo(1).source:match("@(.*)$") .. "\n")
     Log("运行标志状态: " .. tostring(_SYNEST_EXPORT_RUNNING) .. "\n")
+
+    -- 缓存当前工程路径，供 macOS 回退命令行（reaper -nonewinst project.rpp script.lua）使用
+    local _, project_path = reaper.EnumProjects(-1, "")
+    if project_path and project_path ~= "" then
+        local cache_dir = "/tmp/synest_export"
+        os.execute("mkdir -p " .. cache_dir)
+        local cache_file = io.open(cache_dir .. "/current_project_path.txt", "w")
+        if cache_file then
+            cache_file:write(project_path)
+            cache_file:close()
+        end
+    end
 
     -- 1. 读取配置
     Log("步骤 1: 读取配置文件...\n")
@@ -195,31 +210,32 @@ local function Main()
     Log("  _SYNEST_AUTO_EXPORT.capsule_name: " .. tostring(_SYNEST_AUTO_EXPORT.capsule_name) .. "\n")
     Log("======================\n")
 
-    -- 调用 main 函数并捕获返回值
-    local success, result = pcall(main)
+    -- 调用 main 函数并捕获返回值（main 可能返回 true 或 false, error_msg）
+    local ok, r1, r2 = pcall(main)
 
     Log("=== [pcall 返回后] ===\n")
-    Log("  success: " .. tostring(success) .. "\n")
-    Log("  result: " .. tostring(result) .. "\n")
-    Log("  result type: " .. type(result) .. "\n")
+    Log("  ok: " .. tostring(ok) .. "\n")
+    Log("  r1: " .. tostring(r1) .. "\n")
+    Log("  r2: " .. tostring(r2) .. "\n")
     Log("=======================\n")
 
-    if success then
-        if result == true then
+    if ok then
+        if r1 == true then
             Log("✓ 导出执行完成\n")
             Log("  准备调用 WriteResult，capsule_name: " .. tostring(_SYNEST_AUTO_EXPORT.capsule_name) .. "\n")
             WriteResult(true, _SYNEST_AUTO_EXPORT.capsule_name, nil)
             Log("✓ 导出成功! 胶囊: " .. _SYNEST_AUTO_EXPORT.capsule_name .. "\n")
             Log("=== [自动导出完成] ===\n")
         else
-            Log("✗ 导出执行失败（返回false）\n")
-            Log("  错误信息: " .. tostring(result) .. "\n")
-            WriteResult(false, nil, result)
+            local errMsg = (type(r2) == "string" and r2 ~= "") and r2 or "导出失败（未返回具体原因）"
+            Log("✗ 导出执行失败（返回 false）\n")
+            Log("  错误信息: " .. errMsg .. "\n")
+            WriteResult(false, nil, errMsg)
         end
     else
         Log("✗ 导出执行失败（异常）\n")
-        Log("  错误信息: " .. tostring(result) .. "\n")
-        WriteResult(false, nil, result)
+        Log("  错误信息: " .. tostring(r1) .. "\n")
+        WriteResult(false, nil, tostring(r1))
     end
 
     -- 清理全局变量
