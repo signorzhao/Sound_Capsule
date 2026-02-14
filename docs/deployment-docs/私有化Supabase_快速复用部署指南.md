@@ -162,6 +162,7 @@ docker compose ps
 1. 浏览器打开 `http://<新服务器IP>:8000`，登录 Kong
 2. 进入 **SQL Editor**
 3. 按顺序执行 `database/` 下 **001～007**：`001_supabase_schema.sql` → `002_cloud_prisms_schema_fixed.sql` → … → **`007_storage_capsule_files_allow_authenticated_upload.sql`**。**007 为自建必做**，否则上传 403。
+4. （可选）语义搜索：从项目 `data-pipeline/database/supabase_migrations/` 执行 **008**、**009**、**010**，详见 [SUPABASE_PRIVATE_DEPLOY.md](../SUPABASE_PRIVATE_DEPLOY.md)。
 
 ### 4.4 创建 Storage Bucket 与上传策略
 
@@ -209,7 +210,7 @@ curl -s "http://<新服务器IP>:8000/rest/v1/" \
 - [ ] `docker compose ps` 所有服务为 running
 - [ ] 可访问 `http://<新服务器IP>:8000` 并登录
 - [ ] （方式 A）Table Editor 中可见原有表和数据
-- [ ] （方式 B）已执行 SQL 1～7（含 007），表结构正确
+- [ ] （方式 B）已执行 SQL 1～7（含 007），表结构正确；可选执行 008～010 启用语义搜索
 - [ ] Storage 中有 `capsule-files` bucket，且已执行 007（INSERT 策略）
 - [ ] 客户端 `SUPABASE_URL` 已更新为新 IP
 - [ ] `curl` 或应用测试连接正常
