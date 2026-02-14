@@ -713,75 +713,82 @@ function CollectSelectedItemsMedia()
             reaper.ShowConsoleMsg("  ⚠ item 为 nil\n")
         else
             local take = reaper.GetActiveTake(item)
-            
             if not take then
-                reaper.ShowConsoleMsg("  ⚠ take 为 nil (可能是空 item 或 MIDI)\n")
+                reaper.ShowConsoleMsg("  ⚠ take 为 nil\n")
             else
                 local source = reaper.GetMediaItemTake_Source(take)
-                
                 if not source then
                     reaper.ShowConsoleMsg("  ⚠ source 为 nil\n")
                 else
-                    local fileName = reaper.GetMediaSourceFileName(source)
-                    reaper.ShowConsoleMsg("  fileName: " .. tostring(fileName) .. "\n")
-                    
-                    if fileName and fileName ~= "" and fileName ~= "?" then
-                    -- 解析完整路径
-                    local isAbsolute = string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") or string.match(fileName, "^\\\\")
-                    local fullPath = nil
-                    
-                    if isAbsolute then
-                        fullPath = fileName
+                    local sourceType = reaper.GetMediaSourceType(source, "")
+                    if sourceType == "MIDI" then
+                        reaper.ShowConsoleMsg("  检测到 MIDI Item，跳过文件复制步骤\n")
+                        local track = reaper.GetMediaItemTrack(item)
+                        table.insert(itemsInfo, {
+                            position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+                            length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+                            volume = reaper.GetMediaItemInfo_Value(item, "D_VOL"),
+                            trackNum = track and reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0,
+                            mediaFile = nil
+                        })
                     else
-                        -- 相对路径：使用当前工程的媒体文件夹名 + audio/Audio 解析
-                        local sourceMediaFolder = GetProjectMediaFolderName()
-                        local testPaths = {
-                            JoinPath(currentProjDir, sourceMediaFolder, fileName),
-                            JoinPath(currentProjDir, fileName),
-                            JoinPath(currentProjDir, "audio", fileName),
-                            JoinPath(currentProjDir, "Audio", fileName),
-                        }
-                        for _, testPath in ipairs(testPaths) do
-                            local f = io.open(testPath, "r")
-                            if f then
-                                f:close()
-                                fullPath = testPath
-                                break
+                        if sourceType == "SECTION" or sourceType == "REVERSE" then
+                            source = reaper.GetMediaSourceParent(source)
+                        end
+                        if source then
+                            local retval, fileName = reaper.GetMediaSourceFileName(source, "")
+                            if not fileName or fileName == "" or fileName == "?" then
+                                if type(retval) == "string" and retval ~= "" and retval ~= "?" then
+                                    fileName = retval
+                                end
+                            end
+                            if fileName and fileName ~= "" and fileName ~= "?" then
+                                local isAbsolute = string.match(fileName, "^/") or string.match(fileName, "^[A-Za-z]:") or string.match(fileName, "^\\\\")
+                                local fullPath = nil
+                                if isAbsolute then
+                                    fullPath = fileName
+                                else
+                                    local sourceMediaFolder = GetProjectMediaFolderName()
+                                    local testPaths = {
+                                        JoinPath(currentProjDir, sourceMediaFolder, fileName),
+                                        JoinPath(currentProjDir, fileName),
+                                        JoinPath(currentProjDir, "audio", fileName),
+                                        JoinPath(currentProjDir, "Audio", fileName),
+                                    }
+                                    for _, testPath in ipairs(testPaths) do
+                                        local f = io.open(testPath, "r")
+                                        if f then
+                                            f:close()
+                                            fullPath = testPath
+                                            break
+                                        end
+                                    end
+                                end
+                                if fullPath then
+                                    local f = io.open(fullPath, "r")
+                                    if f then
+                                        f:close()
+                                        local baseName = string.match(fullPath, "([^/\\]+)$") or fullPath
+                                        if not mediaFiles[fullPath] then
+                                            mediaFiles[fullPath] = baseName
+                                            reaper.ShowConsoleMsg("  ✓ " .. baseName .. "\n")
+                                        end
+                                    end
+                                end
+                                local track = reaper.GetMediaItemTrack(item)
+                                table.insert(itemsInfo, {
+                                    position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+                                    length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+                                    volume = reaper.GetMediaItemInfo_Value(item, "D_VOL"),
+                                    trackNum = track and reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0,
+                                    mediaFile = fullPath
+                                })
                             end
                         end
                     end
-                    
-                    -- 验证文件可访问
-                    if fullPath then
-                        local f = io.open(fullPath, "r")
-                        if f then
-                            f:close()
-                            local baseName = string.match(fullPath, "([^/\\]+)$") or fullPath
-                            if not mediaFiles[fullPath] then
-                                mediaFiles[fullPath] = baseName
-                                reaper.ShowConsoleMsg("  ✓ " .. baseName .. "\n")
-                                reaper.ShowConsoleMsg("    路径: " .. fullPath .. "\n")
-                            end
-                        else
-                            reaper.ShowConsoleMsg("  ⚠ 无法访问: " .. fullPath .. "\n")
-                        end
-                    else
-                        reaper.ShowConsoleMsg("  ⚠ 无法解析路径: " .. fileName .. "\n")
-                    end
-                    
-                    -- 收集 item 信息
-                    local track = reaper.GetMediaItemTrack(item)
-                    table.insert(itemsInfo, {
-                        position = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
-                        length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
-                        volume = reaper.GetMediaItemInfo_Value(item, "D_VOL"),
-                        trackNum = track and reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") or 0,
-                        mediaFile = fullPath
-                    })
-                    end  -- if fileName
-                end  -- else (source)
-            end  -- else (take)
-        end  -- else (item)
+                end
+            end
+        end
     end  -- for
     
     local count = 0
@@ -969,12 +976,16 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
                 if itemDepth == 0 then
                     -- ITEM 块结束，检查是否包含选中的媒体
                     local keepItem = false
+                    if itemContent:lower():find("source midi", 1, true) then
+                        keepItem = true
+                    else
                     for mediaName, _ in pairs(selectedMediaNames) do
                         -- 在 item 内容中查找媒体文件名
                         if itemContent:lower():find(mediaName, 1, true) then
                             keepItem = true
                             break
                         end
+                    end
                     end
                     
                     if keepItem then
@@ -2503,8 +2514,11 @@ function ExportCapsule()
     local mediaCount = 0
     for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
     
-    if mediaCount == 0 then
-        reaper.ShowConsoleMsg("⚠ 警告：没有找到媒体文件\n")
+    local hasItems = collectedItemsInfo and #collectedItemsInfo > 0
+    if mediaCount == 0 and not hasItems then
+        reaper.ShowConsoleMsg("⚠ 警告：没有找到媒体文件（选中的 Item 可能无有效媒体源）\n")
+    elseif mediaCount == 0 and hasItems then
+        reaper.ShowConsoleMsg("检测到纯 MIDI 导出，跳过媒体文件复制步骤\n")
     end
     
     -- 步骤 2：复制媒体文件到 Audio 目录
