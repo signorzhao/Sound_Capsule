@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Cloud, Upload, Download, Check } from 'lucide-react';
 
 /**
@@ -12,6 +13,8 @@ import { Cloud, Upload, Download, Check } from 'lucide-react';
  * @param {string} props.className - 额外的 CSS 类名
  */
 const CloudSyncIcon = ({ capsule, onClick, className = '' }) => {
+  const { t } = useTranslation();
+
   const getSyncState = () => {
     // 状态 1: 需上传 (Dirty)
     // 条件: cloud_status === 'local' 表示仅存在本地，未上传
@@ -21,52 +24,46 @@ const CloudSyncIcon = ({ capsule, onClick, className = '' }) => {
         color: 'text-orange-400',
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/30',
-        tooltip: '本地胶囊，点击上传到云端'
+        tooltip: t('cloudSync.localTooltip')
       };
     }
-    
-    // 状态 2: 需下载 (Update)
-    // 条件: cloud_status === 'remote' 表示云端有更新，本地元数据过时
+
     if (capsule.cloud_status === 'remote') {
       return {
         icon: Download,
         color: 'text-blue-400',
         bg: 'bg-blue-900/20',
         border: 'border-blue-500/30',
-        tooltip: '云端有更新，点击拉取最新版本'
+        tooltip: t('cloudSync.remoteTooltip')
       };
     }
-    
-    // 状态 3: 本地有完整音频但未上传 Audio
+
     if (capsule.asset_status === 'local' && !capsule.audio_uploaded) {
       return {
         icon: Upload,
         color: 'text-orange-400',
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/30',
-        tooltip: '本地音频未上传，点击上传完整数据'
+        tooltip: t('cloudSync.audioNotUploadedTooltip')
       };
     }
 
-    // 状态 4: 已同步 (Synced)
-    // 条件: cloud_status === 'synced' 表示本地与云端一致
     if (capsule.cloud_status === 'synced') {
       return {
         icon: Check,
         color: 'text-green-400',
         bg: 'bg-green-900/20',
         border: 'border-green-500/30',
-        tooltip: '已同步（点击可重新上传）'
+        tooltip: t('cloudSync.syncedTooltip')
       };
     }
-    
-    // 默认状态（未知或无云端状态）
+
     return {
       icon: Cloud,
       color: 'text-gray-400',
       bg: 'bg-gray-900/20',
       border: 'border-gray-500/30',
-      tooltip: '未知状态'
+      tooltip: t('cloudSync.unknownTooltip')
     };
   };
   

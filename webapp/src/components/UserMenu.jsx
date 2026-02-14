@@ -5,23 +5,29 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { LogOut, User, ChevronDown, Settings, X, FolderOpen } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppConfig, saveAppConfig } from '../utils/configApi';
+import i18n, { configLangToI18n } from '../i18n';
+import * as authApi from '../utils/authApi';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import './UserMenu.css';
 
 const UserMenu = () => {
-  const { user, logout } = useAuth();
+  const { t } = useTranslation();
+  const { user, logout, accessToken } = useAuth();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState({
     export_dir: '',
-    reaper_path: ''
+    reaper_path: '',
+    language: 'zh-CN'
   });
   const [saving, setSaving] = useState(false);
   const [originalExportDir, setOriginalExportDir] = useState(''); // 用于检测路径变化
@@ -34,7 +40,8 @@ const UserMenu = () => {
       const saved = await getAppConfig();
       setConfig({
         export_dir: saved.export_dir || '',
-        reaper_path: saved.reaper_path || ''
+        reaper_path: saved.reaper_path || '',
+        language: saved.language || 'zh-CN'
       });
       // 保存原始导出目录，用于后续检测变化
       setOriginalExportDir(saved.export_dir || '');
@@ -49,7 +56,7 @@ const UserMenu = () => {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: '选择导出目录'
+        title: t('userMenu.selectExportDirTitle')
       });
 
       if (selected) {
@@ -66,7 +73,7 @@ const UserMenu = () => {
       const selected = await open({
         directory: false,
         multiple: false,
-        title: '选择 REAPER 可执行文件'
+        title: t('userMenu.selectReaperFile')
       });
 
       if (selected) {
@@ -99,8 +106,18 @@ const UserMenu = () => {
       // 保存到 Tauri
       await saveAppConfig({
         export_dir: config.export_dir,
-        reaper_path: config.reaper_path
+        reaper_path: config.reaper_path,
+        language: config.language
       });
+
+      // 若已登录，尝试同步语言到云端
+      if (user && accessToken && config.language) {
+        try {
+          await authApi.updateUserProfile(accessToken, { language: config.language });
+        } catch (e) {
+          console.warn('云端 language 同步失败:', e?.message);
+        }
+      }
       
       // 同步到 Python 后端
       try {
@@ -125,9 +142,9 @@ const UserMenu = () => {
       }));
       
       setShowSettings(false);
-      alert('✅ 配置已保存！');
+      alert(t('userMenu.configSaved'));
     } catch (err) {
-      alert('❌ 保存失败: ' + err.message);
+      alert(t('userMenu.saveFailed') + ': ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -147,7 +164,7 @@ const UserMenu = () => {
       const resetResult = await resetResponse.json();
       
       if (!resetResult.success) {
-        throw new Error(resetResult.error || '未知错误');
+        throw new Error(resetResult.error || 'Unknown error');
       }
       
       console.log('[路径变更] 数据库已清空');
@@ -247,7 +264,7 @@ const UserMenu = () => {
                 onClick={openSettings}
               >
                 <Settings size={18} />
-                <span>设置</span>
+                <span>{t('userMenu.settings')}</span>
               </button>
 
               <button
@@ -256,20 +273,20 @@ const UserMenu = () => {
                 disabled={loading}
               >
                 <LogOut size={18} />
-                <span>{loading ? '注销中...' : '注销'}</span>
+                <span>{loading ? t('userMenu.loggingOut') : t('userMenu.logout')}</span>
               </button>
             </div>
           </>
         )}
       </div>
 
-      {/* 设置对话框 */}
-      {showSettings && (
+      {/* 设置对话框 - 使用 Portal 渲染到 body 避免被父级 filter/overflow 裁剪 */}
+      {showSettings && createPortal(
         <>
           <div className="settings-overlay" onClick={() => setShowSettings(false)} />
           <div className="settings-modal">
             <div className="settings-header">
-              <h2>设置</h2>
+              <h2>{t('userMenu.settings')}</h2>
               <button
                 className="close-btn"
                 onClick={() => setShowSettings(false)}
@@ -283,13 +300,13 @@ const UserMenu = () => {
               <div className="setting-item">
                 <label className="setting-label">
                   <FolderOpen size={18} />
-                  <span>导出目录</span>
+                  <span>{t('userMenu.exportDir')}</span>
                 </label>
                 <div className="setting-input-group">
                   <input
                     type="text"
                     className="setting-input"
-                    placeholder="选择保存胶囊的目录"
+                    placeholder={t('userMenu.exportDirPlaceholder')}
                     value={config.export_dir}
                     onChange={(e) => setConfig(prev => ({ ...prev, export_dir: e.target.value }))}
                     readOnly
@@ -298,23 +315,23 @@ const UserMenu = () => {
                     className="setting-browse-btn"
                     onClick={selectExportDir}
                   >
-                    浏览
+                    {t('userMenu.browse')}
                   </button>
                 </div>
-                <p className="setting-hint">REAPER 项目文件将导出到此目录</p>
+                <p className="setting-hint">{t('userMenu.exportDirHint')}</p>
               </div>
 
               {/* REAPER 路径设置 */}
               <div className="setting-item">
                 <label className="setting-label">
                   <Settings size={18} />
-                  <span>REAPER 路径</span>
+                  <span>{t('userMenu.reaperPath')}</span>
                 </label>
                 <div className="setting-input-group">
                   <input
                     type="text"
                     className="setting-input"
-                    placeholder="选择 REAPER 可执行文件"
+                    placeholder={t('userMenu.reaperPathPlaceholder')}
                     value={config.reaper_path}
                     onChange={(e) => setConfig(prev => ({ ...prev, reaper_path: e.target.value }))}
                     readOnly
@@ -323,10 +340,39 @@ const UserMenu = () => {
                     className="setting-browse-btn"
                     onClick={selectReaperPath}
                   >
-                    浏览
+                    {t('userMenu.browse')}
                   </button>
                 </div>
-                <p className="setting-hint">用于打开 REAPER 项目（可选）</p>
+                <p className="setting-hint">{t('userMenu.reaperPathHint')}</p>
+              </div>
+
+              {/* 语言设置 - 分段控件，与整体界面风格一致 */}
+              <div className="setting-item">
+                <label className="setting-label">
+                  <span>{t('settings.language')}</span>
+                </label>
+                <div className="setting-lang-toggle">
+                  <button
+                    type="button"
+                    className={`lang-option ${config.language === 'zh-CN' ? 'active' : ''}`}
+                    onClick={() => {
+                      setConfig(prev => ({ ...prev, language: 'zh-CN' }));
+                      i18n.changeLanguage(configLangToI18n('zh-CN'));
+                    }}
+                  >
+                    {t('settings.languageZh')}
+                  </button>
+                  <button
+                    type="button"
+                    className={`lang-option ${config.language === 'en-US' ? 'active' : ''}`}
+                    onClick={() => {
+                      setConfig(prev => ({ ...prev, language: 'en-US' }));
+                      i18n.changeLanguage(configLangToI18n('en-US'));
+                    }}
+                  >
+                    {t('settings.languageEn')}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -336,22 +382,23 @@ const UserMenu = () => {
                 onClick={() => setShowSettings(false)}
                 disabled={saving}
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 className="save-btn"
                 onClick={handleSaveConfig}
                 disabled={saving}
               >
-                {saving ? '保存中...' : '保存'}
+                {saving ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
-      {/* 路径变更确认 Modal */}
-      {showPathChangeModal && (
+      {/* 路径变更确认 Modal - 使用 Portal 渲染到 body */}
+      {showPathChangeModal && createPortal(
         <>
           <div className="settings-overlay" onClick={() => !pathChangeComplete && setShowPathChangeModal(false)} />
           <div className="path-change-modal">
@@ -359,17 +406,17 @@ const UserMenu = () => {
               // 确认界面
               <>
                 <div className="modal-icon warning">⚠️</div>
-                <h2 className="modal-title">警告：修改存储路径</h2>
+                <h2 className="modal-title">{t('userMenu.pathChangeWarning')}</h2>
                 <div className="modal-content">
-                  <p>修改存储路径将执行以下操作：</p>
+                  <p>{t('userMenu.pathChangeDesc')}</p>
                   <ul className="modal-list">
-                    <li>清空本地数据库缓存</li>
-                    <li>重启应用以使用新路径</li>
-                    <li>旧路径的文件不会被删除</li>
-                    <li>需要重新从云端同步元数据</li>
+                    <li>{t('userMenu.pathChangeItem1')}</li>
+                    <li>{t('userMenu.pathChangeItem2')}</li>
+                    <li>{t('userMenu.pathChangeItem3')}</li>
+                    <li>{t('userMenu.pathChangeItem4')}</li>
                   </ul>
                   <div className="path-display">
-                    <div className="path-label">新路径：</div>
+                    <div className="path-label">{t('userMenu.newPath')}</div>
                     <div className="path-value">{config.export_dir}</div>
                   </div>
                 </div>
@@ -379,14 +426,14 @@ const UserMenu = () => {
                     onClick={() => setShowPathChangeModal(false)}
                     disabled={saving}
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                   <button
                     className="confirm-btn danger"
                     onClick={handlePathChangeConfirm}
                     disabled={saving}
                   >
-                    {saving ? '处理中...' : '确认变更'}
+                    {saving ? t('userMenu.processing') : t('userMenu.confirmChange')}
                   </button>
                 </div>
               </>
@@ -394,21 +441,21 @@ const UserMenu = () => {
               // 完成界面
               <>
                 <div className="modal-icon success">✅</div>
-                <h2 className="modal-title">路径变更完成</h2>
+                <h2 className="modal-title">{t('userMenu.pathChangeComplete')}</h2>
                 <div className="modal-content">
                   <div className="success-message">
-                    <p><strong>✓ 数据库已清空</strong></p>
-                    <p><strong>✓ 配置已保存</strong></p>
+                    <p><strong>✓ {t('userMenu.pathChangeCompleteDesc')}</strong></p>
+                    <p><strong>✓ {t('userMenu.pathChangeConfigSaved')}</strong></p>
                   </div>
                   <div className="path-display">
-                    <div className="path-label">新路径：</div>
+                    <div className="path-label">{t('userMenu.newPath')}</div>
                     <div className="path-value">{config.export_dir}</div>
                   </div>
                   <div className="restart-instructions">
-                    <p><strong>⚠️ 重要提示：</strong></p>
+                    <p><strong>⚠️ {t('userMenu.pathChangeRestartHint')}</strong></p>
                     <div className="info-box">
-                      <p>文件夹已变更，请<strong>重新启动应用</strong>以使用新路径。</p>
-                      <p>重启后应用将自动从服务器同步数据到新目录。</p>
+                      <p>{t('userMenu.pathChangeRestartText')}</p>
+                      <p>{t('userMenu.pathChangeSyncText')}</p>
                     </div>
                   </div>
                 </div>
@@ -421,13 +468,14 @@ const UserMenu = () => {
                       setShowSettings(false);
                     }}
                   >
-                    我知道了
+                    {t('userMenu.gotIt')}
                   </button>
                 </div>
               </>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       <style>{`
@@ -449,6 +497,8 @@ const UserMenu = () => {
           top: 50%;
           left: 50%;
           transform: translate(-50%, -50%);
+          max-height: calc(100vh - 40px);
+          overflow-y: auto;
           background: #1e1b4b;
           border: 1px solid #312e81;
           border-radius: 12px;
@@ -558,6 +608,38 @@ const UserMenu = () => {
           margin: 0;
           font-size: 12px;
           color: #64748b;
+        }
+
+        .setting-lang-toggle {
+          display: flex;
+          background: #0f172a;
+          padding: 4px;
+          border-radius: 8px;
+          border: 1px solid #312e81;
+          gap: 0;
+        }
+
+        .lang-option {
+          flex: 1;
+          padding: 10px 16px;
+          border: none;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 500;
+          color: #94a3b8;
+          background: transparent;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .lang-option:hover {
+          color: #e2e8f0;
+        }
+
+        .lang-option.active {
+          background: #312e81;
+          color: #fff;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         .settings-footer {

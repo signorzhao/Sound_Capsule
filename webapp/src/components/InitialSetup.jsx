@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FolderOpen, Settings, Check, AlertCircle } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig } from '../utils/configApi';
@@ -9,6 +10,7 @@ import './InitialSetup.css';
  * 用于首次启动或配置缺失时
  */
 export default function InitialSetup({ onComplete }) {
+  const { t } = useTranslation();
   const [config, setConfig] = useState({
     reaper_path: '',
     export_dir: '',
@@ -51,7 +53,7 @@ export default function InitialSetup({ onComplete }) {
       const selected = await open({
         directory: false,
         multiple: false,
-        title: '选择 REAPER 可执行文件'
+        title: t('settings.selectReaperFile')
       });
 
       if (selected) {
@@ -59,7 +61,7 @@ export default function InitialSetup({ onComplete }) {
       }
     } catch (err) {
       console.error('选择文件失败:', err);
-      setError('选择文件失败: ' + err.message);
+      setError(t('initialSetup.selectFileFailed') + ': ' + err.message);
     }
   };
 
@@ -69,7 +71,7 @@ export default function InitialSetup({ onComplete }) {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: '选择导出目录'
+        title: t('settings.selectExportDirTitle')
       });
 
       if (selected) {
@@ -77,14 +79,14 @@ export default function InitialSetup({ onComplete }) {
       }
     } catch (err) {
       console.error('选择目录失败:', err);
-      setError('选择目录失败: ' + err.message);
+      setError(t('initialSetup.selectDirFailed') + ': ' + err.message);
     }
   };
 
   // 保存配置
   const handleSave = async () => {
     if (!isValid) {
-      setError('请选择 REAPER 路径和导出目录');
+      setError(t('initialSetup.selectReaperAndExport'));
       return;
     }
 
@@ -134,7 +136,7 @@ export default function InitialSetup({ onComplete }) {
       }, 300);
     } catch (err) {
       console.error('保存配置失败:', err);
-      setError('保存配置失败: ' + err.message);
+      setError(t('initialSetup.saveConfigFailed') + ': ' + err.message);
       setIsSaving(false);
     }
   };
@@ -147,8 +149,8 @@ export default function InitialSetup({ onComplete }) {
           <div className="setup-icon">
             <Settings size={32} />
           </div>
-          <h1>欢迎来到 Sound Capsule</h1>
-          <p>首次使用需要配置基本设置</p>
+          <h1>{t('initialSetup.welcome')}</h1>
+          <p>{t('initialSetup.subtitle')}</p>
         </div>
 
         {/* 错误提示 */}
@@ -164,49 +166,49 @@ export default function InitialSetup({ onComplete }) {
           {/* REAPER 路径 */}
           <div className="form-group">
             <label className="form-label">
-              REAPER 路径 <span className="required">*</span>
+              {t('initialSetup.reaperPath')} <span className="required">*</span>
             </label>
             <div className="input-group">
               <input
                 type="text"
                 className="form-input"
-                placeholder="/Applications/REAPER.app 或 C:\\Program Files\\REAPER\\reaper.exe"
+                placeholder={t('initialSetup.reaperPathPlaceholder')}
                 value={config.reaper_path}
                 onChange={(e) => setConfig({ ...config, reaper_path: e.target.value })}
               />
               <button
                 className="input-button"
                 onClick={selectReaperPath}
-                title="选择文件"
+                title={t('initialSetup.selectFile')}
               >
                 <FolderOpen size={18} />
               </button>
             </div>
-            <small className="form-hint">选择 REAPER 可执行文件的位置</small>
+            <small className="form-hint">{t('initialSetup.reaperPathHint')}</small>
           </div>
 
           {/* 导出目录 */}
           <div className="form-group">
             <label className="form-label">
-              导出目录 <span className="required">*</span>
+              {t('initialSetup.exportDir')} <span className="required">*</span>
             </label>
             <div className="input-group">
               <input
                 type="text"
                 className="form-input"
-                placeholder="/Users/username/SoundCapsule/Exports"
+                placeholder={t('initialSetup.exportDirPlaceholder')}
                 value={config.export_dir}
                 onChange={(e) => setConfig({ ...config, export_dir: e.target.value })}
               />
               <button
                 className="input-button"
                 onClick={selectExportDir}
-                title="选择目录"
+                title={t('initialSetup.selectDir')}
               >
                 <FolderOpen size={18} />
               </button>
             </div>
-            <small className="form-hint">胶囊导出文件的保存位置</small>
+            <small className="form-hint">{t('initialSetup.exportDirHint')}</small>
           </div>
 
         </div>
@@ -219,11 +221,11 @@ export default function InitialSetup({ onComplete }) {
             disabled={!isValid || isSaving}
           >
             {isSaving ? (
-              <>保存中...</>
+              <>{t('common.saving')}</>
             ) : (
               <>
                 <Check size={20} />
-                保存并开始
+                {t('initialSetup.saveAndStart')}
               </>
             )}
           </button>
@@ -231,7 +233,7 @@ export default function InitialSetup({ onComplete }) {
 
         {/* 提示信息 */}
         <div className="setup-footer">
-          <p>💡 提示：这些设置可以随时在应用设置中修改</p>
+          <p>{t('initialSetup.tip')}</p>
         </div>
       </div>
     </div>

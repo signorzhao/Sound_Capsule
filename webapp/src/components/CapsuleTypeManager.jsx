@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   X, Plus, Edit2, Trash2, Save, Settings,
   Sparkles, Flame, Music, Activity, Box,
@@ -79,6 +80,7 @@ const COLOR_PRESETS = [
  */
 
 function CapsuleTypeManager({ onClose }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const [capsuleTypes, setCapsuleTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -106,11 +108,11 @@ function CapsuleTypeManager({ onClose }) {
       console.error('加载棱镜列表失败:', error);
       // 使用默认列表作为后备
       setAvailableLenses([
-        { value: 'texture', label: '纹理', id: 'texture' },
-        { value: 'source', label: '来源', id: 'source' },
-        { value: 'materiality', label: '物质性', id: 'materiality' },
-        { value: 'temperament', label: '性格', id: 'temperament' },
-        { value: 'mechanics', label: '力学', id: 'mechanics' }
+        { value: 'texture', label: t('capsuleTypeManager.texture'), id: 'texture' },
+        { value: 'source', label: t('capsuleTypeManager.source'), id: 'source' },
+        { value: 'materiality', label: t('capsuleTypeManager.materiality'), id: 'materiality' },
+        { value: 'temperament', label: t('capsuleTypeManager.temperament'), id: 'temperament' },
+        { value: 'mechanics', label: t('capsuleTypeManager.mechanics'), id: 'mechanics' }
       ]);
     }
   };
@@ -125,11 +127,11 @@ function CapsuleTypeManager({ onClose }) {
       if (data.success) {
         setCapsuleTypes(data.types);
       } else {
-        toast.error('加载胶囊类型失败');
+        toast.error(t('capsuleTypeManager.loadTypesFailed'));
       }
     } catch (error) {
       console.error('加载胶囊类型失败:', error);
-      toast.error('加载胶囊类型失败: ' + error.message);
+      toast.error(t('capsuleTypeManager.loadTypesFailed') + ': ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -259,7 +261,7 @@ function CapsuleTypeManager({ onClose }) {
   if (loading) {
     return (
       <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-zinc-950/95 backdrop-blur-xl">
-        <div className="text-zinc-400">加载中...</div>
+        <div className="text-zinc-400">{t('common.loading')}</div>
       </div>
     );
   }
@@ -281,7 +283,7 @@ function CapsuleTypeManager({ onClose }) {
             <div className="flex items-center gap-3">
               <Settings className="text-indigo-500 w-6 h-6" />
               <h1 className="text-xl font-bold tracking-[0.2em] text-white">
-                胶囊<span className="text-indigo-400">类型</span>管理
+                {t('capsuleTypeManager.title')}
               </h1>
             </div>
             <div className="flex items-center gap-4">
@@ -290,7 +292,7 @@ function CapsuleTypeManager({ onClose }) {
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm transition-all shadow-lg shadow-indigo-900/20"
               >
                 <Plus size={16} />
-                新建类型
+                {t('capsuleTypeManager.newType')}
               </button>
               <button
                 onClick={onClose}
@@ -309,7 +311,7 @@ function CapsuleTypeManager({ onClose }) {
             <div className="mb-8 bg-zinc-900/40 backdrop-blur-sm border border-white/5 rounded-xl p-6 animate-in fade-in slide-in-from-top-4 duration-300">
               <div className="flex justify-between items-center mb-6 pb-4 border-b border-zinc-800">
                 <h2 className="text-lg font-bold text-white">
-                  {isCreating ? '新建胶囊类型' : '编辑胶囊类型'}
+                  {isCreating ? t('capsuleTypeManager.createTitle') : t('capsuleTypeManager.editTitle')}
                 </h2>
                 <div className="flex gap-3">
                   <button
@@ -317,13 +319,13 @@ function CapsuleTypeManager({ onClose }) {
                     className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-sm transition-all shadow-lg"
                   >
                     <Save size={16} />
-                    保存
+                    {t('common.save')}
                   </button>
                   <button
                     onClick={() => setEditingType(null)}
                     className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg font-bold text-sm transition-all"
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                 </div>
               </div>
@@ -333,41 +335,41 @@ function CapsuleTypeManager({ onClose }) {
                 <div className="space-y-6">
                   {/* 基本信息 */}
                   <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">基本信息</h3>
+                    <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-widest">{t('capsuleTypeManager.basicInfo')}</h3>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1.5">ID *</label>
+                        <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.idLabel')}</label>
                         <input
                           type="text"
                           value={editingType.id}
                           onChange={(e) => setEditingType(prev => ({ ...prev, id: e.target.value }))}
                           disabled={!isCreating}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 disabled:opacity-50"
-                          placeholder="例如: magic"
+                          placeholder={t('capsuleTypeManager.idPlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1.5">英文名 *</label>
+                        <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.nameEnLabel')}</label>
                         <input
                           type="text"
                           value={editingType.name}
                           onChange={(e) => setEditingType(prev => ({ ...prev, name: e.target.value }))}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                          placeholder="例如: MAGIC"
+                          placeholder={t('capsuleTypeManager.nameEnPlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1.5">中文名 *</label>
+                        <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.nameCnLabel')}</label>
                         <input
                           type="text"
                           value={editingType.name_cn}
                           onChange={(e) => setEditingType(prev => ({ ...prev, name_cn: e.target.value }))}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                          placeholder="例如: 魔法"
+                          placeholder={t('capsuleTypeManager.nameCnPlaceholder')}
                         />
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1.5">图标</label>
+                        <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.iconLabel')}</label>
                         <button
                           onClick={() => setShowIconPicker(!showIconPicker)}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 flex items-center justify-between hover:border-zinc-700 transition-all"
@@ -380,7 +382,7 @@ function CapsuleTypeManager({ onClose }) {
                             })()}
                             {editingType.icon}
                           </span>
-                          <span className="text-zinc-500">选择</span>
+                          <span className="text-zinc-500">{t('capsuleTypeManager.select')}</span>
                         </button>
                         {showIconPicker && (
                           <div className="mt-2 p-4 bg-zinc-900 border border-zinc-800 rounded-xl max-h-64 overflow-y-auto">
@@ -410,7 +412,7 @@ function CapsuleTypeManager({ onClose }) {
                         )}
                       </div>
                       <div>
-                        <label className="block text-xs text-zinc-500 mb-1.5">颜色样式</label>
+                        <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.colorLabel')}</label>
                         <button
                           onClick={() => setShowColorPicker(!showColorPicker)}
                           className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 flex items-center justify-between hover:border-zinc-700 transition-all"
@@ -420,9 +422,9 @@ function CapsuleTypeManager({ onClose }) {
                               className="w-4 h-4 rounded"
                               style={{ background: editingType.gradient }}
                             ></span>
-                            {COLOR_PRESETS.find(p => p.color === editingType.color)?.name || '自定义'}
+                            {COLOR_PRESETS.find(p => p.color === editingType.color)?.name || t('capsuleTypeManager.custom')}
                           </span>
-                          <span className="text-zinc-500">选择</span>
+                          <span className="text-zinc-500">{t('capsuleTypeManager.select')}</span>
                         </button>
                         {showColorPicker && (
                           <div className="mt-2 p-4 bg-zinc-900 border border-zinc-800 rounded-xl max-h-64 overflow-y-auto">
@@ -481,12 +483,12 @@ function CapsuleTypeManager({ onClose }) {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-xs text-zinc-500 mb-1.5">描述</label>
+                      <label className="block text-xs text-zinc-500 mb-1.5">{t('capsuleTypeManager.descLabel')}</label>
                       <textarea
                         value={editingType.description}
                         onChange={(e) => setEditingType(prev => ({ ...prev, description: e.target.value }))}
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 resize-none"
-                        placeholder="简要描述此胶囊类型的用途"
+                        placeholder={t('capsuleTypeManager.descPlaceholder')}
                         rows={3}
                       />
                     </div>
@@ -503,7 +505,7 @@ function CapsuleTypeManager({ onClose }) {
                             value={example}
                             onChange={(e) => updateExample(index, e.target.value)}
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
-                            placeholder="例如: 粒子合成"
+                            placeholder={t('capsuleTypeManager.examplePlaceholder')}
                           />
                           <button
                             onClick={() => removeExample(index)}

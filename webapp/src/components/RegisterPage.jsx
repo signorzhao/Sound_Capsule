@@ -3,11 +3,13 @@
  */
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './LoginPage.css';
 
 const RegisterPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { register } = useAuth();
 
@@ -32,20 +34,20 @@ const RegisterPage = () => {
 
     // 验证密码
     if (formData.password !== formData.confirmPassword) {
-      setError('两次输入的密码不一致');
+      setError(t('auth.passwordMismatch'));
       return;
     }
 
     // 验证密码强度
     if (formData.password.length < 8) {
-      setError('密码长度至少需要 8 个字符');
+      setError(t('auth.passwordTooShort'));
       return;
     }
 
     const hasLetter = /[a-zA-Z]/.test(formData.password);
     const hasDigit = /[0-9]/.test(formData.password);
     if (!hasLetter || !hasDigit) {
-      setError('密码必须包含字母和数字');
+      setError(t('auth.passwordRequirements'));
       return;
     }
 
@@ -56,7 +58,7 @@ const RegisterPage = () => {
       // 注册成功，导航到主页
       navigate('/');
     } catch (err) {
-      setError(err.message || '注册失败，请重试');
+      setError(err.message || t('auth.registerFailed'));
     } finally {
       setLoading(false);
     }
@@ -71,7 +73,7 @@ const RegisterPage = () => {
       <div className="auth-card">
         <div className="auth-header">
           <h1>Sound Capsule</h1>
-          <p>创建新账户</p>
+          <p>{t('auth.registerSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -82,15 +84,15 @@ const RegisterPage = () => {
           )}
 
           <div className="form-hints">
-            <h4>密码要求：</h4>
+            <h4>{t('auth.passwordRequirementsTitle')}</h4>
             <ul>
-              <li>至少 8 个字符</li>
-              <li>包含字母和数字</li>
+              <li>{t('auth.passwordReq1')}</li>
+              <li>{t('auth.passwordReq2')}</li>
             </ul>
           </div>
 
           <div className="form-group">
-            <label htmlFor="username">用户名</label>
+            <label htmlFor="username">{t('auth.username')}</label>
             <input
               type="text"
               id="username"
@@ -99,13 +101,13 @@ const RegisterPage = () => {
               onChange={handleChange}
               required
               autoFocus
-              placeholder="3-30字符，仅字母数字下划线"
+              placeholder={t('auth.usernamePlaceholder')}
               pattern="[a-zA-Z0-9_]{3,30}"
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="email">邮箱</label>
+            <label htmlFor="email">{t('auth.email')}</label>
             <input
               type="email"
               id="email"
@@ -113,12 +115,12 @@ const RegisterPage = () => {
               value={formData.email}
               onChange={handleChange}
               required
-              placeholder="your@email.com"
+              placeholder={t('auth.emailPlaceholder')}
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">密码</label>
+            <label htmlFor="password">{t('auth.password')}</label>
             <input
               type="password"
               id="password"
@@ -126,13 +128,13 @@ const RegisterPage = () => {
               value={formData.password}
               onChange={handleChange}
               required
-              placeholder="至少8字符，包含字母和数字"
+              placeholder={t('auth.passwordPlaceholderRegister')}
               minLength={8}
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="confirmPassword">确认密码</label>
+            <label htmlFor="confirmPassword">{t('auth.confirmPassword')}</label>
             <input
               type="password"
               id="confirmPassword"
@@ -140,7 +142,7 @@ const RegisterPage = () => {
               value={formData.confirmPassword}
               onChange={handleChange}
               required
-              placeholder="再次输入密码"
+              placeholder={t('auth.confirmPasswordPlaceholder')}
               minLength={8}
             />
           </div>
@@ -150,14 +152,14 @@ const RegisterPage = () => {
             className="auth-button"
             disabled={loading}
           >
-            {loading ? '注册中...' : '注册'}
+            {loading ? t('auth.registering') : t('auth.register')}
           </button>
 
           <div className="auth-footer">
             <p>
-              已有账户？{' '}
+              {t('auth.hasAccount')}{' '}
               <button type="button" onClick={goToLogin} className="link-button">
-                立即登录
+                {t('auth.loginNow')}
               </button>
             </p>
           </div>

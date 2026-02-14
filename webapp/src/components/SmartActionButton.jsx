@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Cloud, Check, Loader2, AlertTriangle, Play } from 'lucide-react';
 
 /**
@@ -12,44 +13,45 @@ import { Cloud, Check, Loader2, AlertTriangle, Play } from 'lucide-react';
  * @param {string} props.className - 额外的 CSS 类名
  */
 const SmartActionButton = ({ status, onClick, className = '' }) => {
-  // 状态配置映射
+  const { t } = useTranslation();
+
   const config = {
     cloud_only: {
       icon: Cloud,
-      text: '获取',
+      text: t('smartAction.fetch'),
       style: 'bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30',
-      tooltip: '文件在云端 (点击下载)'
+      tooltip: t('smartAction.cloudOnlyTooltip')
     },
     downloading: {
       icon: Loader2,
-      text: '下载中...',
+      text: t('smartAction.downloading'),
       style: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30 cursor-wait',
       animate: true,
-      tooltip: '正在下载资源...'
+      tooltip: t('smartAction.downloadingTooltip')
     },
     synced: {
-      icon: Play, // 或者用 REAPER 图标
-      text: '打开',
+      icon: Play,
+      text: t('smartAction.open'),
       style: 'bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30',
-      tooltip: '在 REAPER 中打开'
+      tooltip: t('smartAction.openTooltip')
     },
     local: {
-      icon: Play, // 或者用 REAPER 图标
-      text: '打开',
+      icon: Play,
+      text: t('smartAction.open'),
       style: 'bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30',
-      tooltip: '在 REAPER 中打开'
+      tooltip: t('smartAction.openTooltip')
     },
     full: {
-      icon: Play, // 或者用 REAPER 图标
-      text: '打开',
+      icon: Play,
+      text: t('smartAction.open'),
       style: 'bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30',
-      tooltip: '在 REAPER 中打开'
+      tooltip: t('smartAction.openTooltip')
     },
     partial: {
       icon: AlertTriangle,
-      text: '修复',
+      text: t('smartAction.fix'),
       style: 'bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30',
-      tooltip: '文件不完整'
+      tooltip: t('smartAction.partialTooltip')
     }
   };
 

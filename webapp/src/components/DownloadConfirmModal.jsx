@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Download, FileText, X } from 'lucide-react';
 
 /**
@@ -20,6 +21,8 @@ export default function DownloadConfirmModal({
   onOfflineOpen = () => {},
   onClose = () => {}
 }) {
+  const { t } = useTranslation();
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -35,29 +38,27 @@ export default function DownloadConfirmModal({
         </button>
 
         {/* 标题和描述 */}
-        <h3 className="text-lg font-bold text-white mb-2">资源未就绪</h3>
+        <h3 className="text-lg font-bold text-white mb-2">{t('downloadConfirm.resourceNotReady')}</h3>
         <p className="text-zinc-400 text-sm mb-6">
-          胶囊 <span className="text-purple-400 font-mono">{capsuleName}</span> 的音频文件尚未下载到本地。您希望如何处理？
+          <span className="text-purple-400 font-mono">{capsuleName}</span> {t('downloadConfirm.downloadPrompt')}
         </p>
 
         {/* 操作按钮 */}
         <div className="space-y-3">
-          {/* 选项 A: 推荐 */}
           <button
             onClick={onConfirm}
             className="w-full flex items-center justify-center gap-2 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-lg font-medium transition-colors"
           >
             <Download size={18} />
-            下载完整资源并打开 (推荐)
+            {t('downloadConfirm.downloadAndOpen')}
           </button>
 
-          {/* 选项 B: 降级 */}
           <button
             onClick={onOfflineOpen}
             className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 py-3 rounded-lg font-medium border border-zinc-700 transition-colors"
           >
             <FileText size={18} />
-            仅打开工程文件 (媒体离线)
+            {t('downloadConfirm.openOffline')}
           </button>
         </div>
       </div>

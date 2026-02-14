@@ -5,10 +5,12 @@
  */
 
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 
 const ProtectedRoute = ({ children }) => {
+  const { t } = useTranslation();
   const { isAuthenticated, loading } = useAuth();
 
   // 显示加载状态
@@ -37,7 +39,7 @@ const ProtectedRoute = ({ children }) => {
             animation: 'spin 1s linear infinite',
             margin: '0 auto 20px'
           }}></div>
-          <p style={{ color: '#666', margin: 0 }}>加载中...</p>
+          <p style={{ color: '#666', margin: 0 }}>{t('app.loading')}</p>
           <style>{`
             @keyframes spin {
               0% { transform: rotate(0deg); }

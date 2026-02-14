@@ -3,11 +3,13 @@
  * 负责检查配置并决定显示初始化设置还是主应用
  */
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAppConfig } from './utils/configApi';
 import InitialSetup from './components/InitialSetup';
 import App from './App';
 
 export default function AppWrapper() {
+  const { t } = useTranslation();
   const [showInitialSetup, setShowInitialSetup] = useState(false);
   const [isCheckingConfig, setIsCheckingConfig] = useState(true);
   const [config, setConfig] = useState(null);
@@ -67,7 +69,7 @@ export default function AppWrapper() {
         fontSize: '18px',
         fontWeight: 500
       }}>
-        加载中...
+        {t('app.loading')}
       </div>
     );
   }

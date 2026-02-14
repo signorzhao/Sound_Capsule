@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Layers, Zap, Maximize, Hash, Copy, Eraser, Sparkles, Check, CircleDot, Save, Package } from 'lucide-react';
 import { clsx } from 'clsx';
 import CapsuleExportWizard from './components/CapsuleExportWizard';
 import SaveCapsuleHome from './components/SaveCapsuleHome';
-import LensCompleteDialog from './components/LensCompleteDialog';
 import CapsuleLibrary from './components/CapsuleLibrary';
 import DebugStatePanel from './components/DebugStatePanel';
 import UserMenu from './components/UserMenu';
@@ -13,6 +13,7 @@ import BootSync from './components/BootSync'; // Phase G2: 启动同步
 import { useToast } from './components/Toast';
 import { sendNotification, requestNotificationPermission } from './utils/tauriApi';
 import { getAppConfig } from './utils/configApi';
+import { getTagDisplayText } from './utils/tagUtils';
 import { invoke } from '@tauri-apps/api/core'; // 🔥 用于调用 Rust 命令
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
@@ -110,6 +111,7 @@ function findNearestKNN(points, cursorX, cursorY, k = 12) {
 // ==========================================
 
 export default function App() {
+  const { t, i18n } = useTranslation();
   const toast = useToast();
 
   // 状态
@@ -143,10 +145,9 @@ export default function App() {
   const [previewAudio, setPreviewAudio] = useState(null);
   const previewAudioRef = useRef(null);
   const dragStartedInsideRef = useRef(false); // 标记拖拽是否在棱镜内部开始
+  const prevActiveLensRef = useRef(activeLens);
 
-  // Phase 5.4: 多棱镜管理
-  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [isContinueMode, setIsContinueMode] = useState(false); // 标记是否是继续模式
+  // Phase 5.4: 多棱镜管理（已完成嵌入直接保存，不再弹二级菜单）
 
   // Phase F: 用户配置
   const [userConfig, setUserConfig] = useState(null);
@@ -365,11 +366,11 @@ export default function App() {
   // ==========================================
 
   useEffect(() => {
-    // 如果是继续模式（刚点击了"继续选择"），不加载旧标签
-    if (isContinueMode) {
-      setIsContinueMode(false);
-      setSelectedTags([]);
-      return;
+    // 切换棱镜前，将上一个棱镜的 selectedTags 保存到 allSelectedTags
+    const prevLens = prevActiveLensRef.current;
+    if (prevLens !== activeLens) {
+      setAllSelectedTags(prev => ({ ...prev, [prevLens]: selectedTags }));
+      prevActiveLensRef.current = activeLens;
     }
 
     // 如果切换到的棱镜已经有保存的标签，自动加载
@@ -414,7 +415,7 @@ export default function App() {
       // 如果没有保存的标签，清空当前选择
       setSelectedTags([]);
     }
-  }, [activeLens, isContinueMode, allSelectedTags]); // 🔥 添加 allSelectedTags 依赖
+  }, [activeLens, allSelectedTags]);
 
   // ==========================================
   // 生成演示数据 (开发阶段使用)
@@ -958,40 +959,46 @@ export default function App() {
     setSelectedTags([]);
   }, []);
 
-  // Phase 5.4: 完成当前棱镜
-  const handleLensComplete = useCallback(() => {
-    // 🔥 修复：无论有没有标签，都保存当前状态到 allSelectedTags
-    // 这样清除标签（空数组）也能正确保存
-    setAllSelectedTags(prev => ({
-      ...prev,
-      [activeLens]: selectedTags
-    }));
-    console.log(`保存 ${activeLens} 棱镜的标签:`, selectedTags.length, '个');
+  // 清空所有棱镜的已选标签
+  const clearAllTags = useCallback(() => {
+    setSelectedTags([]);
+    setAllSelectedTags(prev => {
+      const next = { ...prev };
+      Object.keys(lensConfig).forEach(lensId => { next[lensId] = []; });
+      return next;
+    });
+  }, [lensConfig]);
 
-    // 添加到已完成列表
-    setCompletedLenses(prev => [...prev, activeLens]);
-
-    // 显示对话框
-    setShowCompleteDialog(true);
-  }, [activeLens, selectedTags]);
-
-  // Phase 5.4: 继续选择其他棱镜
-  const handleContinueSelection = useCallback(() => {
-    setShowCompleteDialog(false);
-
-    // 找到下一个未完成的棱镜（动态从 lensConfig 获取）
-    const allLenses = Object.keys(lensConfig);
-    const nextLens = allLenses.find(lens => !completedLenses.includes(lens) && lens !== activeLens);
-
-    if (nextLens) {
-      setIsContinueMode(true); // 设置继续模式标记
-      setActiveLens(nextLens);
+  // 从指定棱镜移除标签
+  const removeTagFromLens = useCallback((tag, lensId) => {
+    const matchTag = (a, b) => {
+      const aKey = a.word_id || a.id || a.word;
+      const bKey = b.word_id || b.id || b.word;
+      if (aKey && bKey) return aKey === bKey;
+      return (a.word_cn || a.zh) === (b.word_cn || b.zh) && (a.word_en || a.en) === (b.word_en || b.en);
+    };
+    if (lensId === activeLens) {
+      setSelectedTags(prev => prev.filter(t => !matchTag(t, tag)));
+    } else {
+      setAllSelectedTags(prev => ({
+        ...prev,
+        [lensId]: (prev[lensId] || []).filter(t => !matchTag(t, tag))
+      }));
     }
-  }, [completedLenses, activeLens]);
+  }, [activeLens]);
 
-  // Phase 5.4: 完成所有标签并保存
+  // 所有棱镜的已选标签（扁平列表，带 _lensId）
+  const allTagsFlat = useMemo(() => {
+    const result = [];
+    Object.keys(lensConfig).forEach(lensId => {
+      const tags = lensId === activeLens ? selectedTags : (allSelectedTags[lensId] || []);
+      tags.forEach(t => result.push({ ...t, _lensId: lensId }));
+    });
+    return result;
+  }, [lensConfig, activeLens, selectedTags, allSelectedTags]);
+
+  // Phase 5.4: 完成嵌入关键词（直接保存，不弹二级菜单）
   const handleFinishAllTags = useCallback(async () => {
-    setShowCompleteDialog(false);
 
     if (!currentCapsuleId) {
       toast.error('没有胶囊ID，无法保存标签');
@@ -1065,7 +1072,7 @@ export default function App() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <Sparkles className="w-12 h-12 text-purple-500 animate-pulse mx-auto mb-4" />
-          <p className="text-gray-400">加载语义向量数据...</p>
+          <p className="text-gray-400">{t('lens.loadingVectorData')}</p>
         </div>
       </div>
     );
@@ -1151,12 +1158,9 @@ export default function App() {
                   <Sparkles className="w-6 h-6 text-purple-400" />
                 </div>
                 <span>Synesth</span>
-                <span className="text-xs font-normal text-zinc-600 bg-zinc-900/80 px-3 py-1.5 rounded-full border border-zinc-800">
-                  AI 声景词典 v1.0
-                </span>
               </h1>
               <p className="text-sm text-zinc-500">
-                移动光标探索语义空间，点击词汇构建你的声音画像
+                {t('lens.subtitle')}
               </p>
             </div>
 
@@ -1323,7 +1327,7 @@ export default function App() {
                         left: `${tag.x}%`,
                         top: `${tag.y}%`,
                       }}
-                      title={tag.zh || tag.word || tag.cn}
+                      title={getTagDisplayText(tag)}
                     >
                       {/* 位置标记：外圈脉冲 + 内圈实心 */}
                       <div
@@ -1356,79 +1360,73 @@ export default function App() {
           {/* 右侧：推荐与操作 */}
           <div className="flex-1 flex flex-col gap-4 lg:max-w-md">
 
-            {/* Phase 5.4: 嵌入标签按钮 - 允许保存空标签（删除所有标签） */}
-            {currentCapsuleId && (
-              <button
-                onClick={handleLensComplete}
-                className={clsx(
-                  'w-full py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-3 transition-all border',
-                  selectedTags.length === 0
-                    ? 'bg-gradient-to-r from-red-500/80 to-orange-500/80 text-white border-red-400/30 shadow-lg shadow-red-500/20 hover:shadow-red-500/40 hover:-translate-y-0.5'
-                    : 'bg-gradient-to-r from-purple-500 to-pink-500 text-white border-purple-400/30 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 hover:-translate-y-0.5'
-                )}
-              >
-                <Check className="w-5 h-5" />
-                {selectedTags.length === 0 
-                  ? `清除${currentLens.nameCn || currentLens.id}标签`
-                  : `嵌入${currentLens.nameCn || currentLens.id}标签`
-                }
-                <span className="text-xs font-normal opacity-75">
-                  ({selectedTags.length} 个已选)
-                </span>
-              </button>
-            )}
-
-            {/* 已选标签预览（精简版） */}
-            {selectedTags.length > 0 && (
-              <div className="bg-zinc-900/60 backdrop-blur-sm p-4 rounded-2xl border border-zinc-800">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">已选择</span>
-                  <button
-                    onClick={clearTags}
-                    className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
-                  >
-                    清空
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedTags.slice(0, 10).map((tag, idx) => {
-                    const displayText = tag.zh || tag.word || tag.cn;
-                    // 使用唯一标识符作为key
-                    const uniqueKey = tag.word_id || tag.id || tag.word || idx;
-                    return (
-                      <span
-                        key={uniqueKey}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-zinc-300 text-xs rounded-full border border-zinc-700 hover:border-zinc-600 transition-all"
-                      >
-                        {displayText}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleTag(tag);
-                          }}
-                          className="text-zinc-600 hover:text-white transition-colors ml-1"
-                          title={`删除 ${displayText}`}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    );
-                  })}
-                  {selectedTags.length > 10 && (
-                    <span className="text-xs text-zinc-600 px-3 py-1.5 bg-zinc-900/50 rounded-full border border-zinc-800">
-                      +{selectedTags.length - 10} 更多...
-                    </span>
+            {/* 已选择（合并：完成按钮 + 全部已选标签） */}
+            <div className="bg-zinc-900/60 backdrop-blur-sm p-4 rounded-2xl border border-zinc-800">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{t('lens.selectedLabel')}</span>
+                <div className="flex items-center gap-3">
+                  {allTagsFlat.length > 0 && (
+                    <button
+                      onClick={clearAllTags}
+                      className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                    >
+                      {t('lens.clearAll')}
+                    </button>
+                  )}
+                  {currentCapsuleId && (
+                    <button
+                      onClick={handleFinishAllTags}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-500 to-pink-500 text-white border border-purple-400/30 hover:shadow-lg hover:shadow-purple-500/20 transition-all"
+                    >
+                      <Check className="w-4 h-4" />
+                      {t('lens.finishEmbedding')}
+                    </button>
                   )}
                 </div>
               </div>
-            )}
+              <div className="flex flex-wrap gap-2 min-h-[60px]">
+                {allTagsFlat.length === 0 ? (
+                  <p className="text-zinc-600 text-xs italic py-2">{t('lens.moveCursorForRecommendations')}</p>
+                ) : (
+                  <>
+                    {allTagsFlat.slice(0, 12).map((tag, idx) => {
+                      const displayText = getTagDisplayText(tag);
+                      const uniqueKey = (tag.word_id || tag.id || tag.word || idx) + '-' + tag._lensId;
+                      return (
+                        <span
+                          key={uniqueKey}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800 text-zinc-300 text-xs rounded-full border border-zinc-700 hover:border-zinc-600 transition-all"
+                        >
+                          {displayText}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeTagFromLens(tag, tag._lensId);
+                            }}
+                            className="text-zinc-600 hover:text-white transition-colors ml-1"
+                            title={`${t('common.delete')} ${displayText}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
+                    {allTagsFlat.length > 12 && (
+                      <span className="text-xs text-zinc-600 px-3 py-1.5 bg-zinc-900/50 rounded-full border border-zinc-800">
+                        {t('lens.moreSelected', { count: allTagsFlat.length - 12 })}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
 
             {/* 实时推荐 */}
             <div className="bg-zinc-900/60 backdrop-blur-sm p-5 rounded-2xl border border-zinc-800">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest flex items-center gap-2">
                   <Sparkles className="w-4 h-4" style={{ color: currentLens.accentColor }} />
-                  推荐标签
+                  {t('lens.recommendedTags')}
                 </h3>
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] text-zinc-600 font-mono">Radius: {selectionRadius}</span>
@@ -1445,7 +1443,7 @@ export default function App() {
               </div>
               <div className="flex flex-wrap gap-2 min-h-[100px]">
                 {suggestedWords.length === 0 ? (
-                  <p className="text-zinc-600 text-sm italic w-full text-center py-4">移动光标获取推荐词汇...</p>
+                  <p className="text-zinc-600 text-sm italic w-full text-center py-4">{t('lens.moveCursorForRecommendations')}</p>
                 ) : (
                   suggestedWords.map((item, idx) => {
                     // 使用与toggleTag相同的key策略
@@ -1475,8 +1473,8 @@ export default function App() {
                           })
                         }}
                       >
-                        {item.zh}
-                        <span className="text-zinc-600 ml-1.5 text-xs">({item.word})</span>
+                        {getTagDisplayText(item)}
+                        <span className="text-zinc-600 ml-1.5 text-xs">({item.word || item.word_en || item.word_cn})</span>
                       </button>
                     );
                   })
@@ -1490,9 +1488,9 @@ export default function App() {
         {/* 底部统计 */}
         <footer className="mt-8 text-center text-xs text-zinc-600">
           <p>
-            当前透镜: <span className="text-zinc-400 font-medium">{currentLens.name}</span>
+            {t('lens.currentLens')}: <span className="text-zinc-400 font-medium">{currentLens.name}</span>
             {vectorData && vectorData[activeLens] && (
-              <> · 词库: <span className="text-zinc-400 font-medium">{vectorData[activeLens].points.length} 词</span></>
+              <> · <span className="text-zinc-400 font-medium">{t('lens.lexiconCount', { count: vectorData[activeLens].points.length })}</span></>
             )}
           </p>
         </footer>
@@ -1522,16 +1520,6 @@ export default function App() {
         />
       )}
 
-      {/* Phase 5.4: 多棱镜完成对话框 */}
-      <LensCompleteDialog
-        isOpen={showCompleteDialog}
-        lensName={activeLens}
-        lensConfig={lensConfig}
-        selectedTags={selectedTags}
-        completedLenses={completedLenses}
-        onContinue={handleContinueSelection}
-        onFinish={handleFinishAllTags}
-      />
 
       {/* 调试面板 - 已隐藏 */}
       {/* <DebugStatePanel

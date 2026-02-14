@@ -1,12 +1,18 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig, resetAppConfig } from '../utils/configApi';
+import i18n, { configLangToI18n } from '../i18n';
+import { useAuth } from '../contexts/AuthContext';
+import * as authApi from '../utils/authApi';
 
 /**
  * 设置面板组件
  * 用于管理应用程序配置
  */
 function SettingsPanel({ onClose }) {
+  const { t } = useTranslation();
+  const { user, accessToken, updateUser } = useAuth();
   const [config, setConfig] = useState({
     reaper_path: '',
     reaper_ip: '',
@@ -34,7 +40,7 @@ function SettingsPanel({ onClose }) {
         language: savedConfig.language || 'zh-CN'
       });
     } catch (error) {
-      showMessage('error', '加载配置失败: ' + error.message);
+      showMessage('error', t('settings.loadConfigFailed') + ': ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -46,13 +52,13 @@ function SettingsPanel({ onClose }) {
     try {
       // 验证必填字段
       if (!config.reaper_path && !config.reaper_ip) {
-        showMessage('error', '请设置 REAPER 路径或 IP 地址');
+        showMessage('error', t('settings.setReaperOrIp'));
         setLoading(false);
         return;
       }
 
       if (!config.export_dir) {
-        showMessage('error', '请设置导出目录');
+        showMessage('error', t('settings.setExportDir'));
         setLoading(false);
         return;
       }
@@ -62,6 +68,15 @@ function SettingsPanel({ onClose }) {
       // 1. 保存到 Tauri 配置
       await saveAppConfig(config);
       console.log('✓ Tauri 配置已保存');
+
+      // 1b. 若已登录，尝试同步语言到云端 profiles
+      if (user && accessToken && config.language) {
+        try {
+          await authApi.updateUserProfile(accessToken, { language: config.language });
+        } catch (e) {
+          console.warn('云端 language 同步失败（可忽略）:', e?.message);
+        }
+      }
 
       // 2. 同时同步到 Python 后端（不需要认证）
       try {
@@ -87,16 +102,16 @@ function SettingsPanel({ onClose }) {
         // 不阻塞保存流程，因为 Tauri 配置已保存
       }
 
-      showMessage('success', '配置已保存！下次保存胶囊时会自动使用新目录。');
+      showMessage('success', t('settings.configSaved'));
     } catch (error) {
-      showMessage('error', '保存配置失败: ' + error.message);
+      showMessage('error', t('settings.saveConfigFailed') + ': ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   const resetConfig = async () => {
-    if (confirm('确定要重置所有配置吗？')) {
+    if (confirm(t('settings.confirmReset'))) {
       setLoading(true);
       try {
         await resetAppConfig();
@@ -107,9 +122,9 @@ function SettingsPanel({ onClose }) {
           username: '',
           language: 'zh-CN'
         });
-        showMessage('success', '配置已重置');
+        showMessage('success', t('settings.configReset'));
       } catch (error) {
-        showMessage('error', '重置配置失败: ' + error.message);
+        showMessage('error', t('settings.resetConfigFailed') + ': ' + error.message);
       } finally {
         setLoading(false);
       }
@@ -121,7 +136,7 @@ function SettingsPanel({ onClose }) {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: field === 'reaper_path' ? '选择 REAPER 安装目录' : '选择导出目录'
+        title: field === 'reaper_path' ? t('settings.selectReaperDir') : t('settings.selectExportDirTitle')
       });
 
       if (selected) {
@@ -136,7 +151,7 @@ function SettingsPanel({ onClose }) {
     try {
       const selected = await open({
         multiple: false,
-        title: '选择 REAPER 可执行文件'
+        title: t('settings.selectReaperFile')
       });
 
       if (selected) {
@@ -156,10 +171,16 @@ function SettingsPanel({ onClose }) {
     setTimeout(() => setMessage({ type: '', text: '' }), 3000);
   };
 
+  const handleLanguageChange = (e) => {
+    const newLang = e.target.value;
+    setConfig({ ...config, language: newLang });
+    i18n.changeLanguage(configLangToI18n(newLang));
+  };
+
   return (
     <div className="settings-panel">
       <div className="settings-header">
-        <h2>应用设置</h2>
+        <h2>{t('settings.title')}</h2>
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
 
@@ -170,79 +191,79 @@ function SettingsPanel({ onClose }) {
       )}
 
       {loading ? (
-        <div className="loading">加载中...</div>
+        <div className="loading">{t('common.loading')}</div>
       ) : (
         <div className="settings-content">
           {/* REAPER 配置 */}
           <section className="settings-section">
-            <h3>REAPER 配置</h3>
+            <h3>{t('settings.reaperSection')}</h3>
 
             <div className="form-group">
-              <label>REAPER 安装路径</label>
+              <label>{t('settings.reaperPath')}</label>
               <div className="input-with-button">
                 <input
                   type="text"
                   value={config.reaper_path}
                   onChange={(e) => setConfig({ ...config, reaper_path: e.target.value })}
-                  placeholder="/Applications/REAPER.app 或 C:\\Program Files\\REAPER"
+                  placeholder={t('settings.reaperPathPlaceholder')}
                 />
-                <button onClick={selectDirectory}>选择目录</button>
-                <button onClick={selectFile}>选择文件</button>
+                <button onClick={selectDirectory}>{t('settings.selectDir')}</button>
+                <button onClick={selectFile}>{t('settings.selectFile')}</button>
               </div>
             </div>
 
             <div className="form-group">
-              <label>REAPER IP 地址（可选）</label>
+              <label>{t('settings.reaperIp')}</label>
               <input
                 type="text"
                 value={config.reaper_ip}
                 onChange={(e) => setConfig({ ...config, reaper_ip: e.target.value })}
-                placeholder="127.0.0.1"
+                placeholder={t('settings.reaperIpPlaceholder')}
               />
-              <small>如果通过网络连接 REAPER，请填写 IP 地址</small>
+              <small>{t('settings.reaperIpHint')}</small>
             </div>
           </section>
 
           {/* 导出配置 */}
           <section className="settings-section">
-            <h3>导出配置</h3>
+            <h3>{t('settings.exportSection')}</h3>
 
             <div className="form-group">
-              <label>导出目录</label>
+              <label>{t('settings.exportDir')}</label>
               <div className="input-with-button">
                 <input
                   type="text"
                   value={config.export_dir}
                   onChange={(e) => setConfig({ ...config, export_dir: e.target.value })}
-                  placeholder="/Users/用户名/SoundCapsule/Exports"
+                  placeholder={t('settings.exportDirPlaceholder')}
                 />
-                <button onClick={() => selectDirectory('export_dir')}>选择目录</button>
+                <button onClick={() => selectDirectory('export_dir')}>{t('settings.selectDir')}</button>
               </div>
             </div>
           </section>
 
           {/* 用户配置 */}
           <section className="settings-section">
-            <h3>用户配置</h3>
+            <h3>{t('settings.userSection')}</h3>
 
             <div className="form-group">
-              <label>用户名</label>
+              <label>{t('settings.username')}</label>
               <input
                 type="text"
                 value={config.username}
                 onChange={(e) => setConfig({ ...config, username: e.target.value })}
-                placeholder="请输入用户名"
+                placeholder={t('settings.usernamePlaceholder')}
               />
             </div>
 
             <div className="form-group">
-              <label>语言</label>
+              <label>{t('settings.language')}</label>
               <select
                 value={config.language}
-                onChange={(e) => setConfig({ ...config, language: e.target.value })}
+                onChange={handleLanguageChange}
               >
-                <option value="zh-CN">简体中文</option>
-                <option value="en-US">English</option>
+                <option value="zh-CN">{t('settings.languageZh')}</option>
+                <option value="en-US">{t('settings.languageEn')}</option>
               </select>
             </div>
           </section>
@@ -250,13 +271,13 @@ function SettingsPanel({ onClose }) {
           {/* 操作按钮 */}
           <div className="settings-actions">
             <button className="btn-primary" onClick={saveConfig}>
-              保存配置
+              {t('settings.saveConfig')}
             </button>
             <button className="btn-secondary" onClick={resetConfig}>
-              重置配置
+              {t('settings.resetConfig')}
             </button>
             <button className="btn-secondary" onClick={onClose}>
-              取消
+              {t('common.cancel')}
             </button>
           </div>
         </div>

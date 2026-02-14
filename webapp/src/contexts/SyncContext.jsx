@@ -10,6 +10,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../utils/apiClient';
+import i18n from '../i18n';
 
 // 创建 SyncContext
 const SyncContext = createContext(undefined);
@@ -106,14 +107,14 @@ export const SyncProvider = ({ children }) => {
       return { success: true, skipped: true, reason: '未登录' };
     }
 
-    setSyncStatus(prev => ({ ...prev, isSyncing: true, syncProgress: 10, syncStep: '正在同步关键词数据...' }));
+    setSyncStatus(prev => ({ ...prev, isSyncing: true, syncProgress: 10, syncStep: i18n.t('syncIndicator.syncStepKeywords') }));
     setSyncError(null);
 
     try {
       console.log('🏷️ 开始关键词同步...');
 
       // 调用后端关键词同步接口
-      setSyncStatus(prev => ({ ...prev, syncProgress: 30, syncStep: '正在比对关键词变更...' }));
+      setSyncStatus(prev => ({ ...prev, syncProgress: 30, syncStep: i18n.t('syncIndicator.syncStepCompare') }));
       
       const response = await authFetch('http://localhost:5002/api/sync/sync-tags', {
         method: 'POST',
@@ -134,10 +135,10 @@ export const SyncProvider = ({ children }) => {
       }
 
       // 更新同步状态
-      setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: '同步数据校验中...' }));
+      setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: i18n.t('syncIndicator.syncStepVerify') }));
       await fetchSyncStatus();
 
-      setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: '同步完成！' }));
+      setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndicator.syncComplete') }));
       console.log('✅ 关键词同步完成');
 
       // 触发同步完成事件（通知其他组件刷新数据）
@@ -212,14 +213,14 @@ export const SyncProvider = ({ children }) => {
       console.log('🔄 [BootSync] 仅下载同步结果:', result);
 
       if (result.success) {
-        setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: '同步数据校验中...' }));
-        onProgress?.({ phase: '同步数据校验中...', current: 0, total: 0, percentage: 90 });
+        setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: i18n.t('syncIndicator.syncStepVerify') }));
+        onProgress?.({ phase: i18n.t('syncIndicator.syncStepVerify'), current: 0, total: 0, percentage: 90 });
 
         // 更新同步状态
         await fetchSyncStatus();
 
-        setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: '同步完成！' }));
-        onProgress?.({ phase: '同步完成！', current: 0, total: 0, percentage: 100 });
+setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndicator.syncComplete') }));
+      onProgress?.({ phase: i18n.t('syncIndicator.syncComplete'), current: 0, total: 0, percentage: 100 });
         console.log('✅ [BootSync] 仅下载同步完成');
 
         // 触发同步完成事件（通知其他组件刷新数据）

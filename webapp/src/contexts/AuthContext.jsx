@@ -6,6 +6,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as authApi from '../utils/authApi';
+import i18n, { configLangToI18n } from '../i18n';
 
 const AuthContext = createContext(null);
 
@@ -60,6 +61,16 @@ export const AuthProvider = ({ children }) => {
 
     initAuth();
   }, []);
+
+  // 当用户信息加载后，若 profile 有 language 则应用
+  useEffect(() => {
+    if (user?.language) {
+      const lang = configLangToI18n(user.language);
+      if (i18n.language !== lang) {
+        i18n.changeLanguage(lang);
+      }
+    }
+  }, [user?.language]);
 
   /**
    * 周期性刷新 Token（防止过期）

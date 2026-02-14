@@ -10,11 +10,13 @@
  */
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Cloud, CloudOff, RefreshCw, AlertCircle, Clock, X, RotateCw } from 'lucide-react';
 import { useSync } from '../contexts/SyncContext';
 import './SyncIndicator.css';
 
 export default function SyncIndicator() {
+  const { t } = useTranslation();
   const { syncStatus, syncError, sync, fetchSyncStatus } = useSync();
   const [showMenu, setShowMenu] = useState(false);
   const [lastSyncAttempt, setLastSyncAttempt] = useState(null);
@@ -50,7 +52,7 @@ export default function SyncIndicator() {
    * 格式化最后同步时间
    */
   const formatLastSyncTime = (date) => {
-    if (!date) return '从未同步';
+    if (!date) return t('syncIndicator.neverSynced');
 
     const now = new Date();
     const diffMs = now - date;
@@ -58,10 +60,10 @@ export default function SyncIndicator() {
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return '刚刚同步';
-    if (diffMins < 60) return `${diffMins} 分钟前同步`;
-    if (diffHours < 24) return `${diffHours} 小时前同步`;
-    return `${diffDays} 天前同步`;
+    if (diffMins < 1) return t('syncIndicator.justSynced');
+    if (diffMins < 60) return t('syncIndicator.minsAgo', { count: diffMins });
+    if (diffHours < 24) return t('syncIndicator.hoursAgo', { count: diffHours });
+    return t('syncIndicator.daysAgo', { count: diffDays });
   };
 
   /**
@@ -93,20 +95,18 @@ export default function SyncIndicator() {
    * 获取同步状态文本
    */
   const getStatusText = () => {
-    if (syncStatus.isSyncing) return '同步中...';
-    if (syncError) return '同步失败';
+    if (syncStatus.isSyncing) return t('syncIndicator.syncing');
+    if (syncError) return t('syncIndicator.syncFailed');
 
-    // 优先显示本地待上传
     if (syncStatus.pendingCount > 0) {
-      return `待上传 ${syncStatus.pendingCount} 个胶囊`;
+      return t('syncIndicator.pendingUpload', { count: syncStatus.pendingCount });
     }
 
-    // 其次显示云端待下载
     if (syncStatus.remotePending > 0) {
-      return `待下载 ${syncStatus.remotePending} 个胶囊`;
+      return t('syncIndicator.pendingDownload', { count: syncStatus.remotePending });
     }
 
-    return '已同步';
+    return t('syncIndicator.synced');
   };
 
   /**
@@ -132,7 +132,7 @@ export default function SyncIndicator() {
         className="sync-refresh-button"
         onClick={handleRefreshStatus}
         disabled={isRefreshing}
-        title="刷新同步状态"
+        title={t('syncIndicator.refreshTitle')}
       >
         <RotateCw size={14} className={isRefreshing ? 'spinning' : ''} />
       </button>
@@ -188,14 +188,14 @@ export default function SyncIndicator() {
 
             {/* 标题 */}
             <div className="sync-menu-header">
-              <h3>云端同步</h3>
+              <h3>{t('syncIndicator.title')}</h3>
             </div>
 
             {/* 同步状态 */}
             <div className="sync-status-section">
               <div className="sync-status-item">
                 <Clock size={16} />
-                <span className="label">最后同步:</span>
+                <span className="label">{t('syncIndicator.lastSync')}:</span>
                 <span className="value">
                   {formatLastSyncTime(syncStatus.lastSyncAt)}
                 </span>
@@ -203,17 +203,17 @@ export default function SyncIndicator() {
 
               <div className="sync-status-item">
                 <Cloud size={16} />
-                <span className="label">待同步:</span>
+                <span className="label">{t('syncIndicator.pendingLabel')}:</span>
                 <span className={`value ${syncStatus.pendingCount > 0 ? 'pending' : ''}`}>
-                  {syncStatus.pendingCount} 项
+                  {t('syncIndicator.items', { count: syncStatus.pendingCount })}
                 </span>
               </div>
 
               {syncStatus.conflictCount > 0 && (
                 <div className="sync-status-item conflict">
                   <AlertCircle size={16} />
-                  <span className="label">冲突:</span>
-                  <span className="value">{syncStatus.conflictCount} 项</span>
+                  <span className="label">{t('syncIndicator.conflictLabel')}:</span>
+                  <span className="value">{t('syncIndicator.items', { count: syncStatus.conflictCount })}</span>
                 </div>
               )}
 
@@ -250,12 +250,12 @@ export default function SyncIndicator() {
                 {syncStatus.isSyncing ? (
                   <>
                     <RefreshCw className="spinning" size={16} />
-                    <span>正在同步...</span>
+                    <span>{t('syncIndicator.syncing')}</span>
                   </>
                 ) : (
                   <>
                     <RefreshCw size={16} />
-                    <span>立即同步</span>
+                    <span>{t('syncIndicator.syncNow')}</span>
                   </>
                 )}
               </button>
@@ -264,9 +264,9 @@ export default function SyncIndicator() {
             {/* 说明文本 */}
             <div className="sync-menu-footer">
               <p>
-                点击按钮上传本地胶囊到云端
+                {t('syncIndicator.footer1')}
                 <br />
-                启动时已自动下载云端数据
+                {t('syncIndicator.footer2')}
               </p>
             </div>
           </div>

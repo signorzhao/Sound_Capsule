@@ -1,4 +1,5 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Loader2 } from 'lucide-react';
 
 // Toast 上下文
@@ -84,6 +85,7 @@ const ToastContainer = ({ toasts, onRemove }) => {
 
 // Toast 单项组件
 const ToastItem = ({ toast, onRemove }) => {
+  const { t } = useTranslation();
   const [isExiting, setIsExiting] = useState(false);
 
   const handleClose = () => {
@@ -137,7 +139,7 @@ const ToastItem = ({ toast, onRemove }) => {
       <button
         onClick={handleClose}
         className="text-white/80 hover:text-white hover:bg-white/20 rounded p-1 transition-colors"
-        aria-label="关闭通知"
+        aria-label={t('common.dismiss')}
       >
         <X size={16} />
       </button>

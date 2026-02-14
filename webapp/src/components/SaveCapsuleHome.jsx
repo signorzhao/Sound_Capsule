@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Package, Sparkles, Flame, Music, Activity, Settings, X } from 'lucide-react';
 import CapsuleCard from './CapsuleCard';
 import CapsuleTypeManager from './CapsuleTypeManager';
@@ -13,6 +14,7 @@ import UserMenu from './UserMenu';
  */
 
 function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
+  const { t } = useTranslation();
   const [selectedCapsule, setSelectedCapsule] = useState(null);
   const [openCapsuleId, setOpenCapsuleId] = useState(null);
   const [capsuleTypes, setCapsuleTypes] = useState([]);
@@ -28,34 +30,34 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
 
       if (data.success) {
         // 转换为CapsuleCard需要的格式
-        const types = data.types.map(t => ({
-          id: t.id,
-          type: t.id,
-          name: t.name,
-          nameCn: t.name_cn,
-          description: t.description,
-          icon: t.icon,
-          color: t.color,
-          gradient: t.gradient,
-          priorityLens: t.priority_lens
+        const types = data.types.map(tp => ({
+          id: tp.id,
+          type: tp.id,
+          name: tp.name,
+          nameCn: tp.name_cn,
+          description: tp.description,
+          icon: tp.icon,
+          color: tp.color,
+          gradient: tp.gradient,
+          priorityLens: tp.priority_lens
         }));
         setCapsuleTypes(types);
       } else {
         console.error('加载胶囊类型失败:', data.error);
         // 使用默认类型
         setCapsuleTypes([
-          { id: 'magic', type: 'magic', name: 'MAGIC', nameCn: '魔法', description: '神秘、梦幻、超自然' },
-          { id: 'impact', type: 'impact', name: 'IMPACT', nameCn: '打击', description: '强力、冲击、震撼' },
-          { id: 'atmosphere', type: 'atmosphere', name: 'ATMOSPHERE', nameCn: '环境', description: '空间、氛围、场景' }
+          { id: 'magic', type: 'magic', name: 'MAGIC', nameCn: t('saveCapsule.magic'), description: t('saveCapsule.magicDesc') },
+          { id: 'impact', type: 'impact', name: 'IMPACT', nameCn: t('saveCapsule.impact'), description: t('saveCapsule.impactDesc') },
+          { id: 'atmosphere', type: 'atmosphere', name: 'ATMOSPHERE', nameCn: t('saveCapsule.atmosphere'), description: t('saveCapsule.atmosphereDesc') }
         ]);
       }
     } catch (error) {
-      console.error('加载胶囊类型失败:', error);
+      console.error(t('saveCapsule.loadTypesFailed'), error);
       // 使用默认类型
       setCapsuleTypes([
-        { id: 'magic', type: 'magic', name: 'MAGIC', nameCn: '魔法', description: '神秘、梦幻、超自然' },
-        { id: 'impact', type: 'impact', name: 'IMPACT', nameCn: '打击', description: '强力、冲击、震撼' },
-        { id: 'atmosphere', type: 'atmosphere', name: 'ATMOSPHERE', nameCn: '环境', description: '空间、氛围、场景' }
+        { id: 'magic', type: 'magic', name: 'MAGIC', nameCn: t('saveCapsule.magic'), description: t('saveCapsule.magicDesc') },
+        { id: 'impact', type: 'impact', name: 'IMPACT', nameCn: t('saveCapsule.impact'), description: t('saveCapsule.impactDesc') },
+        { id: 'atmosphere', type: 'atmosphere', name: 'ATMOSPHERE', nameCn: t('saveCapsule.atmosphere'), description: t('saveCapsule.atmosphereDesc') }
       ]);
     } finally {
       setLoading(false);
@@ -82,7 +84,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
 
   const handleSave = () => {
     if (!selectedCapsule) {
-      alert('请先选择一个胶囊');
+      alert(t('saveCapsule.selectFirst'));
       return;
     }
 
@@ -142,11 +144,11 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
                 onClick={() => setIsEditMode(!isEditMode)}
               >
                 <Settings className="w-4 h-4 flex-shrink-0" />
-                <span>{isEditMode ? '退出编辑' : '管理类型'}</span>
+                <span>{isEditMode ? t('saveCapsule.exitEdit') : t('saveCapsule.manageTypesBtn')}</span>
               </button>
             </div>
-            <h1 className="text-3xl font-bold text-white tracking-[0.1em] uppercase flex-1 text-center">
-              {isEditMode ? '胶囊类型管理' : '选择胶囊类型'}
+            <h1 className="text-3xl font-bold text-white tracking-[0.1em] uppercase flex-1 text-center whitespace-nowrap">
+              {isEditMode ? t('saveCapsule.manageTypes') : t('saveCapsule.selectType')}
             </h1>
             <div className="flex-1 flex justify-end gap-3 items-center">
               <UserMenu />
@@ -157,13 +159,13 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
                   disabled={isBusy}
                 >
                   <Package className="w-4 h-4 flex-shrink-0" />
-                  <span>查看胶囊库</span>
+                  <span>{t('saveCapsule.viewLibrary')}</span>
                 </button>
               )}
             </div>
           </div>
           <p className="text-sm text-zinc-600 tracking-[0.05em]">
-            {isEditMode ? '编辑模式下可以对胶囊类型进行增加、修改、删除操作' : '点击胶囊打开，选择类型后点击"SAVE"保存'}
+            {isEditMode ? t('saveCapsule.editHint') : t('saveCapsule.selectHint')}
           </p>
         </header>
 
@@ -197,7 +199,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
               onClick={() => setIsShowManager(true)}
             >
               <Settings className="inline w-5 h-5 mr-2 mb-1" />
-              打开胶囊类型管理器
+              {t('saveCapsule.openManager')}
             </button>
           </div>
         )}
@@ -224,7 +226,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
                 {/* 进度信息 */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-white">正在保存胶囊...</h3>
+                    <h3 className="text-sm font-semibold text-white">{t('saveCapsule.savingCapsule')}</h3>
                     <span className="text-sm font-bold text-zinc-300">{saveProgress}%</span>
                   </div>
                   <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">

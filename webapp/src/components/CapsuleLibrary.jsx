@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Search, Grid3X3, List, Network, Trash2, Edit, X, Play, Pause,
-  SkipForward, SkipBack, Download, HeadphonesIcon, User, Flame, Zap,
+  Download, HeadphonesIcon, User, Flame, Zap,
   Sparkles, Music, Activity, Box, Volume2, Maximize2, MousePointer2,
   Radio, Headphones, Guitar, Piano, Mic, Bell, Signal, Heart, Timer, Clock,
   Target, Star, Sun, Moon, Snowflake, Cloud, CheckCircle, Loader, HardDrive
@@ -13,6 +14,8 @@ import DownloadProgressDialog from './DownloadProgressDialog';
 import SmartActionButton from './SmartActionButton';
 import DownloadConfirmModal from './DownloadConfirmModal';
 import CloudSyncIcon from './CloudSyncIcon';
+import { getTagDisplayText } from '../utils/tagUtils';
+import i18n from '../i18n';
 import './CapsuleLibrary.css';
 
 // 图标映射表 - 用于动态加载图标
@@ -32,6 +35,7 @@ const ICON_COMPONENTS = {
  */
 
 function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onImportToReaper, refreshTrigger = 0, onSyncComplete }) {
+  const { t } = useTranslation();
   const toast = useToast();
 
   // 胶囊类型数据（从API动态加载）
@@ -53,11 +57,14 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 音频播放器
   const [nowPlaying, setNowPlaying] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(0); // 仅用于首次加载时显示 --:--，loadedmetadata 后更新一次
   const audioRef = useRef(null);
-  const progressRef = useRef(0); // 使用 ref 存储实时进度，避免触发重渲染
-  const progressBarRef = useRef(null); // 进度条DOM引用
-  const autoPlayRef = useRef(false); // 标记是否应该自动播放（用于切换音频时）
+  const progressRef = useRef(0);
+  const progressBarRef = useRef(null);
+  const progressTrackRef = useRef(null);
+  const currentTimeDisplayRef = useRef(null); // 直接更新 DOM，避免 timeupdate 触发重渲染导致卡顿
+  const durationDisplayRef = useRef(null);
+  const autoPlayRef = useRef(false);
 
   // 元数据缓存（每个胶囊的 metadata.json）
   const [metadataCache, setMetadataCache] = useState({});
@@ -140,10 +147,12 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     return { top: type.color, bottom: type.color };
   };
 
-  // 根据胶囊类型ID获取中文名称
+  // 根据胶囊类型ID获取名称（按当前语言）
   const getTypeName = (typeId) => {
     const type = capsuleTypes.find(t => t.id === typeId);
-    return type ? type.name_cn : typeId;
+    if (!type) return typeId;
+    const isEn = i18n.language === 'en' || i18n.language?.startsWith('en');
+    return isEn ? (type.name || typeId) : (type.name_cn || type.name || typeId);
   };
 
   // Phase B.3: 获取胶囊资产状态
@@ -179,11 +188,10 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   const getFileStatusBadge = (capsule) => {
     const status = assetStatusCache[capsule.id];
     if (!status) {
-      // 如果没有状态信息，默认为本地
       return {
         icon: HardDrive,
         color: 'gray',
-        text: '本地',
+        text: t('assetStatus.local'),
         bgColor: 'bg-gray-900/50',
         borderColor: 'border-gray-700',
         textColor: 'text-gray-400'
@@ -197,7 +205,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       return {
         icon: Loader,
         color: 'blue',
-        text: `下载中 ${downloadProgress}%`,
+        text: t('assetStatus.downloadingPct', { pct: downloadProgress }),
         bgColor: 'bg-blue-900/30',
         borderColor: 'border-blue-700',
         textColor: 'text-blue-400',
@@ -210,7 +218,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         return {
           icon: CheckCircle,
           color: 'green',
-          text: '已下载',
+          text: t('assetStatus.downloaded'),
           bgColor: 'bg-green-900/30',
           borderColor: 'border-green-700',
           textColor: 'text-green-400'
@@ -219,7 +227,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         return {
           icon: Loader,
           color: 'blue',
-          text: '下载中',
+          text: t('assetStatus.downloading'),
           bgColor: 'bg-blue-900/30',
           borderColor: 'border-blue-700',
           textColor: 'text-blue-400',
@@ -229,7 +237,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         return {
           icon: Cloud,
           color: 'blue',
-          text: '云端',
+          text: t('assetStatus.cloud'),
           bgColor: 'bg-blue-900/20',
           borderColor: 'border-blue-800',
           textColor: 'text-blue-400'
@@ -239,7 +247,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         return {
           icon: HardDrive,
           color: 'gray',
-          text: '本地',
+          text: t('assetStatus.local'),
           bgColor: 'bg-gray-900/50',
           borderColor: 'border-gray-700',
           textColor: 'text-gray-400'
@@ -544,27 +552,31 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
     const handleTimeUpdate = () => {
       if (audio.duration) {
-        // 更新 ref 而不是 state，避免触发重渲染
         const newProgress = (audio.currentTime / audio.duration) * 100;
         progressRef.current = newProgress;
-
-        // 直接更新进度条 DOM，不触发 React 重渲染
-        if (progressBarRef.current) {
-          progressBarRef.current.style.width = `${newProgress}%`;
+        if (progressBarRef.current) progressBarRef.current.style.width = `${newProgress}%`;
+        if (currentTimeDisplayRef.current) {
+          const m = Math.floor(audio.currentTime / 60);
+          const s = Math.floor(audio.currentTime % 60);
+          currentTimeDisplayRef.current.textContent = `${m}:${s.toString().padStart(2, '0')}`;
         }
       }
     };
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration);
+      if (durationDisplayRef.current) {
+        const m = Math.floor(audio.duration / 60);
+        const s = Math.floor(audio.duration % 60);
+        durationDisplayRef.current.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+      }
     };
 
     const handleEnded = () => {
       setIsPlaying(false);
       progressRef.current = 0;
-      if (progressBarRef.current) {
-        progressBarRef.current.style.width = '0%';
-      }
+      if (progressBarRef.current) progressBarRef.current.style.width = '0%';
+      if (currentTimeDisplayRef.current) currentTimeDisplayRef.current.textContent = '0:00';
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
@@ -588,25 +600,39 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       autoPlayRef.current = true; // 标记需要自动播放
       setNowPlaying(capsule);
       setIsPlaying(true);
-      progressRef.current = 0; // 重置 ref
+      progressRef.current = 0;
       setDuration(0);
-
-      // 重置进度条 DOM
-      if (progressBarRef.current) {
-        progressBarRef.current.style.width = '0%';
-      }
+      if (currentTimeDisplayRef.current) currentTimeDisplayRef.current.textContent = '0:00';
+      if (durationDisplayRef.current) durationDisplayRef.current.textContent = '--:--';
+      if (progressBarRef.current) progressBarRef.current.style.width = '0%';
     }
   };
 
-  // 获取音频URL
-  const getAudioUrl = (capsule) => {
+  // 点击进度条跳转
+  const handleProgressClick = (e) => {
+    const audio = audioRef.current;
+    const track = progressTrackRef.current;
+    if (!audio || !track || !audio.duration) return;
+    const rect = track.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    audio.currentTime = percent * audio.duration;
+    progressRef.current = percent * 100;
+    if (progressBarRef.current) progressBarRef.current.style.width = `${percent * 100}%`;
+    if (currentTimeDisplayRef.current) {
+      const m = Math.floor(audio.currentTime / 60);
+      const s = Math.floor(audio.currentTime % 60);
+      currentTimeDisplayRef.current.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+    }
+  };
+
+  // 获取音频URL（仅在 nowPlaying 变化时更新，避免重渲染导致 src 频繁变化中断播放）
+  const audioUrl = useMemo(() => {
+    if (!nowPlaying) return '';
     const apiBase = window.location.hostname === 'localhost'
       ? 'http://localhost:5002'
       : 'http://localhost:5002';
-    // 添加时间戳防止浏览器缓存
-    const timestamp = Date.now();
-    return `${apiBase}/api/capsules/${capsule.id}/preview?t=${timestamp}`;
-  };
+    return `${apiBase}/api/capsules/${nowPlaying.id}/preview`;
+  }, [nowPlaying?.id]);
 
   // Phase B.3: JIT 智能点击处理
   const handleSmartClick = async (capsule) => {
@@ -623,7 +649,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
     // 2. 如果正在下载，显示提示
     if (status === 'downloading') {
-      toast.info("资源正在下载中，请稍候...");
+      toast.info(t('librarySync.downloadingPleaseWait'));
       return;
     }
 
@@ -654,11 +680,11 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           taskStatus: 'pending'
         });
       } else {
-        toast.error('创建下载任务失败: ' + result.error);
+        toast.error(t('librarySync.createDownloadTaskFailed') + ': ' + result.error);
       }
     } catch (error) {
       console.error('创建下载任务失败:', error);
-      toast.error('创建下载任务失败');
+      toast.error(t('librarySync.createDownloadTaskFailed'));
     }
   };
 
@@ -699,10 +725,10 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
           const percentText = typeof data.percent === 'number' ? ` ${data.percent}%` : '';
           const fileText = data.current_file ? ` · ${data.current_file}` : '';
-          const message = `${data.stage || '上传中'}${fileText}${percentText}`;
+          const message = `${data.stage || t('librarySync.uploadStage')}${fileText}${percentText}`;
 
           if (data.status === 'completed') {
-            toast.update(toastId, data.message || '上传完成', 'success');
+            toast.update(toastId, data.message || t('librarySync.uploadComplete'), 'success');
             if (!doneCalled && onDone) {
               doneCalled = true;
               onDone('completed');
@@ -711,7 +737,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             return;
           }
           if (data.status === 'error') {
-            toast.update(toastId, data.message || '上传失败', 'error');
+            toast.update(toastId, data.message || t('librarySync.uploadFailed'), 'error');
             if (!doneCalled && onDone) {
               doneCalled = true;
               onDone('error');
@@ -744,11 +770,11 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       
       try {
         if (uploadingCapsules[capsule.id]) {
-          toast.info('正在上传中，请稍候...');
+          toast.info(t('librarySync.uploadingPleaseWait'));
           return;
         }
         setUploadingCapsules(prev => ({ ...prev, [capsule.id]: true }));
-        toastId = toast.loading(`正在上传「${capsule.name}」...`);
+        toastId = toast.loading(t('librarySync.uploadingCapsule', { name: capsule.name }));
         const { authFetch } = await import('../utils/apiClient.js');
         
         // 使用轻量级同步端点进行上传
@@ -772,7 +798,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         if (isOk) {
           const result = await response.json();
           if (result.success) {
-            toast.update(toastId, '已上传到云端', 'success');
+            toast.update(toastId, t('librarySync.uploadedToCloud'), 'success');
             toastFinalized = true;
             
             // 🔥 清除该胶囊的状态缓存，强制 UI 刷新
@@ -786,9 +812,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             window.dispatchEvent(new CustomEvent('sync-completed'));
             onSyncComplete && onSyncComplete();
           } else {
-            const message = result.error || '同步存在警告';
+            const message = result.error || t('librarySync.syncWarning');
             const type = response.status === 207 ? 'warning' : 'error';
-            toast.update(toastId, `上传完成: ${message}`, type);
+            toast.update(toastId, t('librarySync.uploadCompleteWithMessage', { message }), type);
             toastFinalized = true;
             if (response.status === 207) {
               window.dispatchEvent(new CustomEvent('sync-completed'));
@@ -796,16 +822,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             }
           }
         } else {
-          toast.update(toastId, '上传失败: HTTP ' + response.status, 'error');
+          toast.update(toastId, t('librarySync.uploadFailedHttp', { status: response.status }), 'error');
           toastFinalized = true;
         }
       } catch (error) {
         console.error('上传失败:', error);
         if (toastId) {
-          toast.update(toastId, '上传失败: ' + error.message, 'error');
+          toast.update(toastId, t('librarySync.uploadFailedError', { message: error.message }), 'error');
           toastFinalized = true;
         } else {
-          toast.error('上传失败: ' + error.message);
+          toast.error(t('librarySync.uploadFailedError', { message: error.message }));
         }
       } finally {
         if (stopProgressPoll) stopProgressPoll();
@@ -831,7 +857,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         if (response.ok) {
           const result = await response.json();
           if (result.success) {
-            toast.success('已同步云端最新数据');
+            toast.success(t('librarySync.syncedCloudData'));
             // 刷新胶囊列表
             // window.location.reload();
             console.error("🛑 [DEBUG] 拦截到重启请求（下载同步后刷新）");
@@ -839,14 +865,14 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             window.dispatchEvent(new CustomEvent('sync-completed'));
             onSyncComplete && onSyncComplete();
           } else {
-            toast.error('同步失败: ' + (result.error || '未知错误'));
+            toast.error(t('librarySync.syncFailedError', { message: result.error || t('librarySync.unknownError') }));
           }
         } else {
-          toast.error('同步失败: HTTP ' + response.status);
+          toast.error(t('librarySync.syncFailedHttp', { status: response.status }));
         }
       } catch (error) {
         console.error('同步失败:', error);
-        toast.error('同步失败: ' + error.message);
+        toast.error(t('librarySync.syncFailedError', { message: error.message }));
       }
     } else if (status === 'synced') {
       // 状态 3: 已同步 - 强制重新上传（用于修复文件缺失问题）
@@ -857,11 +883,11 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       
       try {
         if (uploadingCapsules[capsule.id]) {
-          toast.info('正在上传中，请稍候...');
+          toast.info(t('librarySync.uploadingPleaseWait'));
           return;
         }
         setUploadingCapsules(prev => ({ ...prev, [capsule.id]: true }));
-        toastId = toast.loading(`正在重新上传「${capsule.name}」...`);
+        toastId = toast.loading(t('librarySync.reuploadingCapsule', { name: capsule.name }));
         const { authFetch } = await import('../utils/apiClient.js');
 
         // 使用轻量级同步端点进行强制上传
@@ -885,7 +911,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         if (isOk) {
           const result = await response.json();
           if (result.success) {
-            toast.update(toastId, '已重新上传到云端', 'success');
+            toast.update(toastId, t('librarySync.reuploadedToCloud'), 'success');
             toastFinalized = true;
             
             // 🔥 清除该胶囊的状态缓存，强制 UI 刷新
@@ -899,9 +925,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             window.dispatchEvent(new CustomEvent('sync-completed'));
             onSyncComplete && onSyncComplete();
           } else {
-            const message = result.error || '同步存在警告';
+            const message = result.error || t('librarySync.syncWarning');
             const type = response.status === 207 ? 'warning' : 'error';
-            toast.update(toastId, `重新上传完成: ${message}`, type);
+            toast.update(toastId, t('librarySync.reuploadCompleteWithMessage', { message }), type);
             toastFinalized = true;
             if (response.status === 207) {
               window.dispatchEvent(new CustomEvent('sync-completed'));
@@ -909,16 +935,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             }
           }
         } else {
-          toast.update(toastId, '重新上传失败: HTTP ' + response.status, 'error');
+          toast.update(toastId, t('librarySync.reuploadFailedHttp', { status: response.status }), 'error');
           toastFinalized = true;
         }
       } catch (error) {
         console.error('重新上传失败:', error);
         if (toastId) {
-          toast.update(toastId, '重新上传失败: ' + error.message, 'error');
+          toast.update(toastId, t('librarySync.reuploadFailedError', { message: error.message }), 'error');
           toastFinalized = true;
         } else {
-          toast.error('重新上传失败: ' + error.message);
+          toast.error(t('librarySync.reuploadFailedError', { message: error.message }));
         }
       } finally {
         if (stopProgressPoll) stopProgressPoll();
@@ -929,7 +955,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       }
     } else {
       // 未知状态
-      toast.info('云端状态未知');
+      toast.info(t('librarySync.cloudStatusUnknown'));
     }
   };
 
@@ -947,20 +973,20 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         });
         const result = await response.json();
         if (result.success) {
-          toast.success('已在 REAPER 中打开');
+          toast.success(t('librarySync.openedInReaper'));
         } else {
-          toast.error('打开失败: ' + result.error);
+          toast.error(t('librarySync.openFailed') + ': ' + result.error);
         }
       } catch (error) {
         console.error('导入失败:', error);
-        toast.error('导入失败，请检查REAPER是否运行');
+        toast.error(t('librarySync.importFailed'));
       }
     }
   };
 
   // 下载完成回调
   const handleDownloadComplete = () => {
-    toast.success('下载完成，正在打开 REAPER...');
+    toast.success(t('librarySync.downloadCompleteOpeningReaper'));
     if (downloadDialog) {
       const capsuleId = downloadDialog.capsuleId;
       const capsule = capsules.find(c => c.id === capsuleId);
@@ -1304,8 +1330,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 return (
                   <div key={lens} className="flex items-center gap-1">
                     {lensTags.map((tag, i) => {
-                      // tag 是对象: {word_cn, word_en, word_id, x, y}
-                      const tagText = tag?.word_cn || tag?.word_en || tag?.word || tag?.zh || '';
+                      const tagText = getTagDisplayText(tag);
                       if (!tagText) return null;
 
                       return (
@@ -1346,7 +1371,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             <button
               onClick={() => onEdit && onEdit(capsule)}
               className="p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-colors"
-              title="编辑"
+              title={t('common.edit')}
             >
               <Edit size={16} />
             </button>
@@ -1392,9 +1417,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     <div className="capsules-network-view">
       <div className="network-placeholder">
         <Network size={64} />
-        <h2>神经网络视图</h2>
-        <p>此功能正在开发中...</p>
-        <p>将展示胶囊之间的语义关联网络</p>
+        <h2>{t('library.networkViewTitle')}</h2>
+        <p>{t('library.networkViewDesc')}</p>
+        <p>{t('library.networkViewSub')}</p>
       </div>
     </div>
   );
@@ -1418,15 +1443,12 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
               <button
                 onClick={onBack}
                 className="p-2 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-800 transition-all"
-                title="返回主页"
+                title={t('library.backToHome')}
               >
                 ←
               </button>
               <Box className="text-indigo-500" />
               <h1 className="text-xl font-bold tracking-[0.2em] text-white">SOUND<span className="text-indigo-400">CAPSULE</span>_VAULT</h1>
-              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full border border-zinc-700 font-mono">
-                v2.2
-              </span>
             </div>
 
             <div className="flex items-center gap-4">
@@ -1477,7 +1499,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 <div className="pl-4 text-zinc-500"><Search size={18} /></div>
                 <input
                   type="text"
-                  placeholder="搜索胶囊名称、关键词、插件..."
+                  placeholder={t('library.searchPlaceholder')}
                   className="w-full bg-transparent border-none outline-none py-3 px-4 text-zinc-200 placeholder-zinc-500 font-mono text-sm"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -1516,7 +1538,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                       : 'bg-zinc-900/50 text-zinc-500 border-zinc-800 hover:border-zinc-600 hover:text-zinc-300'
                   }`}
                 >
-                  {type.name_cn}
+                  {i18n.language === 'en' || i18n.language?.startsWith('en') ? (type.name || type.name_cn) : (type.name_cn || type.name)}
                 </button>
               ))}
             </div>
@@ -1529,7 +1551,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         {filteredCapsules.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[40vh] text-zinc-600">
             <Search size={48} className="mb-4 opacity-20" />
-            <p className="tracking-widest text-sm">NO CAPSULES FOUND</p>
+            <p className="tracking-widest text-sm">{t('library.noCapsulesFound').toUpperCase()}</p>
           </div>
         ) : (
           <>
@@ -1539,8 +1561,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         )}
       </div>
 
-      {/* Floating Player - 悬浮播放器 */}
-      {nowPlaying && (
+      {/* Floating Player - 悬浮播放器（已隐藏） */}
+      {false && nowPlaying && (
         <div className="fixed bottom-10 left-6 right-6 lg:left-1/2 lg:right-auto lg:-translate-x-1/2 lg:w-[800px] z-50 animate-in slide-in-from-bottom-10 duration-500">
           <div className="relative bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden group">
             {/* 渐变背景 */}
@@ -1563,7 +1585,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                   {isPlaying && <div className="absolute inset-0 bg-white/20 animate-ping"></div>}
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-sm font-bold text-white tracking-wide truncate max-w-[120px]">{nowPlaying.name || '未命名胶囊'}</span>
+                  <span className="text-sm font-bold text-white tracking-wide truncate max-w-[120px]">{nowPlaying.name || t('library.unnamedCapsule')}</span>
                   <span className="text-[10px] text-zinc-400 flex items-center gap-1">
                     {getTypeName(nowPlaying.capsule_type)}
                   </span>
@@ -1573,25 +1595,27 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
               {/* 中间：控制按钮和进度条 */}
               <div className="flex-1 flex flex-col gap-2">
                 <div className="flex items-center justify-center gap-4">
-                  <button className="text-zinc-400 hover:text-white transition-colors"><SkipBack size={16} /></button>
                   <button
                     onClick={() => setIsPlaying(!isPlaying)}
                     className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg shadow-white/20"
                   >
                     {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" className="ml-1" />}
                   </button>
-                  <button className="text-zinc-400 hover:text-white transition-colors"><SkipForward size={16} /></button>
                 </div>
                 <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
-                  <span>0:00</span>
-                  <div className="relative flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden cursor-pointer group/progress">
+                  <span ref={currentTimeDisplayRef}>0:00</span>
+                  <div
+                    ref={progressTrackRef}
+                    onClick={handleProgressClick}
+                    className="relative flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden cursor-pointer group/progress hover:h-1.5 transition-all"
+                  >
                     <div
                       ref={progressBarRef}
-                      className="absolute top-0 left-0 h-full bg-white/90 rounded-full transition-all duration-300 ease-linear shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                      style={{ width: '0%', backgroundColor: getTypeColors(nowPlaying.capsule_type).top }}
+                      className="absolute top-0 left-0 h-full bg-white/90 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.5)] pointer-events-none"
+                      style={{ width: '0%', backgroundColor: getTypeColors(nowPlaying.capsule_type).top, transition: 'none' }}
                     ></div>
                   </div>
-                  <span className="text-zinc-300">--:--</span>
+                  <span ref={durationDisplayRef} className="text-zinc-300">--:--</span>
                 </div>
               </div>
 
@@ -1602,9 +1626,10 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                     setNowPlaying(null);
                     setIsPlaying(false);
                     progressRef.current = 0;
-                    if (progressBarRef.current) {
-                      progressBarRef.current.style.width = '0%';
-                    }
+                    setDuration(0);
+                    if (progressBarRef.current) progressBarRef.current.style.width = '0%';
+                    if (currentTimeDisplayRef.current) currentTimeDisplayRef.current.textContent = '0:00';
+                    if (durationDisplayRef.current) durationDisplayRef.current.textContent = '--:--';
                   }}
                   className="p-2 rounded-full hover:bg-white/10 text-zinc-500 hover:text-white transition-colors"
                 >
@@ -1632,7 +1657,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       {nowPlaying && (
         <audio
           ref={audioRef}
-          src={getAudioUrl(nowPlaying)}
+          src={audioUrl}
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onCanPlay={() => {

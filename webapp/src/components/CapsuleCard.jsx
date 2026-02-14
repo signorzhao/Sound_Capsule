@@ -1,4 +1,5 @@
 import React from 'react';
+import i18n from '../i18n';
 import {
   Sparkles, Flame, Zap, Wind, Music, Activity, Box,
   Radio, Headphones, Guitar, Piano, Mic, Volume2, Bell,
@@ -16,6 +17,8 @@ const ICON_COMPONENTS = {
 
 const CapsuleCard = ({ capsule, isOpen, onClick, onSave }) => {
   const { type, name, nameCn, icon, color, gradient, id } = capsule;
+  const isEn = i18n.language === 'en' || i18n.language?.startsWith('en');
+  const displayName = isEn ? (name || nameCn) : (nameCn || name);
 
   // 从 gradient 中提取颜色
   let colorTop = color;
@@ -136,7 +139,7 @@ const CapsuleCard = ({ capsule, isOpen, onClick, onSave }) => {
         isOpen ? 'opacity-0 translate-y-8' : 'opacity-100'
       }`}>
         <span className="text-[10px] text-zinc-600 font-bold tracking-[0.5em] mb-1 opacity-80 uppercase">CAPSULE</span>
-        <h3 className="text-lg font-bold text-zinc-300 tracking-[0.2em] uppercase drop-shadow-md">{nameCn}</h3>
+        <h3 className="text-lg font-bold text-zinc-300 tracking-[0.2em] uppercase drop-shadow-md">{displayName}</h3>
       </div>
     </div>
   );

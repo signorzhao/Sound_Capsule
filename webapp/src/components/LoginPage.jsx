@@ -3,11 +3,13 @@
  */
 
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './LoginPage.css';
 
 const LoginPage = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuth();
 
@@ -34,7 +36,7 @@ const LoginPage = () => {
       // 登录成功，导航到主页
       navigate('/');
     } catch (err) {
-      setError(err.message || '登录失败，请重试');
+      setError(err.message || t('auth.loginFailed'));
     } finally {
       setLoading(false);
     }
@@ -49,7 +51,7 @@ const LoginPage = () => {
       <div className="auth-card">
         <div className="auth-header">
           <h1>Sound Capsule</h1>
-          <p>登录到您的账户</p>
+          <p>{t('auth.loginSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -60,7 +62,7 @@ const LoginPage = () => {
           )}
 
           <div className="form-group">
-            <label htmlFor="login">用户名或邮箱</label>
+            <label htmlFor="login">{t('auth.usernameOrEmail')}</label>
             <input
               type="text"
               id="login"
@@ -69,12 +71,12 @@ const LoginPage = () => {
               onChange={handleChange}
               required
               autoFocus
-              placeholder="请输入用户名或邮箱"
+              placeholder={t('auth.usernameOrEmailPlaceholder')}
             />
           </div>
 
           <div className="form-group">
-            <label htmlFor="password">密码</label>
+            <label htmlFor="password">{t('auth.password')}</label>
             <input
               type="password"
               id="password"
@@ -82,7 +84,7 @@ const LoginPage = () => {
               value={formData.password}
               onChange={handleChange}
               required
-              placeholder="请输入密码"
+              placeholder={t('auth.passwordPlaceholder')}
             />
           </div>
 
@@ -91,14 +93,14 @@ const LoginPage = () => {
             className="auth-button"
             disabled={loading}
           >
-            {loading ? '登录中...' : '登录'}
+            {loading ? t('auth.loggingIn') : t('auth.login')}
           </button>
 
           <div className="auth-footer">
             <p>
-              还没有账户？{' '}
+              {t('auth.noAccount')}{' '}
               <button type="button" onClick={goToRegister} className="link-button">
-                立即注册
+                {t('auth.registerNow')}
               </button>
             </p>
           </div>

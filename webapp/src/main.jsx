@@ -5,6 +5,8 @@ import AppRouter from './AppRouter'
 import AppWrapper from './AppWrapper'
 import ConfigTest from './pages/ConfigTest'
 import ToastProvider from './components/Toast'
+import I18nConfigSync from './components/I18nConfigSync'
+import './i18n'
 import './index.css'
 
 // 开发模式下显示配置测试页面
@@ -16,6 +18,7 @@ const ENABLE_AUTH = true  // Phase A: 启用认证系统
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ToastProvider>
+      <I18nConfigSync>
       {SHOW_CONFIG_TEST ? (
         <ConfigTest />
       ) : ENABLE_AUTH ? (
@@ -25,6 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       ) : (
         SKIP_CONFIG_CHECK ? <AppWrapper /> : <AppWrapper />
       )}
+      </I18nConfigSync>
     </ToastProvider>
   </React.StrictMode>,
 )

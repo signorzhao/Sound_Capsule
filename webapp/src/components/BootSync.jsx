@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Cloud, Download, Check, AlertCircle, Sparkles } from 'lucide-react';
 import { useSync } from '../contexts/SyncContext';
 
@@ -14,6 +15,7 @@ import { useSync } from '../contexts/SyncContext';
  * - 支持跳过（30秒后）
  */
 export default function BootSync({ onComplete, onError }) {
+  const { t } = useTranslation();
   const { syncDownloadOnly } = useSync();
 
   const [status, setStatus] = useState('initializing'); // 'initializing' | 'syncing' | 'completed' | 'error'
@@ -136,7 +138,7 @@ export default function BootSync({ onComplete, onError }) {
             <Sparkles className="w-10 h-10 text-purple-400" />
           </div>
           <h1 className="text-4xl font-bold text-white mb-3">Sound Capsule</h1>
-          <p className="text-zinc-400">声音资产协作平台</p>
+          <p className="text-zinc-400">{t('bootSync.subtitle')}</p>
         </div>
 
         {/* 同步卡片 */}
@@ -161,17 +163,17 @@ export default function BootSync({ onComplete, onError }) {
           {/* 状态文本 */}
           <div className="text-center mb-8">
             <h2 className="text-xl font-semibold text-white mb-2">
-              {status === 'initializing' && '初始化同步...'}
-              {status === 'syncing' && '正在同步服务器数据...'}
-              {status === 'completed' && '下载完成'}
-              {status === 'error' && '同步失败'}
+              {status === 'initializing' && t('bootSync.initializing')}
+              {status === 'syncing' && t('bootSync.syncing')}
+              {status === 'completed' && t('bootSync.completed')}
+              {status === 'error' && t('bootSync.error')}
             </h2>
             <p className="text-zinc-400 text-sm">
-              {progressInfo.phase || '准备中...'}
+              {progressInfo.phase || t('bootSync.preparing')}
             </p>
             {progressInfo.currentFile && (
               <p className="text-zinc-500 text-xs mt-1">
-                当前: {progressInfo.currentFile} ({progressInfo.current}/{progressInfo.total})
+                {t('bootSync.current')}: {progressInfo.currentFile} ({progressInfo.current}/{progressInfo.total})
               </p>
             )}
           </div>
@@ -189,7 +191,7 @@ export default function BootSync({ onComplete, onError }) {
 
               {/* 进度信息 */}
               <div className="flex justify-between text-sm text-zinc-500">
-                <span>下载进度</span>
+                <span>{t('bootSync.downloadProgress')}</span>
                 <span>{Math.round(progressInfo.percentage || 0)}%</span>
               </div>
             </div>
@@ -200,7 +202,7 @@ export default function BootSync({ onComplete, onError }) {
             <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-6">
               <div className="text-center text-green-400 text-sm">
                 <Check className="w-5 h-5 inline-block mr-2" />
-                服务器数据同步完成，可以开始使用
+                {t('bootSync.syncComplete')}
               </div>
             </div>
           )}
@@ -210,7 +212,7 @@ export default function BootSync({ onComplete, onError }) {
             <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
               <div className="text-red-400 text-sm">
                 <AlertCircle className="w-5 h-5 inline-block mr-2" />
-                {error || '同步过程中发生错误'}
+                {error || t('bootSync.error')}
               </div>
             </div>
           )}
@@ -231,13 +233,13 @@ export default function BootSync({ onComplete, onError }) {
                   }}
                   className="px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-medium transition-colors"
                 >
-                  重试
+                  {t('bootSync.retry')}
                 </button>
                 <button
                   onClick={handleSkip}
                   className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-medium transition-colors"
                 >
-                  跳过
+                  {t('bootSync.skip')}
                 </button>
               </>
             )}
@@ -246,7 +248,7 @@ export default function BootSync({ onComplete, onError }) {
                 onClick={handleSkip}
                 className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl font-medium transition-colors"
               >
-                跳过（稍后同步）
+                {t('bootSync.skipLater')}
               </button>
             )}
             {status === 'completed' && onCompleteRef.current && (
@@ -254,7 +256,7 @@ export default function BootSync({ onComplete, onError }) {
                 onClick={() => onCompleteRef.current({ completed: true })}
                 className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-xl font-medium transition-all"
               >
-                开始使用
+                {t('bootSync.startUsing')}
               </button>
             )}
           </div>
@@ -262,8 +264,8 @@ export default function BootSync({ onComplete, onError }) {
 
         {/* 提示信息 */}
         <div className="mt-6 text-center text-xs text-zinc-600">
-          <p>仅下载云端数据，不会上传本地修改</p>
-          <p className="mt-1">如需上传本地胶囊，请在胶囊库中点击胶囊的上传按钮</p>
+          <p>{t('bootSync.hint1')}</p>
+          <p className="mt-1">{t('bootSync.hint2')}</p>
         </div>
       </div>
     </div>
