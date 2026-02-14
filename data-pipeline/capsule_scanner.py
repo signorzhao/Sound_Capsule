@@ -123,7 +123,18 @@ def import_capsule_from_output(capsule_info, custom_output_dir=None, owner_id=No
                 for entry in audio_dir.iterdir()
             )
 
-        asset_status = 'local' if has_audio_files else 'cloud_only'
+        # 纯 MIDI 胶囊：media_count=0 且 item_count>0，无 WAV 是预期，视为完整资源
+        info = metadata.get('info', {}) or {}
+        media_count = info.get('media_count', -1)
+        item_count = info.get('item_count', 0)
+        is_midi_only = (media_count == 0 and item_count > 0)
+
+        if has_audio_files:
+            asset_status = 'local'
+        elif is_midi_only:
+            asset_status = 'local'  # 无 WAV 是预期，直接显示为完整
+        else:
+            asset_status = 'cloud_only'
         if capsule_id:
             db.update_asset_status(capsule_id, asset_status)
             # 🔥 如果本地有 Audio 文件，设置 audio_uploaded = 1
