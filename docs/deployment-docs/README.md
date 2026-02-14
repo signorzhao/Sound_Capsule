@@ -13,7 +13,8 @@
 | **检查清单** | [部署说明](./部署说明.md) | 按步骤勾选，避免遗漏 |
 | **SQL 顺序** | [database/执行顺序.md](./database/执行顺序.md) | 建表与 Storage 策略的执行顺序（含 **007 上传策略必做**） |
 
-更多细节（Auth 取消邮件验证、Storage 策略说明、故障排查）见项目根目录 **[docs/SUPABASE_PRIVATE_DEPLOY.md](../SUPABASE_PRIVATE_DEPLOY.md)**。
+更多细节（Auth 取消邮件验证、Storage 策略说明、故障排查）见项目根目录 **[docs/SUPABASE_PRIVATE_DEPLOY.md](../SUPABASE_PRIVATE_DEPLOY.md)**。  
+应用更新记录见 **[docs/应用更新记录.md](../应用更新记录.md)**。
 
 ---
 
