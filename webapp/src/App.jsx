@@ -637,7 +637,7 @@ export default function App() {
       // 如果是"没有选中 item"的错误，REAPER 已经弹出提示了，不需要再显示 toast
       const errorMsg = error.message || '';
       if (!errorMsg.includes('没有选中') && !errorMsg.includes('Items')) {
-        toast.error('保存失败: ' + errorMsg);
+        toast.error(t('common.saveFailedWithMessage', { message: errorMsg }));
       }
     }
   };
@@ -690,7 +690,7 @@ export default function App() {
       // 检查 lensConfig 是否有效
       if (!lensConfig || Object.keys(lensConfig).length === 0) {
         console.error('lensConfig 为空，无法编辑胶囊');
-        toast.error('棱镜配置未加载，请刷新页面后重试');
+        toast.error(t('common.lensConfigNotLoaded'));
         return;
       }
 
@@ -701,7 +701,7 @@ export default function App() {
 
       if (!data.success) {
         console.error('获取标签失败:', data.error || data.message);
-        toast.error('获取标签失败: ' + (data.error || data.message || '未知错误'));
+        toast.error(t('common.getTagsFailedWithMessage', { message: data.error || data.message || t('common.unknownError') }));
         return;
       }
 
@@ -767,7 +767,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('加载胶囊标签失败:', error);
-      toast.error('加载胶囊失败: ' + error.message);
+      toast.error(t('common.loadCapsuleFailed') + ': ' + error.message);
     }
   };
 
@@ -786,7 +786,7 @@ export default function App() {
 
       if (data.success) {
         console.log('删除胶囊成功:', data);
-        toast.success('删除成功');
+        toast.success(t('common.deleteSuccess'));
         // 重新加载列表
         loadCapsules();
       } else {
@@ -794,7 +794,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('删除胶囊失败:', error);
-      toast.error('删除失败: ' + error.message);
+      toast.error(t('common.deleteFailedWithMessage', { message: error.message }));
     }
   };
 
@@ -1001,7 +1001,7 @@ export default function App() {
   const handleFinishAllTags = useCallback(async () => {
 
     if (!currentCapsuleId) {
-      toast.error('没有胶囊ID，无法保存标签');
+      toast.error(t('common.noCapsuleId'));
       return;
     }
 
@@ -1034,7 +1034,7 @@ export default function App() {
       const result = await response.json();
 
       if (result.success) {
-        toast.success(`${isEditMode ? '更新' : '保存'}成功！`);
+        toast.success(isEditMode ? t('common.updateSuccess') : t('common.saveSuccess') + '!');
 
         // 触发胶囊库刷新（清除 tags 缓存）
         setLibraryRefreshTrigger(prev => prev + 1);
@@ -1055,11 +1055,11 @@ export default function App() {
         setCurrentCapsuleId(null);
         setCurrentCapsule(null);
       } else {
-        toast.error('保存失败: ' + (result.error || '未知错误'));
+        toast.error(t('common.saveFailedWithMessage', { message: result.error || t('common.unknownError') }));
       }
     } catch (error) {
       console.error('保存标签失败:', error);
-      toast.error('保存失败: ' + error.message);
+      toast.error(t('common.saveFailedWithMessage', { message: error.message }));
     }
   }, [currentCapsuleId, allSelectedTags, activeLens, selectedTags, isEditMode]);
 

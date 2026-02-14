@@ -14,7 +14,23 @@
     "success": "成功",
     "error": "错误",
     "warning": "警告",
-    "dismiss": "关闭通知"
+    "dismiss": "关闭通知",
+    "deleteSuccess": "删除成功",
+    "deleteFailed": "删除失败",
+    "saveSuccess": "保存成功",
+    "saveFailed": "保存失败",
+    "updateSuccess": "更新成功！",
+    "createSuccess": "创建成功",
+    "fillRequiredFields": "请填写所有必填字段",
+    "idFormatHint": "ID只能包含字母、数字和下划线",
+    "lensConfigNotLoaded": "棱镜配置未加载，请刷新页面后重试",
+    "getTagsFailed": "获取标签失败",
+    "loadCapsuleFailed": "加载胶囊失败",
+    "noCapsuleId": "没有胶囊ID，无法保存标签",
+    "unknownError": "未知错误",
+    "saveFailedWithMessage": "保存失败: {{message}}",
+    "deleteFailedWithMessage": "删除失败: {{message}}",
+    "getTagsFailedWithMessage": "获取标签失败: {{message}}"
   },
   "settings": {
     "title": "应用设置",
@@ -267,12 +283,19 @@
   },
   "library": {
     "searchPlaceholder": "搜索胶囊名称、关键词、插件...",
+    "searchSemanticHint": "支持中英文语义搜索",
     "noCapsulesFound": "未找到胶囊",
+    "semanticSearchNoResults": "语义搜索无结果，已按关键词匹配",
     "backToHome": "返回主页",
     "networkViewTitle": "神经网络视图",
     "networkViewDesc": "此功能正在开发中...",
     "networkViewSub": "将展示胶囊之间的语义关联网络",
-    "unnamedCapsule": "未命名胶囊"
+    "unnamedCapsule": "未命名胶囊",
+    "timeUnknown": "未知时间",
+    "timeJustNow": "刚刚",
+    "timeMinsAgo": "{{count}} 分钟前",
+    "timeHoursAgo": "{{count}} 小时前",
+    "timeDaysAgo": "{{count}} 天前"
   },
   "assetStatus": {
     "local": "本地",
@@ -333,6 +356,7 @@
   "bootSync": {
     "subtitle": "声音资产协作平台",
     "initializing": "初始化同步...",
+    "connecting": "正在连接云端...",
     "syncing": "正在同步服务器数据...",
     "completed": "下载完成",
     "error": "同步失败",

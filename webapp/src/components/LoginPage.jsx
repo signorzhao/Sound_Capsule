@@ -22,7 +22,14 @@ const LoginPage = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // 过滤非 ASCII 字符，避免中文输入法干扰（兜底方案）
+    let filtered = value;
+    if (name === 'login') {
+      filtered = value.replace(/[^a-zA-Z0-9@._+-]/g, '');
+    } else if (name === 'password') {
+      filtered = value.replace(/[^\x20-\x7E]/g, '');
+    }
+    setFormData(prev => ({ ...prev, [name]: filtered }));
     setError(''); // 清除错误提示
   };
 
@@ -48,10 +55,14 @@ const LoginPage = () => {
 
   return (
     <div className="auth-container">
+      {/* 星空背景 */}
+      <div className="starfield" aria-hidden="true" />
+      {/* 背景装饰 */}
+      <div className="auth-bg-blobs" aria-hidden="true" />
       <div className="auth-card">
         <div className="auth-header">
-          <h1>Sound Capsule</h1>
-          <p>{t('auth.loginSubtitle')}</p>
+          <h1 className="auth-title">SOUND<span className="text-indigo-400">CAPSULE</span></h1>
+          <p className="auth-subtitle">{t('auth.loginSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -69,9 +80,16 @@ const LoginPage = () => {
               name="login"
               value={formData.login}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
               autoFocus
+              autoComplete="username"
               placeholder={t('auth.usernameOrEmailPlaceholder')}
+              lang="en"
+              inputMode="latin"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 
@@ -83,8 +101,15 @@ const LoginPage = () => {
               name="password"
               value={formData.password}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
+              autoComplete="current-password"
               placeholder={t('auth.passwordPlaceholder')}
+              lang="en"
+              inputMode="latin"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 

@@ -24,7 +24,16 @@ const RegisterPage = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    // 过滤非 ASCII 字符，避免中文输入法干扰（兜底方案）
+    let filtered = value;
+    if (name === 'username') {
+      filtered = value.replace(/[^a-zA-Z0-9_]/g, '');
+    } else if (name === 'email') {
+      filtered = value.replace(/[^a-zA-Z0-9@._+-]/g, '');
+    } else if (name === 'password' || name === 'confirmPassword') {
+      filtered = value.replace(/[^\x20-\x7E]/g, '');
+    }
+    setFormData(prev => ({ ...prev, [name]: filtered }));
     setError('');
   };
 
@@ -70,10 +79,12 @@ const RegisterPage = () => {
 
   return (
     <div className="auth-container">
+      <div className="starfield" aria-hidden="true" />
+      <div className="auth-bg-blobs" aria-hidden="true" />
       <div className="auth-card">
         <div className="auth-header">
-          <h1>Sound Capsule</h1>
-          <p>{t('auth.registerSubtitle')}</p>
+          <h1 className="auth-title">SOUND<span className="text-indigo-400">CAPSULE</span></h1>
+          <p className="auth-subtitle">{t('auth.registerSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">
@@ -99,10 +110,17 @@ const RegisterPage = () => {
               name="username"
               value={formData.username}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
               autoFocus
+              autoComplete="username"
               placeholder={t('auth.usernamePlaceholder')}
               pattern="[a-zA-Z0-9_]{3,30}"
+              lang="en"
+              inputMode="latin"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 
@@ -114,8 +132,15 @@ const RegisterPage = () => {
               name="email"
               value={formData.email}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
+              autoComplete="email"
               placeholder={t('auth.emailPlaceholder')}
+              lang="en"
+              inputMode="email"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 
@@ -127,9 +152,16 @@ const RegisterPage = () => {
               name="password"
               value={formData.password}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
+              autoComplete="new-password"
               placeholder={t('auth.passwordPlaceholderRegister')}
               minLength={8}
+              lang="en"
+              inputMode="latin"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 
@@ -141,9 +173,16 @@ const RegisterPage = () => {
               name="confirmPassword"
               value={formData.confirmPassword}
               onChange={handleChange}
+              onCompositionStart={(e) => e.preventDefault()}
               required
+              autoComplete="new-password"
               placeholder={t('auth.confirmPasswordPlaceholder')}
               minLength={8}
+              lang="en"
+              inputMode="latin"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
           </div>
 

@@ -2433,9 +2433,31 @@ def upload_to_cloud(current_user):
                                     'y': row[7],            # y
                                 })
                             logger.info(f"[SYNC] 📝 本地胶囊 {local_id} 有 {len(tags)} 个标签")
+                            tag_embeddings = []
+                            try:
+                                cursor.execute(
+                                    "SELECT name, keywords, description FROM capsules WHERE id = ?",
+                                    (local_id,),
+                                )
+                                cap_row = cursor.fetchone()
+                                if cap_row:
+                                    from capsule_embedding_service import update_embedding_for_cloud_capsule
+                                    ok, tag_embeddings = update_embedding_for_cloud_capsule(
+                                        supabase,
+                                        cloud_id,
+                                        name=cap_row[0] or "",
+                                        keywords=(cap_row[1] or ""),
+                                        description=(cap_row[2] or ""),
+                                        tags=tags,
+                                    )
+                                    if ok:
+                                        logger.info(f"[SYNC]   ✓ 已更新胶囊主体 embedding (cloud_id={cloud_id})")
+                            except Exception as emb_ex:
+                                logger.warning(f"[SYNC] 更新胶囊 embedding 失败: {emb_ex}")
+
                             if tags:
                                 logger.info(f"[SYNC] → 上传标签到云端 (capsule_id={cloud_id})...")
-                                supabase.upload_tags(user_id, cloud_id, tags)
+                                supabase.upload_tags(user_id, cloud_id, tags, tag_embeddings=tag_embeddings or [])
                             else:
                                 logger.warning(f"[SYNC] ⚠ 本地胶囊 {local_id} 没有标签")
 

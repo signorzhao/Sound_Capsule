@@ -374,6 +374,42 @@ class SupabaseClient:
             print(f"✗ 上传胶囊失败: {e}")
             return None
 
+    def update_capsule_embedding(self, cloud_capsule_id: str, embedding: List[float]) -> bool:
+        """
+        更新云端胶囊的语义 embedding 向量（用于语义搜索）
+
+        Args:
+            cloud_capsule_id: 云端胶囊 UUID
+            embedding: 384 维向量（paraphrase-multilingual-MiniLM-L12-v2）
+
+        Returns:
+            是否更新成功
+        """
+        try:
+            # pgvector 列需要传字符串格式 "[0.1, -0.2, ...]"
+            embedding_str = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+            result = self.client.table("cloud_capsules").update({
+                "embedding": embedding_str,
+            }).eq("id", cloud_capsule_id).execute()
+            if result.data:
+                return True
+            return False
+        except Exception as e:
+            print(f"✗ 更新胶囊 embedding 失败: {e}")
+            return False
+
+    def update_tag_embedding(self, cloud_tag_id: str, embedding: List[float]) -> bool:
+        """更新云端标签的 embedding（用于回填）"""
+        try:
+            emb_str = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+            result = self.client.table("cloud_capsule_tags").update({
+                "embedding": emb_str,
+            }).eq("id", cloud_tag_id).execute()
+            return bool(result.data)
+        except Exception as e:
+            print(f"✗ 更新标签 embedding 失败: {e}")
+            return False
+
     # ==========================================
     # Storage 文件检查
     # ==========================================
@@ -513,7 +549,13 @@ class SupabaseClient:
     # 标签操作
     # ==========================================
 
-    def upload_tags(self, user_id: str, capsule_cloud_id: str, tags: List[Dict[str, Any]]) -> bool:
+    def upload_tags(
+        self,
+        user_id: str,
+        capsule_cloud_id: str,
+        tags: List[Dict[str, Any]],
+        tag_embeddings: Optional[List[List[float]]] = None,
+    ) -> bool:
         """
         上传标签到云端（先删除旧标签，再插入新标签）
 
@@ -521,6 +563,7 @@ class SupabaseClient:
             user_id: 用户 ID
             capsule_cloud_id: 胶囊云端 ID
             tags: 标签列表，包含 lens, word_id, word_cn, word_en, x, y
+            tag_embeddings: 可选，每个标签的 384 维 embedding，与 tags 一一对应
 
         Returns:
             是否成功
@@ -534,8 +577,9 @@ class SupabaseClient:
             # 再插入新标签
             if tags:
                 tag_records = []
-                for tag in tags:
-                    tag_records.append({
+                emb_list = tag_embeddings or []
+                for i, tag in enumerate(tags):
+                    rec = {
                         'user_id': user_id,
                         'capsule_id': capsule_cloud_id,
                         'lens_id': tag.get('lens') or tag.get('lens_id'),
@@ -544,7 +588,10 @@ class SupabaseClient:
                         'word_en': tag.get('word_en'),
                         'x': tag.get('x'),
                         'y': tag.get('y'),
-                    })
+                    }
+                    if i < len(emb_list) and emb_list[i] and len(emb_list[i]) == 384:
+                        rec['embedding'] = "[" + ",".join(str(float(x)) for x in emb_list[i]) + "]"
+                    tag_records.append(rec)
 
                 # 批量插入
                 self.client.table('cloud_capsule_tags').insert(tag_records).execute()

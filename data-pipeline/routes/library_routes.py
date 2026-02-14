@@ -128,6 +128,127 @@ def get_capsules():
         raise APIError(f"获取胶囊列表失败: {e}", 500)
 
 
+@library_bp.route('/search', methods=['GET'])
+def semantic_search_capsules():
+    """
+    语义搜索胶囊（中英文混合）
+
+    Query Parameters:
+        - q: 搜索词（必填）
+        - limit: 返回数量（默认 20）
+    """
+    try:
+        q = request.args.get('q', '').strip()
+        limit = request.args.get('limit', 20, type=int)
+        limit = min(max(1, limit), 50)
+
+        if not q:
+            return jsonify({
+                'success': True,
+                'capsules': [],
+                'count': 0,
+                'message': 'missing query'
+            })
+
+        # 当前用户 supabase_user_id（用于只搜自己的胶囊；无则传 null，RPC 返回空）
+        current_user_supabase_id = None
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            try:
+                from auth import get_auth_manager
+                auth_manager = get_auth_manager()
+                token = auth_header.split(' ')[1]
+                payload = auth_manager.verify_access_token(token)
+                if payload and payload.get('supabase_user_id'):
+                    current_user_supabase_id = payload['supabase_user_id']
+            except Exception:
+                pass
+
+        # 生成 query embedding
+        try:
+            from hybrid_embedding_service import get_hybrid_service
+            service = get_hybrid_service()
+            query_embedding = service.get_embedding(q)
+        except Exception as e:
+            logger.warning(f"语义搜索 embedding 失败: {e}")
+            return jsonify({
+                'success': True,
+                'capsules': [],
+                'count': 0,
+                'error': 'embedding_unavailable'
+            })
+
+        if not query_embedding or len(query_embedding) != 384:
+            return jsonify({
+                'success': True,
+                'capsules': [],
+                'count': 0,
+                'error': 'embedding_invalid'
+            })
+
+        # 调用 Supabase RPC
+        try:
+            from supabase_client import get_supabase_client
+            supabase = get_supabase_client()
+            if not supabase:
+                return jsonify({
+                    'success': True,
+                    'capsules': [],
+                    'count': 0,
+                    'error': 'search_failed'
+                })
+            rpc_result = supabase.client.rpc(
+                'semantic_search_capsules_tag_level',
+                {
+                    'query_embedding': query_embedding,
+                    'match_limit': limit,
+                    'match_user_id': current_user_supabase_id
+                }
+            ).execute()
+        except Exception as e:
+            logger.warning(f"语义搜索 RPC 失败: {e}")
+            return jsonify({
+                'success': True,
+                'capsules': [],
+                'count': 0,
+                'error': 'search_failed'
+            })
+
+        rows = rpc_result.data if rpc_result.data else []
+        # 相似度阈值：过滤掉过低相似度的结果（0.5 提升准确度，减少无关结果）
+        MIN_SIMILARITY = 0.5
+        rows = [r for r in rows if (r.get('similarity') or 0) >= MIN_SIMILARITY]
+        # 将云端胶囊 id 转为前端可用的格式（本地可能用 cloud_id 关联）
+        capsules = []
+        for row in rows:
+            capsules.append({
+                'id': row.get('id'),
+                'cloud_id': row.get('id'),
+                'user_id': row.get('user_id'),
+                'local_id': row.get('local_id'),
+                'name': row.get('name'),
+                'description': row.get('description'),
+                'capsule_type_id': row.get('capsule_type_id'),
+                'created_at': row.get('created_at'),
+                'updated_at': row.get('updated_at'),
+                'similarity': round(row.get('similarity', 0), 4),
+            })
+
+        return jsonify({
+            'success': True,
+            'capsules': capsules,
+            'count': len(capsules),
+        })
+
+    except APIError:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error(f"❌ 语义搜索失败: {e}")
+        traceback.print_exc()
+        raise APIError(f"语义搜索失败: {e}", 500)
+
+
 @library_bp.route('/<int:capsule_id>', methods=['GET'])
 def get_capsule(capsule_id):
     """获取单个胶囊详情"""

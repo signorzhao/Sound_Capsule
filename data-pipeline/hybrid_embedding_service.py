@@ -101,6 +101,41 @@ class HybridEmbeddingService:
             self._local_model = None
             self._local_model_loaded = False
 
+    def get_embedding(self, text: str, use_cloud: Optional[bool] = None) -> Optional[List[float]]:
+        """
+        获取文本的 embedding 向量（用于语义搜索等）
+
+        Args:
+            text: 输入文本
+            use_cloud: 是否使用云端（None 表示自动判断）
+
+        Returns:
+            embedding 向量 list[float] 或 None
+        """
+        try_cloud = use_cloud if use_cloud is not None else self.prefer_cloud
+        if try_cloud:
+            self.stats['cloud_requests'] += 1
+            emb = self.cloud_client.get_embedding(text)
+            if emb is not None:
+                self.stats['cloud_success'] += 1
+                return emb
+            if self.cloud_client.health_check().get('error') == 'Timeout':
+                self.stats['cloud_timeout'] += 1
+            logger.debug("云端 embedding 失败，降级到本地")
+        self.stats['local_fallback'] += 1
+        if not self.local_model_available and self.lazy_load_local:
+            self.load_local_model()
+        if not self.local_model_available:
+            return None
+        try:
+            vec = self._local_model.encode(text, convert_to_numpy=True)
+            self.stats['local_success'] += 1
+            return vec.tolist()
+        except Exception as e:
+            logger.error(f"本地 embedding 失败: {e}")
+            self.stats['total_failures'] += 1
+            return None
+
     def get_coordinate(
         self,
         text: str,

@@ -184,16 +184,16 @@ export const SyncProvider = ({ children }) => {
       return { success: true, skipped: true, reason: '未登录' };
     }
 
-    setSyncStatus(prev => ({ ...prev, isSyncing: true, syncProgress: 5, syncStep: '正在连接云端...' }));
-    onProgress?.({ phase: '正在连接云端...', current: 0, total: 0, percentage: 5 });
+    setSyncStatus(prev => ({ ...prev, isSyncing: true, syncProgress: 5, syncStep: i18n.t('bootSync.connecting') }));
+    onProgress?.({ phase: i18n.t('bootSync.connecting'), current: 0, total: 0, percentage: 5 });
     setSyncError(null);
 
     try {
       console.log('🔄 [BootSync] 开始仅下载同步...');
 
       // 调用后端的 /api/sync/download-only 端点
-      setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: '正在同步服务器数据...' }));
-      onProgress?.({ phase: '正在同步服务器数据...', current: 0, total: 0, percentage: 10 });
+      setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: i18n.t('bootSync.syncing') }));
+      onProgress?.({ phase: i18n.t('bootSync.syncing'), current: 0, total: 0, percentage: 10 });
 
       const response = await authFetch('http://localhost:5002/api/sync/download-only', {
         method: 'POST',
@@ -374,7 +374,7 @@ setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndic
 
       // 调用后端轻量同步端点，它会自动下载所有 OGG 和 RPP 文件
       onProgress?.({
-        phase: '正在同步服务器数据...',
+        phase: i18n.t('bootSync.syncing'),
         current: 0,
         total: 0,
         percentage: 10

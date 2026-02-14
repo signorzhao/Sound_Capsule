@@ -14,7 +14,23 @@
     "success": "Success",
     "error": "Error",
     "warning": "Warning",
-    "dismiss": "Dismiss notification"
+    "dismiss": "Dismiss notification",
+    "deleteSuccess": "Delete successful",
+    "deleteFailed": "Delete failed",
+    "saveSuccess": "Save successful",
+    "saveFailed": "Save failed",
+    "updateSuccess": "Update successful!",
+    "createSuccess": "Create successful",
+    "fillRequiredFields": "Please fill in all required fields",
+    "idFormatHint": "ID can only contain letters, numbers and underscores",
+    "lensConfigNotLoaded": "Lens config not loaded, please refresh and try again",
+    "getTagsFailed": "Failed to get tags",
+    "loadCapsuleFailed": "Failed to load capsule",
+    "noCapsuleId": "No capsule ID, cannot save tags",
+    "unknownError": "Unknown error",
+    "saveFailedWithMessage": "Save failed: {{message}}",
+    "deleteFailedWithMessage": "Delete failed: {{message}}",
+    "getTagsFailedWithMessage": "Failed to get tags: {{message}}"
   },
   "settings": {
     "title": "Settings",
@@ -267,12 +283,19 @@
   },
   "library": {
     "searchPlaceholder": "Search capsule name, keywords, plugins...",
+    "searchSemanticHint": "Semantic search in Chinese or English",
     "noCapsulesFound": "No capsules found",
+    "semanticSearchNoResults": "No semantic results, showing keyword match",
     "backToHome": "Back to home",
     "networkViewTitle": "Neural network view",
     "networkViewDesc": "This feature is in development...",
     "networkViewSub": "Will show semantic relationship network between capsules",
-    "unnamedCapsule": "Unnamed capsule"
+    "unnamedCapsule": "Unnamed capsule",
+    "timeUnknown": "Unknown",
+    "timeJustNow": "Just now",
+    "timeMinsAgo": "{{count}} min ago",
+    "timeHoursAgo": "{{count}} hr ago",
+    "timeDaysAgo": "{{count}} day ago"
   },
   "assetStatus": {
     "local": "Local",
@@ -333,6 +356,7 @@
   "bootSync": {
     "subtitle": "Sound asset collaboration platform",
     "initializing": "Initializing sync...",
+    "connecting": "Connecting to cloud...",
     "syncing": "Syncing server data...",
     "completed": "Download complete",
     "error": "Sync failed",

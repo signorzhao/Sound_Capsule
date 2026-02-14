@@ -53,14 +53,15 @@ const CapsuleCard = ({ capsule, isOpen, onClick, onSave }) => {
       style={{ perspective: '1000px' }}
       onClick={() => onClick(id)}
     >
-      {/* 底部悬浮光 */}
-      <div
-        className="absolute bottom-[-20px] w-28 h-10 blur-[40px] opacity-80 rounded-full transition-all duration-700 group-hover:opacity-100 group-hover:blur-[50px]"
-        style={{ backgroundColor: colorTop }}
-      ></div>
-
       {/* 胶囊主容器 */}
       <div className="relative w-40 h-80 transition-transform duration-500 ease-out group-hover:scale-105">
+        {/* 底部悬浮光：移到胶囊底部，小点+柔和阴影，避免明显椭圆形 */}
+        <div
+          className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full opacity-50 transition-all duration-700 group-hover:opacity-70 pointer-events-none"
+          style={{
+            boxShadow: `0 0 36px 18px ${colorTop}40`,
+          }}
+        ></div>
         {/* 上半部分 (The Cap) */}
         <div
           className={`absolute left-0 right-0 mx-auto top-0 w-full h-[52%] rounded-t-full rounded-b-sm z-30 overflow-hidden transition-all duration-700 ${

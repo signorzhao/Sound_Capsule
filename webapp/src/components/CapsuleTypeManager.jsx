@@ -170,14 +170,14 @@ function CapsuleTypeManager({ onClose }) {
     try {
       // 验证必填字段
       if (!editingType.id || !editingType.name || !editingType.name_cn) {
-        toast.error('请填写所有必填字段');
+        toast.error(t('common.fillRequiredFields'));
         return;
       }
 
       // 验证ID格式
       const idRegex = /^[a-zA-Z0-9_]+$/;
       if (!idRegex.test(editingType.id)) {
-        toast.error('ID只能包含字母、数字和下划线');
+        toast.error(t('common.idFormatHint'));
         return;
       }
 
@@ -196,16 +196,16 @@ function CapsuleTypeManager({ onClose }) {
       const data = await response.json();
 
       if (data.success) {
-        toast.success(isCreating ? '创建成功' : '保存成功');
+        toast.success(isCreating ? t('common.createSuccess') : t('common.saveSuccess'));
         setEditingType(null);
         setIsCreating(false);
         loadCapsuleTypes();
       } else {
-        toast.error(data.error || '保存失败');
+        toast.error(data.error || t('common.saveFailed'));
       }
     } catch (error) {
       console.error('保存失败:', error);
-      toast.error('保存失败: ' + error.message);
+      toast.error(t('common.saveFailedWithMessage', { message: error.message }));
     }
   };
 
@@ -223,14 +223,14 @@ function CapsuleTypeManager({ onClose }) {
       const data = await response.json();
 
       if (data.success) {
-        toast.success('删除成功');
+        toast.success(t('common.deleteSuccess'));
         loadCapsuleTypes();
       } else {
-        toast.error(data.error || '删除失败');
+        toast.error(data.error || t('common.deleteFailed'));
       }
     } catch (error) {
       console.error('删除失败:', error);
-      toast.error('删除失败: ' + error.message);
+      toast.error(t('common.deleteFailedWithMessage', { message: error.message }));
     }
   };
 

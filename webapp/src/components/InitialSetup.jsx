@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import i18n, { i18nLangToConfig } from '../i18n';
 import { FolderOpen, Settings, Check, AlertCircle } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig } from '../utils/configApi';
@@ -100,7 +101,7 @@ export default function InitialSetup({ onComplete }) {
         reaper_ip: null,  // 不再需要
         export_dir: config.export_dir,
         username: null,  // 不再需要
-        language: 'zh-CN'
+        language: i18nLangToConfig(i18n.language) || 'en-US'
       });
 
       console.log('✅ Tauri 配置保存成功');

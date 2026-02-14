@@ -47,6 +47,11 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 搜索和过滤
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('all');
+  // 语义搜索（中英文混合）
+  const [semanticSearchResults, setSemanticSearchResults] = useState([]);
+  const [semanticSearchLoading, setSemanticSearchLoading] = useState(false);
+  const [semanticSearchError, setSemanticSearchError] = useState(null);
+  const semanticSearchDebounceRef = useRef(null);
 
   // 管理模式
   const [isAdmin, setIsAdmin] = useState(false);
@@ -440,29 +445,99 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, capsules, refreshTrigger]); // 🔥 移除 tagsCache 依赖，避免无限循环
 
-  // 过滤后的胶囊列表
+  // 语义搜索：debounce 后请求 API
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) {
+      setSemanticSearchResults([]);
+      setSemanticSearchLoading(false);
+      setSemanticSearchError(null);
+      return;
+    }
+    if (semanticSearchDebounceRef.current) {
+      clearTimeout(semanticSearchDebounceRef.current);
+    }
+    semanticSearchDebounceRef.current = setTimeout(async () => {
+      setSemanticSearchLoading(true);
+      setSemanticSearchError(null);
+      try {
+        const { authFetch } = await import('../utils/apiClient.js');
+        const response = await authFetch(
+          `http://localhost:5002/api/capsules/search?q=${encodeURIComponent(q)}&limit=50`
+        );
+        const data = await response.json();
+        if (data.success && Array.isArray(data.capsules)) {
+          setSemanticSearchResults(data.capsules);
+          setSemanticSearchError(data.error || null);
+        } else {
+          setSemanticSearchResults([]);
+          setSemanticSearchError(data.error || 'search_failed');
+        }
+      } catch (err) {
+        setSemanticSearchResults([]);
+        setSemanticSearchError('search_failed');
+      } finally {
+        setSemanticSearchLoading(false);
+      }
+    }, 400);
+    return () => {
+      if (semanticSearchDebounceRef.current) {
+        clearTimeout(semanticSearchDebounceRef.current);
+      }
+    };
+  }, [searchQuery]);
+
+  // 过滤后的胶囊列表（语义搜索优先 + 类型过滤，降级为关键词匹配）
   const filteredCapsules = useMemo(() => {
-    return capsules.filter(capsule => {
-      // 类型过滤
-      if (selectedType !== 'all' && capsule.capsule_type !== selectedType) {
-        return false;
+    let list = capsules;
+
+    // 类型过滤
+    if (selectedType !== 'all') {
+      list = list.filter(c => c.capsule_type === selectedType);
+    }
+
+    if (!searchQuery.trim()) {
+      return list;
+    }
+
+    // 有语义搜索结果时：只保留在结果中的胶囊，并按相似度排序
+    if (semanticSearchResults.length > 0) {
+      const byCloudId = new Map(semanticSearchResults.map(r => [r.id || r.cloud_id, r]));
+      const byLocalId = new Map(semanticSearchResults.map(r => [r.local_id, r]));
+      const ordered = [];
+      const seen = new Set();
+      for (const r of semanticSearchResults) {
+        const cloudId = r.id || r.cloud_id;
+        const localId = r.local_id;
+        const match = list.find(
+          c => (c.cloud_id && c.cloud_id === cloudId) || (localId != null && c.id === localId)
+        );
+        if (match && !seen.has(match.id)) {
+          seen.add(match.id);
+          ordered.push({ ...match, _similarity: r.similarity });
+        }
       }
+      // 未在结果中的本地胶囊也保留（可能云端无 embedding），按关键词兜底
+      const rest = list.filter(c => !seen.has(c.id));
+      const query = searchQuery.toLowerCase();
+      const keywordFiltered = rest.filter(c => {
+        const text = [c.name, c.keywords, c.capsule_type].join(' ').toLowerCase();
+        return text.includes(query);
+      });
+      return [...ordered, ...keywordFiltered];
+    }
 
-      // 搜索过滤 (搜索文件夹名、关键词)
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const searchableText = [
-          capsule.name,
-          capsule.keywords,
-          capsule.capsule_type
-        ].join(' ').toLowerCase();
-
-        return searchableText.includes(query);
-      }
-
-      return true;
+    // 无语义结果或未就绪：降级为关键词匹配
+    const query = searchQuery.toLowerCase();
+    return list.filter(capsule => {
+      const searchableText = [
+        capsule.name,
+        capsule.keywords,
+        capsule.capsule_type
+      ].join(' ').toLowerCase();
+      return searchableText.includes(query);
     });
-  }, [capsules, searchQuery, selectedType]);
+  }, [capsules, searchQuery, selectedType, semanticSearchResults]);
 
   // 统计信息
   const stats = useMemo(() => {
@@ -480,7 +555,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
   // 格式化时间
   const formatTime = (timestamp) => {
-    if (!timestamp) return '未知时间';
+    if (!timestamp) return t('library.timeUnknown');
 
     const date = new Date(timestamp);
     const now = new Date();
@@ -489,12 +564,13 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return '刚刚';
-    if (diffMins < 60) return `${diffMins}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 7) return `${diffDays}天前`;
+    if (diffMins < 1) return t('library.timeJustNow');
+    if (diffMins < 60) return t('library.timeMinsAgo', { count: diffMins });
+    if (diffHours < 24) return t('library.timeHoursAgo', { count: diffHours });
+    if (diffDays < 7) return t('library.timeDaysAgo', { count: diffDays });
 
-    return date.toLocaleDateString('zh-CN');
+    const locale = (i18n.language === 'zh' || i18n.language?.startsWith('zh')) ? 'zh-CN' : 'en-US';
+    return date.toLocaleDateString(locale);
   };
 
   // 格式化文件大小
@@ -1028,12 +1104,14 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         className="group relative flex flex-col items-center justify-center z-10 hover:z-40 transition-all duration-300"
         style={{ perspective: '1000px' }}
       >
-        {/* 底部发光效果 */}
+        {/* 底部发光效果：小点+柔和阴影，置于胶囊底部 */}
         <div
-          className={`absolute bottom-0 w-32 h-10 blur-[40px] rounded-full transition-all duration-700 ${
-            isOpen ? 'opacity-100 blur-[60px]' : isActive ? 'opacity-80 blur-[50px]' : 'opacity-40 group-hover:opacity-80'
+          className={`absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full transition-all duration-700 pointer-events-none ${
+            isOpen ? 'opacity-60' : isActive ? 'opacity-50' : 'opacity-30 group-hover:opacity-50'
           }`}
-          style={{ backgroundColor: typeInfo.top }}
+          style={{
+            boxShadow: `0 0 32px 14px ${typeInfo.top}35`,
+          }}
         ></div>
 
         {/* 胶囊主体 */}
@@ -1492,11 +1570,17 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           </div>
 
           <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
-            {/* 搜索框 */}
+            {/* 搜索框（支持中英文语义搜索） */}
             <div className="relative w-full lg:max-w-xl group">
               <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-r from-indigo-500/50 to-purple-500/50 opacity-0 group-focus-within:opacity-100 blur transition duration-500"></div>
               <div className="relative flex items-center bg-zinc-900 border border-zinc-700 rounded-xl overflow-hidden shadow-sm">
-                <div className="pl-4 text-zinc-500"><Search size={18} /></div>
+                <div className="pl-4 text-zinc-500">
+                  {semanticSearchLoading ? (
+                    <Loader size={18} className="animate-spin" />
+                  ) : (
+                    <Search size={18} />
+                  )}
+                </div>
                 <input
                   type="text"
                   placeholder={t('library.searchPlaceholder')}

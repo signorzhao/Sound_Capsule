@@ -472,13 +472,15 @@ class SyncService:
                     # 2. 获取本地标签
                     local_tags = tags_service.get_tags(cap_id)
                     
-                    # 2.1 获取本地聚合的 keywords 字符串
+                    # 2.1 获取本地 name, keywords, description（用于 embedding）
                     conn_kw = self._get_connection()
                     try:
                         cursor_kw = conn_kw.cursor()
-                        cursor_kw.execute("SELECT keywords FROM capsules WHERE id = ?", (cap_id,))
+                        cursor_kw.execute("SELECT name, keywords, description FROM capsules WHERE id = ?", (cap_id,))
                         row_kw = cursor_kw.fetchone()
-                        local_keywords = row_kw[0] if row_kw else None
+                        cap_name_for_emb = row_kw[0] if row_kw else cap_name
+                        local_keywords = row_kw[1] if row_kw and len(row_kw) > 1 else None
+                        local_description = row_kw[2] if row_kw and len(row_kw) > 2 else None
                     finally:
                         conn_kw.close()
                     
@@ -488,14 +490,29 @@ class SyncService:
                     # 4. 比对并决定同步方向
                     # 简单策略：以本地为准上传（因为用户只在本地修改）
                     if local_tags:
-                        # 将本地标签上传到云端
+                        # 语义搜索（标签级）：先算主体+标签 embedding，再上传
+                        tag_embeddings = []
+                        try:
+                            from capsule_embedding_service import update_embedding_for_cloud_capsule
+                            ok, tag_embeddings = update_embedding_for_cloud_capsule(
+                                supabase,
+                                cloud_id,
+                                name=cap_name_for_emb or "",
+                                keywords=(local_keywords or ""),
+                                description=(local_description or ""),
+                                tags=local_tags,
+                            )
+                            if ok:
+                                logger.info(f"   ✓ 已更新胶囊主体 embedding: {cap_name}")
+                        except Exception as emb_ex:
+                            logger.warning(f"更新胶囊 embedding 失败: {emb_ex}")
+
+                        # 将本地标签上传到云端（含标签 embedding）
                         logger.info(f"   → 上传标签: {cap_name} (cloud_id={cloud_id}, {len(local_tags)} 个)")
-                        success = supabase.upload_tags(user_id, cloud_id, local_tags)
+                        success = supabase.upload_tags(user_id, cloud_id, local_tags, tag_embeddings=tag_embeddings or [])
                         if success:
                             uploaded += 1
                             logger.info(f"   ✓ 上传标签: {cap_name} ({len(local_tags)} 个)")
-                            
-                            # 同时更新云端 metadata.keywords（保持一致性）
                             if local_keywords:
                                 supabase.update_capsule_keywords(user_id, cap_id, local_keywords)
                                 logger.info(f"   ✓ 更新云端 keywords: {local_keywords[:30]}...")
@@ -1664,8 +1681,24 @@ class SyncService:
                                     conn_tags.close()
                                     
                                     if local_tags and cloud_id:
+                                        tag_embeddings = []
+                                        try:
+                                            from capsule_embedding_service import update_embedding_for_cloud_capsule
+                                            ok, tag_embeddings = update_embedding_for_cloud_capsule(
+                                                supabase,
+                                                cloud_id,
+                                                name=capsule_name or "",
+                                                keywords=(capsule_data.get("keywords") or ""),
+                                                description=(capsule_data.get("description") or ""),
+                                                tags=local_tags,
+                                            )
+                                            if ok:
+                                                print(f"   ✓ 已更新胶囊主体 embedding")
+                                        except Exception as emb_ex:
+                                            print(f"   ⚠️ 更新胶囊 embedding 失败: {emb_ex}")
+
                                         print(f"   🏷️  上传 {len(local_tags)} 个关键词到 cloud_capsule_tags...")
-                                        tags_uploaded = supabase.upload_tags(user_id, cloud_id, local_tags)
+                                        tags_uploaded = supabase.upload_tags(user_id, cloud_id, local_tags, tag_embeddings=tag_embeddings or [])
                                         if tags_uploaded:
                                             print(f"   ✓ 关键词上传成功")
                                         else:

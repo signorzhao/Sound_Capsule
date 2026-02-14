@@ -90,7 +90,7 @@ export default function BootSync({ onComplete, onError }) {
           }, 1000);
         } else if (!result.skipped) {
           // 如果不是跳过，则视为错误
-          throw new Error(result.error || '同步失败');
+          throw new Error(result.error || t('bootSync.error'));
         }
 
       } catch (err) {
@@ -98,7 +98,7 @@ export default function BootSync({ onComplete, onError }) {
         if (!mounted) return;
 
         setStatus('error');
-        setError(err.message || '未知错误');
+        setError(err.message || t('common.unknownError'));
 
         if (onErrorRef.current) onErrorRef.current(err);
       }
