@@ -12,6 +12,7 @@ venv/
 env/
 .env
 .env.supabase
+data-pipeline/.env.supabase_*.zip
 
 # Build outputs
 dist/
