@@ -344,10 +344,12 @@ class SupabaseClient:
             capsule_name = capsule_data.get('name')
             existing = None
             
-            # 1. 优先使用 local_id 匹配
-            result_by_id = self.client.table('cloud_capsules').select('id, version').eq('user_id', user_id).eq('local_id', capsule_data.get('id')).execute()
-            if result_by_id.data:
-                existing = result_by_id.data[0]
+            # 1. 优先使用 local_id 匹配（id 为空时跳过，避免 eq(None) 导致请求失败）
+            local_id = capsule_data.get('id')
+            if local_id is not None:
+                result_by_id = self.client.table('cloud_capsules').select('id, version').eq('user_id', user_id).eq('local_id', local_id).execute()
+                if result_by_id.data:
+                    existing = result_by_id.data[0]
             
             # 2. 如果 local_id 匹配失败，尝试使用 name 匹配（更稳定）
             if not existing and capsule_name:
@@ -413,6 +415,65 @@ class SupabaseClient:
     # ==========================================
     # Storage 文件检查
     # ==========================================
+
+    def create_signed_upload_url(self, storage_path: str, bucket_name: str = 'capsule-files') -> Dict[str, Any]:
+        """
+        生成 Storage 签名上传 URL（供前端直传）
+
+        Args:
+            storage_path: 对象路径（包含用户前缀）
+            bucket_name: bucket 名称
+
+        Returns:
+            Supabase SDK 返回的签名信息；失败时返回带 error 的字典
+        """
+        try:
+            result = self.client.storage.from_(bucket_name).create_signed_upload_url(storage_path)
+            if isinstance(result, dict):
+                return result
+            if hasattr(result, 'data'):
+                return result.data or {}
+            return {'raw': result}
+        except Exception as e:
+            self._last_storage_error = str(e)
+            return {'error': str(e)}
+
+    def create_signed_download_url(
+        self,
+        storage_path: str,
+        expires_in: int = 900,
+        bucket_name: str = 'capsule-files'
+    ) -> Dict[str, Any]:
+        """
+        生成 Storage 签名下载 URL（供 sidecar 无高权 key 下载文件）。
+        """
+        try:
+            result = self.client.storage.from_(bucket_name).create_signed_url(storage_path, expires_in)
+            data = result.data if hasattr(result, 'data') else result
+            if not isinstance(data, dict):
+                return {'error': 'signed_url_result_invalid'}
+
+            signed_url = data.get('signedURL') or data.get('signedUrl') or data.get('signed_url')
+            if not signed_url:
+                return {'error': 'signed_url_missing'}
+
+            if signed_url.startswith('http://') or signed_url.startswith('https://'):
+                full_url = signed_url
+            else:
+                base = (self.url or '').rstrip('/')
+                if signed_url.startswith('/'):
+                    full_url = f"{base}/storage/v1{signed_url}"
+                else:
+                    full_url = f"{base}/storage/v1/{signed_url}"
+
+            return {
+                'signed_url': full_url,
+                'expires_in': expires_in,
+                'path': storage_path,
+            }
+        except Exception as e:
+            self._last_storage_error = str(e)
+            return {'error': str(e)}
 
     def storage_file_exists(self, user_id: str, capsule_folder_name: str, filename: str) -> bool:
         """检查 Storage 中指定文件是否存在"""

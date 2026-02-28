@@ -2,7 +2,9 @@
  * 认证相关 API 调用
  */
 
-const API_BASE_URL = 'http://localhost:5002/api';
+import { CLOUD_API_BASE } from './apiOrigins';
+
+const API_BASE_URL = CLOUD_API_BASE;
 
 /**
  * 用户注册

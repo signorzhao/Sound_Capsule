@@ -10,11 +10,11 @@ import {
 import { useToast } from './Toast';
 import UserMenu from './UserMenu';
 import SyncIndicator from './SyncIndicator';
-import DownloadProgressDialog from './DownloadProgressDialog';
 import SmartActionButton from './SmartActionButton';
-import DownloadConfirmModal from './DownloadConfirmModal';
 import CloudSyncIcon from './CloudSyncIcon';
 import { getTagDisplayText } from '../utils/tagUtils';
+import { CLOUD_API_BASE, LOCAL_API_BASE, DIRECT_UPLOAD_SIGNED_URL } from '../utils/apiOrigins';
+import { authFetch } from '../utils/apiClient';
 import i18n from '../i18n';
 import './CapsuleLibrary.css';
 
@@ -86,12 +86,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
   }, [refreshTrigger]);
 
-  // 下载状态管理 (Phase B.3)
-  const [downloadDialog, setDownloadDialog] = useState(null); // { capsuleId, capsuleName, taskStatus }
+  // 下载状态缓存
   const [assetStatusCache, setAssetStatusCache] = useState({}); // 资产状态缓存
-
-  // JIT 弹窗状态
-  const [modalCapsule, setModalCapsule] = useState(null); // 当前显示弹窗的胶囊
 
   // 单个胶囊上传中状态（用于提示与防重复点击）
   const [uploadingCapsules, setUploadingCapsules] = useState({});
@@ -106,7 +102,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 加载胶囊类型数据
   const loadCapsuleTypes = async () => {
     try {
-      const response = await fetch('http://localhost:5002/api/capsule-types');
+      const response = await fetch(`${LOCAL_API_BASE}/capsule-types`);
       const data = await response.json();
       if (data.success && data.types && data.types.length > 0) {
         setCapsuleTypes(data.types);
@@ -168,7 +164,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
     try {
       const { authFetch } = await import('../utils/apiClient.js');
-      const response = await authFetch(`http://localhost:5002/api/capsules/${capsuleId}/asset-status`);
+      const response = await authFetch(`${LOCAL_API_BASE}/capsules/${capsuleId}/asset-status`);
       if (!response.ok) {
         // 如果端点不存在，回退到旧的逻辑
         return { asset_status: 'local', file_sync_status: 'full' };
@@ -276,7 +272,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
 
     try {
-      const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/metadata`);
+      const response = await fetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/metadata`);
       if (!response.ok) {
         // 404 是正常的，很多胶囊没有 metadata
         return null;
@@ -407,7 +403,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         // 并发加载所有 tags，但使用 Promise.allSettled 避免单个失败影响全部
         const promises = capsulesToLoad.map(async (capsule) => {
           try {
-            const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/tags`);
+            const response = await fetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/tags`);
 
             if (!response.ok) {
               console.warn(`加载胶囊 ${capsule.id} tags 失败: HTTP ${response.status}`);
@@ -463,7 +459,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       try {
         const { authFetch } = await import('../utils/apiClient.js');
         const response = await authFetch(
-          `http://localhost:5002/api/capsules/search?q=${encodeURIComponent(q)}&limit=50`
+          `${LOCAL_API_BASE}/capsules/search?q=${encodeURIComponent(q)}&limit=50`
         );
         const data = await response.json();
         if (data.success && Array.isArray(data.capsules)) {
@@ -704,10 +700,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 获取音频URL（仅在 nowPlaying 变化时更新，避免重渲染导致 src 频繁变化中断播放）
   const audioUrl = useMemo(() => {
     if (!nowPlaying) return '';
-    const apiBase = window.location.hostname === 'localhost'
-      ? 'http://localhost:5002'
-      : 'http://localhost:5002';
-    return `${apiBase}/api/capsules/${nowPlaying.id}/preview`;
+    return `${LOCAL_API_BASE}/capsules/${nowPlaying.id}/preview`;
   }, [nowPlaying?.id]);
 
   // Phase B.3: JIT 智能点击处理
@@ -729,55 +722,97 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       return;
     }
 
-    // 3. 否则 (cloud_only 或 partial)，弹出决策框
-    setModalCapsule(capsule);
+    // 3. 否则 (cloud_only 或 partial)，直接下载 WAV，不弹二级菜单
+    await startWavDownload(capsule);
   };
 
-  // 用户确认下载
-  const handleDownloadConfirm = async () => {
-    if (!modalCapsule) return;
-
-    setModalCapsule(null); // 关闭弹窗
-
+  // 直接下载 WAV（不自动打开）
+  const startWavDownload = async (capsule) => {
     try {
-      // 调用后端开始下载完整资源
-      const response = await fetch(`http://localhost:5002/api/capsules/${modalCapsule.id}/download-assets`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        // 显示下载进度对话框
-        setDownloadDialog({
-          capsuleId: modalCapsule.id,
-          capsuleName: modalCapsule.name || modalCapsule.capsule_type,
-          taskStatus: 'pending'
-        });
-      } else {
-        toast.error(t('librarySync.createDownloadTaskFailed') + ': ' + result.error);
+      const accessToken = localStorage.getItem('access_token');
+      if (!accessToken) {
+        toast.error(t('auth.loginRequired') || '请先登录后再下载');
+        return;
       }
+
+      const toastId = toast.loading(`${t('download.downloading')} ${capsule.name || capsule.capsule_type}`);
+
+      // 1) 向云端拉取完整资产签名清单（仅音频）
+      const capsuleRef = capsule.cloud_id || capsule.id;
+      const manifestResp = await authFetch(
+        `${CLOUD_API_BASE}/cloud/capsules/${encodeURIComponent(capsuleRef)}/download-manifest`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            include_preview: false,
+            include_rpp: false,
+            include_metadata: false,
+            include_audio: true,
+          }),
+        }
+      );
+      const manifestJson = await manifestResp.json().catch(() => ({}));
+      if (!manifestResp.ok || !manifestJson?.success) {
+        const errMsg = manifestJson?.error || `download-manifest HTTP ${manifestResp.status}`;
+        toast.update(toastId, errMsg, 'error');
+        return;
+      }
+
+      const files = manifestJson?.data?.files || [];
+      if (!Array.isArray(files) || files.length === 0) {
+        toast.update(toastId, t('download.downloadFailed') + ': 无可下载 WAV 清单', 'error');
+        return;
+      }
+
+      // 2) 将清单原样提交本地 sidecar 执行下载落盘
+      const applyResp = await authFetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/apply-download-manifest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files,
+          cloud_api_origin: CLOUD_API_BASE.replace(/\/api$/, ''),
+        }),
+      });
+      const applyJson = await applyResp.json().catch(() => ({}));
+      if (!applyResp.ok || !applyJson?.success) {
+        const errMsg = applyJson?.error || `apply-download-manifest HTTP ${applyResp.status}`;
+        toast.update(toastId, errMsg, 'error');
+        return;
+      }
+
+      const downloadedFiles = applyJson?.data?.downloaded_files ?? 0;
+      const skippedFiles = applyJson?.data?.skipped_files ?? 0;
+      const errors = applyJson?.data?.errors || [];
+      if (errors.length > 0) {
+        toast.update(toastId, `${t('download.downloadFailed')}: ${errors[0]}`, 'error');
+      } else {
+        toast.update(toastId, `${t('download.completed')} (${downloadedFiles}, skipped ${skippedFiles})`, 'success');
+      }
+
+      // 刷新该胶囊资产状态，右侧按钮可切换为 Open
+      setAssetStatusCache(prev => {
+        const next = { ...prev };
+        delete next[capsule.id];
+        return next;
+      });
+      await getAssetStatus(capsule.id);
+      onSyncComplete && onSyncComplete();
     } catch (error) {
       console.error('创建下载任务失败:', error);
       toast.error(t('librarySync.createDownloadTaskFailed'));
     }
   };
 
-  // 用户选择仅打开 RPP（离线模式）
-  const handleOpenRppOnly = async () => {
-    if (!modalCapsule) return;
-
-    const capsule = modalCapsule;
-    setModalCapsule(null); // 关闭弹窗
-    await openCapsuleInReaper(capsule, true); // skipWavCheck = true
-  };
-
   // 旧函数保持兼容
   const handleImportToReaper = handleSmartClick;
 
   // Phase G: 云同步处理函数
-  const handleCloudSync = async (capsule) => {
+  const handleCloudSync = async (capsule, action = null) => {
+    if (action === 'download') {
+      await startWavDownload(capsule);
+      return;
+    }
     if (capsule.is_mine !== true) {
       return;
     }
@@ -797,6 +832,13 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       status = 'synced';
     }
 
+    // 若图标已明确传入动作，优先按动作路由
+    if (action === 'upload') {
+      status = 'local';
+    } else if (action === 'sync') {
+      status = 'outdated';
+    }
+
     const startUploadProgressPoll = async (capsuleId, toastId, onDone) => {
       const { authFetch } = await import('../utils/apiClient.js');
       let active = true;
@@ -805,7 +847,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       const pollOnce = async () => {
         if (!active) return;
         try {
-          const response = await authFetch(`http://localhost:5002/api/sync/upload-progress?capsule_id=${capsuleId}`, {
+          const response = await authFetch(`${LOCAL_API_BASE}/sync/upload-progress?capsule_id=${capsuleId}`, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -870,15 +912,39 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         toastId = toast.loading(t('librarySync.uploadingCapsule', { name: capsule.name }));
         const { authFetch } = await import('../utils/apiClient.js');
         
-        // 使用轻量级同步端点进行上传
-        const requestPromise = authFetch('http://localhost:5002/api/sync/lightweight', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            include_previews: true,
-            capsule_ids: [capsule.id] // 只同步指定的胶囊
-          })
-        });
+        const uploadPayload = {
+          capsule_folder_name: capsule.file_path || capsule.name,
+          capsule: {
+            id: capsule.id,
+            name: capsule.name,
+            file_path: capsule.file_path || capsule.name,
+            capsule_type: capsule.capsule_type || 'magic',
+            keywords: capsule.keywords || '',
+            description: capsule.description || '',
+            metadata: {
+              preview_audio: capsule.preview_audio || null,
+              rpp_file: capsule.rpp_file || null,
+            },
+          },
+          tags: capsule.tags || [],
+          coordinates: capsule.coordinates || [],
+          files: {},
+        };
+
+        const requestPromise = DIRECT_UPLOAD_SIGNED_URL
+          ? authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(uploadPayload),
+            })
+          : authFetch(`${LOCAL_API_BASE}/sync/lightweight`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                include_previews: true,
+                capsule_ids: [capsule.id],
+              }),
+            });
         stopProgressPoll = await startUploadProgressPoll(capsule.id, toastId, (status) => {
           if (status === 'completed') {
             window.dispatchEvent(new CustomEvent('sync-completed'));
@@ -939,7 +1005,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const { authFetch } = await import('../utils/apiClient.js');
         
         // 使用轻量级同步端点拉取最新数据
-        const response = await authFetch('http://localhost:5002/api/sync/lightweight', {
+        const response = await authFetch(`${LOCAL_API_BASE}/sync/lightweight`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
@@ -971,7 +1037,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       // 状态 2: 云端已存在但关键词不一致 -> 同步关键词
       try {
         const { authFetch } = await import('../utils/apiClient.js');
-        const response = await authFetch('http://localhost:5002/api/sync/sync-tags', {
+        const response = await authFetch(`${CLOUD_API_BASE}/sync/sync-tags`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1012,7 +1078,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const { authFetch } = await import('../utils/apiClient.js');
 
         // 使用轻量级同步端点进行强制上传
-        const requestPromise = authFetch('http://localhost:5002/api/sync/lightweight', {
+        const requestPromise = authFetch(`${LOCAL_API_BASE}/sync/lightweight`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1087,7 +1153,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     } else {
       // 默认实现：调用API
       try {
-        const response = await fetch(`http://localhost:5002/api/capsules/${capsule.id}/open`, {
+        const response = await fetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/open`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ skip_wav_check: skipWavCheck })
@@ -1103,35 +1169,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         toast.error(t('librarySync.importFailed'));
       }
     }
-  };
-
-  // 下载完成回调
-  const handleDownloadComplete = () => {
-    toast.success(t('librarySync.downloadCompleteOpeningReaper'));
-    if (downloadDialog) {
-      const capsuleId = downloadDialog.capsuleId;
-      const capsule = capsules.find(c => c.id === capsuleId);
-      
-      // 🔥 清除该胶囊的状态缓存，强制重新获取
-      setAssetStatusCache(prev => {
-        const newCache = { ...prev };
-        delete newCache[capsuleId];
-        return newCache;
-      });
-      
-      // 🔥 重新获取该胶囊的状态
-      getAssetStatus(capsuleId);
-      
-      // 🔥 触发父组件刷新（如果提供了回调）
-      if (onSyncComplete) {
-        onSyncComplete();
-      }
-      
-      if (capsule) {
-        openCapsuleInReaper(capsule, false);
-      }
-    }
-    setDownloadDialog(null);
   };
 
   // 胶囊卡片组件 - 使用真正的 3D 胶囊设计
@@ -1236,7 +1273,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 </button>
               )}
               <SmartActionButton
-                status={capsule.asset_status || capsule.cloud_status || 'cloud_only'}
+                status={assetStatusCache[capsule.id]?.asset_status || capsule.asset_status || capsule.cloud_status || 'cloud_only'}
                 onClick={() => handleSmartClick(capsule)}
                 className="w-full"
               />
@@ -1500,7 +1537,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             </button>
           )}
           <SmartActionButton
-            status={capsule.asset_status || capsule.cloud_status || 'cloud_only'}
+            status={assetStatusCache[capsule.id]?.asset_status || capsule.asset_status || capsule.cloud_status || 'cloud_only'}
             onClick={() => handleSmartClick(capsule)}
           />
           {isAdmin && (
@@ -1803,26 +1840,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         />
       )}
 
-      {/* Phase B.3: 下载进度对话框 */}
-      {downloadDialog && (
-        <DownloadProgressDialog
-          capsuleId={downloadDialog.capsuleId}
-          capsuleName={downloadDialog.capsuleName}
-          taskStatus={downloadDialog.taskStatus}
-          onComplete={handleDownloadComplete}
-          onClose={() => setDownloadDialog(null)}
-        />
-      )}
-
-      {/* JIT: 下载确认弹窗 */}
-      {modalCapsule && (
-        <DownloadConfirmModal
-          capsuleName={modalCapsule.name || modalCapsule.capsule_type}
-          onConfirm={handleDownloadConfirm}
-          onOfflineOpen={handleOpenRppOnly}
-          onClose={() => setModalCapsule(null)}
-        />
-      )}
     </div>
   );
 }

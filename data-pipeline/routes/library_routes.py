@@ -16,6 +16,7 @@ Core Routes:
 import logging
 import json
 import re
+import base64
 from flask import Blueprint, request, jsonify
 from pathlib import Path
 
@@ -61,6 +62,53 @@ def _extract_cloud_keywords(cloud_record):
     if isinstance(metadata, dict):
         return metadata.get('keywords')
     return None
+
+
+def _extract_supabase_sub_from_bearer(auth_header: str) -> str:
+    """
+    轻量提取 JWT payload.sub（不验签）。
+    仅用于本地 sidecar 的“归属识别/展示”，不用于权限提升。
+    """
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return ''
+    token = auth_header.split(' ', 1)[1].strip()
+    parts = token.split('.')
+    if len(parts) != 3:
+        return ''
+    payload_b64 = parts[1]
+    padding = '=' * (-len(payload_b64) % 4)
+    try:
+        payload_json = base64.urlsafe_b64decode(payload_b64 + padding).decode('utf-8')
+        payload = json.loads(payload_json)
+        return str(payload.get('sub') or '').strip()
+    except Exception:
+        return ''
+
+
+def _resolve_current_user_id(auth_header: str):
+    """
+    优先使用 verify_access_token；失败时回退提取 JWT sub。
+    """
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+
+    try:
+        from auth import get_auth_manager
+        auth_manager = get_auth_manager()
+        token = auth_header.split(' ')[1]
+        payload = auth_manager.verify_access_token(token)
+        if payload:
+            if 'supabase_user_id' in payload:
+                return payload['supabase_user_id']
+            if 'user_id' in payload:
+                user = auth_manager.get_user_by_id(payload['user_id'])
+                if user:
+                    return user.get('supabase_user_id') or str(user.get('id'))
+    except Exception as e:
+        logger.warning(f"[AUTH] Token 验证失败，回退 sub 解析: {e}")
+
+    sub = _extract_supabase_sub_from_bearer(auth_header)
+    return sub or None
 
 
 # ============================================================
@@ -126,24 +174,8 @@ def get_capsules():
         current_user_id = None
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
-            try:
-                from auth import get_auth_manager
-                auth_manager = get_auth_manager()
-                token = auth_header.split(' ')[1]
-                payload = auth_manager.verify_access_token(token)
-                if payload:
-                    # 优先使用 payload 中的 supabase_user_id
-                    if 'supabase_user_id' in payload:
-                        current_user_id = payload['supabase_user_id']
-                    elif 'user_id' in payload:
-                        # 如果是本地用户，尝试从 auth_manager 获取
-                        user = auth_manager.get_user_by_id(payload['user_id'])
-                        if user:
-                            current_user_id = user.get('supabase_user_id') or str(user.get('id'))
-                    logger.info(f"[CAPSULES] 当前用户 ID: {current_user_id}")
-            except Exception as e:
-                logger.warning(f"[CAPSULES] Token 验证失败: {e}")
-                pass  # 允许匿名访问
+            current_user_id = _resolve_current_user_id(auth_header)
+            logger.info(f"[CAPSULES] 当前用户 ID: {current_user_id}")
 
         # 为每个胶囊添加完整的 RPP 路径（绝对路径）
         # 使用 PathManager 获取导出目录
@@ -157,9 +189,12 @@ def get_capsules():
                 capsule['local_rpp_path'] = str(rpp_path.resolve())
 
             # Phase G: 添加所有权标识
-            capsule['is_mine'] = (
-                current_user_id and
-                capsule.get('owner_supabase_user_id') == current_user_id
+            owner_id = capsule.get('owner_supabase_user_id')
+            capsule['is_mine'] = bool(
+                current_user_id and (
+                    owner_id == current_user_id or
+                    owner_id in (None, '')
+                )
             )
 
             # 云端存在性与关键词差异（前端图标判定的单一可信来源）
@@ -444,24 +479,8 @@ def update_capsule_tags_api(capsule_id):
         current_user_id = None
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
-            try:
-                from auth import get_auth_manager
-                auth_manager = get_auth_manager()
-                token = auth_header.split(' ')[1]
-                payload = auth_manager.verify_access_token(token)
-                if payload:
-                    # 优先使用 payload 中的 supabase_user_id
-                    if 'supabase_user_id' in payload:
-                        current_user_id = payload['supabase_user_id']
-                    elif 'user_id' in payload:
-                        # 如果是本地用户，尝试从 auth_manager 获取
-                        user = auth_manager.get_user_by_id(payload['user_id'])
-                        if user:
-                            current_user_id = user.get('supabase_user_id') or str(user.get('id'))
-                    logger.info(f"[TAGS] ✓ Token 验证成功: 用户 {current_user_id}")
-            except Exception as e:
-                logger.warning(f"[TAGS] Token 验证失败: {e}")
-                pass
+            current_user_id = _resolve_current_user_id(auth_header)
+            logger.info(f"[TAGS] 当前用户 ID: {current_user_id}")
 
         owner_id = capsule.get('owner_supabase_user_id')
         

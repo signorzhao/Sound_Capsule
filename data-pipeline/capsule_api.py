@@ -7,6 +7,7 @@ Synesth 胶囊系统 Flask API 服务器
 import os
 import sys
 import json
+import base64
 import uuid
 import subprocess
 import argparse
@@ -18,6 +19,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
+from werkzeug.exceptions import HTTPException
 
 from capsule_db import get_database
 from auth import get_auth_manager
@@ -163,10 +165,11 @@ app = Flask(__name__)
 # 允许前端 (3000, 3002, 5173) 和 REAPER Web UI (9000) 访问
 default_origins = 'http://localhost:3000,http://localhost:3002,http://localhost:5173,http://localhost:9000,http://198.18.0.1:9000'
 cors_origins = os.getenv('CORS_ORIGINS', default_origins).split(',')
+cors_allow_all = str(os.getenv('CORS_ALLOW_ALL', 'true')).lower() == 'true'
 
 # 允许所有本地开发端口访问
 CORS(app, resources={r"/api/*": {
-    "origins": "*",  # 开发环境允许所有源
+    "origins": "*" if cors_allow_all else cors_origins,
     "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     "allow_headers": ["Content-Type", "Authorization"],
     "max_age": 3600,
@@ -188,6 +191,8 @@ logger.info("正在注册 API Blueprint 模块...")
 # 导入 Blueprint 模块
 from routes.sync_routes import sync_bp
 from routes.library_routes import library_bp
+from routes.admin_routes import admin_bp
+from routes.cloud_routes import cloud_bp
 
 # 注册同步模块，所有路由前缀为 /api/sync
 app.register_blueprint(sync_bp, url_prefix='/api/sync')
@@ -196,6 +201,14 @@ logger.info("✅ Sync Routes 注册: /api/sync/*")
 # 注册库模块，所有路由前缀为 /api/capsules
 app.register_blueprint(library_bp, url_prefix='/api/capsules')
 logger.info("✅ Library Routes 注册: /api/capsules/*")
+
+# 注册管理代理模块，所有路由前缀为 /api/admin
+app.register_blueprint(admin_bp, url_prefix='/api/admin')
+logger.info("✅ Admin Routes 注册: /api/admin/*")
+
+# 注册云端上传模块，所有路由前缀为 /api/cloud
+app.register_blueprint(cloud_bp, url_prefix='/api/cloud')
+logger.info("✅ Cloud Routes 注册: /api/cloud/*")
 
 # ============================================
 # Phase C1: 棱镜版本管理器初始化
@@ -241,6 +254,14 @@ def handle_api_error(error):
 @app.errorhandler(Exception)
 def handle_generic_error(error):
     """处理通用错误"""
+    if isinstance(error, HTTPException):
+        response = jsonify({
+            'success': False,
+            'error': getattr(error, 'description', None) or str(error)
+        })
+        response.status_code = getattr(error, 'code', 500) or 500
+        return response
+
     import traceback
     logger.error(f"Internal Server Error: {error}")
     logger.error(traceback.format_exc())
@@ -385,6 +406,27 @@ def get_current_user():
         raise APIError('用户不存在', 401)
 
     return user
+
+
+def _extract_supabase_sub_from_bearer(auth_header: str) -> str:
+    """
+    从 Bearer JWT 提取 sub（不验签）。
+    仅用于本地 sidecar 的所有者归属写入/显示，不用于权限提升。
+    """
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return ''
+    token = auth_header.split(' ', 1)[1].strip()
+    parts = token.split('.')
+    if len(parts) != 3:
+        return ''
+    payload_b64 = parts[1]
+    padding = '=' * (-len(payload_b64) % 4)
+    try:
+        payload_json = base64.urlsafe_b64decode(payload_b64 + padding).decode('utf-8')
+        payload = json.loads(payload_json)
+        return str(payload.get('sub') or '').strip()
+    except Exception:
+        return ''
 
 
 def token_required(f):
@@ -1464,14 +1506,37 @@ def webui_export_api():
         data = request.get_json()
 
         # 🔐 获取当前用户 ID 和用户名，用于设置胶囊所有者和命名
-        current_user = get_current_user()
+        # webui-export 允许匿名使用：若 token 校验失败，不阻断导出流程，降级为匿名用户。
+        try:
+            current_user = get_current_user()
+        except APIError as auth_err:
+            if getattr(auth_err, 'status_code', 500) == 401:
+                auth_header = request.headers.get('Authorization', '')
+                fallback_sub = _extract_supabase_sub_from_bearer(auth_header)
+                if fallback_sub:
+                    logger.warning(f"[webui-export] token 校验失败，回退 sub 识别用户: {fallback_sub}")
+                    current_user = {
+                        'id': fallback_sub,
+                        'supabase_user_id': fallback_sub,
+                        'username': None,
+                        'email': None,
+                        'display_name': None,
+                    }
+                else:
+                    logger.warning(f"[webui-export] token 校验失败，降级匿名导出: {auth_err.message}")
+                    current_user = None
+            else:
+                raise
+
         owner_supabase_user_id = None
         capsule_username = None  # 用于胶囊命名的用户名
         if current_user:
             # 优先使用 supabase_user_id，兼容 id 字段
             owner_supabase_user_id = current_user.get('supabase_user_id') or current_user.get('id')
             # 获取用于命名的用户名
-            capsule_username = current_user.get('username') or current_user.get('display_name') or current_user.get('email', '').split('@')[0]
+            email_val = current_user.get('email') or ''
+            email_name = str(email_val).split('@')[0] if email_val else None
+            capsule_username = current_user.get('username') or current_user.get('display_name') or email_name
             print(f"🔐 当前用户: {owner_supabase_user_id}, 用户名: {capsule_username}")
         else:
             print("⚠️ 未认证用户，胶囊将没有所有者")

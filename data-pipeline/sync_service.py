@@ -824,20 +824,23 @@ class SyncService:
             # 这里我们先简单实现：检查有多少个云端胶囊不在本地
             remote_count = 0
             try:
-                from supabase_client import get_supabase_client
-                supabase = get_supabase_client()
-                if supabase:
-                    # 获取当前激活用户（修复：使用 is_active 而不是固定 id = 1）
-                    cursor.execute("SELECT supabase_user_id FROM users WHERE is_active = 1")
-                    user_row = cursor.fetchone()
-                    if user_row and user_row[0]:  # user_row 是元组，使用索引 [0]
-                        user_id = user_row[0]
+                # 本地 sidecar 场景允许不配置 service_role，此时跳过云端计数，
+                # 避免每次 /sync/status 都触发 Supabase 初始化错误日志。
+                if os.getenv('SUPABASE_SERVICE_ROLE_KEY'):
+                    from supabase_client import get_supabase_client
+                    supabase = get_supabase_client()
+                    if supabase:
+                        # 获取当前激活用户（修复：使用 is_active 而不是固定 id = 1）
+                        cursor.execute("SELECT supabase_user_id FROM users WHERE is_active = 1")
+                        user_row = cursor.fetchone()
+                        if user_row and user_row[0]:  # user_row 是元组，使用索引 [0]
+                            user_id = user_row[0]
 
-                        # 查询云端胶囊总数
-                        remote_count = supabase.get_capsule_count(user_id)
-                        if remote_count is None:
-                            remote_count = 0
-            except Exception as e:
+                            # 查询云端胶囊总数
+                            remote_count = supabase.get_capsule_count(user_id)
+                            if remote_count is None:
+                                remote_count = 0
+            except Exception:
                 # 如果查询云端失败，remote_count 保持为 0
                 pass
 

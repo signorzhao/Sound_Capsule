@@ -17,9 +17,9 @@ const SmartActionButton = ({ status, onClick, className = '' }) => {
 
   const config = {
     cloud_only: {
-      icon: Cloud,
+      icon: AlertTriangle,
       text: t('smartAction.fetch'),
-      style: 'bg-blue-500/20 text-blue-400 border-blue-500/30 hover:bg-blue-500/30',
+      style: 'bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30',
       tooltip: t('smartAction.cloudOnlyTooltip')
     },
     downloading: {

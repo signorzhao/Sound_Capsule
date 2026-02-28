@@ -2,16 +2,19 @@ use std::process::{Child, Command};
 use std::path::{Path, PathBuf};
 use std::io::BufRead;
 
-/// 从配置目录读取 .env.supabase 或 supabase.env，解析 SUPABASE_URL 与 SUPABASE_SERVICE_ROLE_KEY。
-/// 返回 (url, key)；若任一缺失则返回 None，调用方使用默认值。
-fn load_supabase_env_from_config_dir(config_dir: &str) -> Option<(String, String)> {
+/// 从配置目录读取 .env.supabase 或 supabase.env，解析 Supabase 关键环境变量。
+/// 返回 (url, service_role_key, anon_key)；若任一缺失则返回错误。
+fn load_supabase_env_from_config_dir(config_dir: &str) -> Result<(String, String, String), String> {
     let base = Path::new(config_dir);
     let candidates = [".env.supabase", "supabase.env"];
     let mut url = None::<String>;
-    let mut key = None::<String>;
+    let mut service_key = None::<String>;
+    let mut anon_key = None::<String>;
+    let mut loaded_from = None::<String>;
     for name in candidates.iter() {
         let path = base.join(name);
         if let Ok(f) = std::fs::File::open(&path) {
+            loaded_from = Some(path.display().to_string());
             let reader = std::io::BufReader::new(f);
             for line in reader.lines().filter_map(Result::ok) {
                 let line = line.trim();
@@ -24,16 +27,24 @@ fn load_supabase_env_from_config_dir(config_dir: &str) -> Option<(String, String
                     if k == "SUPABASE_URL" && !v.is_empty() {
                         url = Some(v);
                     } else if k == "SUPABASE_SERVICE_ROLE_KEY" && !v.is_empty() {
-                        key = Some(v);
+                        service_key = Some(v);
+                    } else if (k == "SUPABASE_ANON_KEY" || k == "SUPABASE_PUBLISHABLE_KEY") && !v.is_empty() {
+                        anon_key = Some(v);
                     }
                 }
             }
             break;
         }
     }
-    match (url, key) {
-        (Some(u), Some(k)) => Some((u, k)),
-        _ => None,
+    match (url, service_key, anon_key) {
+        (Some(u), Some(sk), Some(ak)) => Ok((u, sk, ak)),
+        _ => {
+            let source = loaded_from.unwrap_or_else(|| format!("{}/.env.supabase", config_dir));
+            Err(format!(
+                "Supabase 配置缺失：需要 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY、SUPABASE_ANON_KEY（或 SUPABASE_PUBLISHABLE_KEY）。配置文件: {}",
+                source
+            ))
+        }
     }
 }
 
@@ -104,13 +115,11 @@ impl SidecarProcess {
             cmd.arg("--resource-dir").arg(res_dir);
         }
 
-        // Phase G: Supabase 环境变量 — 优先从配置目录 .env.supabase 读取（私有化部署）
-        const DEFAULT_SUPABASE_URL: &str = "https://mngtddqjbbrdwwfxcvxg.supabase.co";
-        const DEFAULT_SUPABASE_SERVICE_ROLE_KEY: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ3RkZHFqYmJyZHd3ZnhjdnhnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODA0NzQ0NSwiZXhwIjoyMDgzNjIzNDQ1fQ.0RXH_ECqIpQeRwnXbzEOORi7grODOVud8c_96ZIP3VU";
-        let (supabase_url, supabase_key) = load_supabase_env_from_config_dir(&config_dir)
-            .unwrap_or_else(|| (DEFAULT_SUPABASE_URL.to_string(), DEFAULT_SUPABASE_SERVICE_ROLE_KEY.to_string()));
+        // 安全约束：必须从配置文件读取 Supabase 配置，不允许内置默认高权限 key 回退
+        let (supabase_url, supabase_key, supabase_anon_key) = load_supabase_env_from_config_dir(&config_dir)?;
         cmd.env("SUPABASE_URL", &supabase_url);
         cmd.env("SUPABASE_SERVICE_ROLE_KEY", &supabase_key);
+        cmd.env("SUPABASE_ANON_KEY", &supabase_anon_key);
 
         // Windows Release 模式下隐藏控制台窗口
         // 开发模式下保留控制台以便查看日志

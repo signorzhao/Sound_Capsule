@@ -4,7 +4,9 @@
  * 提供自动处理认证和 token 刷新的 fetch 封装
  */
 
-const API_BASE_URL = 'http://localhost:5002/api';
+import { CLOUD_API_BASE } from './apiOrigins';
+
+const API_BASE_URL = CLOUD_API_BASE;
 
 /**
  * 刷新 access token
@@ -16,7 +18,7 @@ async function refreshAccessToken() {
     throw new Error('No refresh token available');
   }
 
-  const response = await fetch(`http://localhost:5002/api/auth/refresh`, {
+  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken })
@@ -37,6 +39,7 @@ async function refreshAccessToken() {
 
 /**
  * 正在刷新 token 的 Promise（防止并发刷新）
+ */
 let refreshingPromise = null;
 
 /**

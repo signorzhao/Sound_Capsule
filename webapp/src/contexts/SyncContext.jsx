@@ -10,7 +10,22 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../utils/apiClient';
+import { CLOUD_API_BASE, LOCAL_API_BASE } from '../utils/apiOrigins';
 import i18n from '../i18n';
+
+function normalizeBootSyncErrorMessage(message) {
+  if (!message || typeof message !== 'string') return message || '未知错误';
+  if (message.includes('ASSET_DOWNLOAD_NO_SIGNED_URL')) {
+    return '文件下载失败：缺少签名下载链接（ASSET_DOWNLOAD_NO_SIGNED_URL）';
+  }
+  if (message.includes('SIGNED_URL_DOWNLOAD_FAILED')) {
+    return '文件下载失败：签名链接下载失败（SIGNED_URL_DOWNLOAD_FAILED）';
+  }
+  if (message.includes('DOWNLOAD_ASSET_EXCEPTION')) {
+    return '文件下载异常（DOWNLOAD_ASSET_EXCEPTION）';
+  }
+  return message;
+}
 
 // 创建 SyncContext
 const SyncContext = createContext(undefined);
@@ -54,7 +69,7 @@ export const SyncProvider = ({ children }) => {
     }
 
     try {
-      const response = await authFetch('http://localhost:5002/api/sync/status', {
+      const response = await authFetch(`${LOCAL_API_BASE}/sync/status`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -116,7 +131,7 @@ export const SyncProvider = ({ children }) => {
       // 调用后端关键词同步接口
       setSyncStatus(prev => ({ ...prev, syncProgress: 30, syncStep: i18n.t('syncIndicator.syncStepCompare') }));
       
-      const response = await authFetch('http://localhost:5002/api/sync/sync-tags', {
+      const response = await authFetch(`${CLOUD_API_BASE}/sync/sync-tags`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -189,61 +204,129 @@ export const SyncProvider = ({ children }) => {
     setSyncError(null);
 
     try {
-      console.log('🔄 [BootSync] 开始仅下载同步...');
-
-      // 调用后端的 /api/sync/download-only 端点
+      console.log('🔄 [BootSync] 开始分页轻同步...');
       setSyncStatus(prev => ({ ...prev, syncProgress: 10, syncStep: i18n.t('bootSync.syncing') }));
       onProgress?.({ phase: i18n.t('bootSync.syncing'), current: 0, total: 0, percentage: 10 });
 
-      const response = await authFetch('http://localhost:5002/api/sync/download-only', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          include_previews: true,
-        }),
-      });
+      let cursor = null;
+      let page = 0;
+      let totalDownloaded = 0;
+      let totalInserted = 0;
+      let totalUpdated = 0;
+      let totalSkipped = 0;
+      let totalPreviewDownloaded = 0;
+      let totalRppDownloaded = 0;
+      let totalMetadataDownloaded = 0;
 
-      if (!response.ok) {
-        throw new Error(`仅下载同步失败: ${response.status}`);
+      while (true) {
+        page += 1;
+        let pageResp = await authFetch(`${CLOUD_API_BASE}/sync/lightweight-page`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            include_previews: true,
+            include_signed_urls: true,
+            signed_url_expires_in: 900,
+            page_size: 200,
+            cursor,
+          }),
+        });
+
+        // 云端尚未支持 signed_url 参数时，降级为旧协议重试一次，避免启动同步直接失败。
+        if (!pageResp.ok && pageResp.status >= 500) {
+          console.warn(`⚠️ [BootSync] lightweight-page ${pageResp.status}，降级重试（不带 signed_url 参数）`);
+          pageResp = await authFetch(`${CLOUD_API_BASE}/sync/lightweight-page`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              include_previews: true,
+              page_size: 200,
+              cursor,
+            }),
+          });
+        }
+
+        if (!pageResp.ok) {
+          throw new Error(`lightweight-page HTTP ${pageResp.status}`);
+        }
+        const pageJson = await pageResp.json();
+        if (!pageJson.success) {
+          throw new Error(pageJson.error || 'lightweight-page 失败');
+        }
+
+        const items = pageJson.data?.items || [];
+        const nextCursor = pageJson.data?.next_cursor || null;
+
+        const applyResp = await authFetch(`${LOCAL_API_BASE}/sync/apply-lightweight-page`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items,
+            include_previews: true,
+            prefer_signed_url: true,
+            cloud_api_origin: CLOUD_API_BASE.replace(/\/api$/, ''),
+          }),
+        });
+
+        if (!applyResp.ok) {
+          throw new Error(`apply-lightweight-page HTTP ${applyResp.status}`);
+        }
+
+        const applyJson = await applyResp.json();
+        if (!applyJson.success && applyResp.status !== 207) {
+          throw new Error(applyJson.error || 'apply-lightweight-page 失败');
+        }
+
+        const applyData = applyJson.data || {};
+        totalDownloaded += items.length;
+        totalInserted += applyData.inserted_count || 0;
+        totalUpdated += applyData.updated_count || 0;
+        totalSkipped += applyData.skipped_count || 0;
+        totalPreviewDownloaded += applyData.preview_downloaded || 0;
+        totalRppDownloaded += applyData.rpp_downloaded || 0;
+        totalMetadataDownloaded += applyData.metadata_downloaded || 0;
+
+        const percentage = Math.min(85, 10 + page * 10);
+        onProgress?.({
+          phase: i18n.t('bootSync.syncing'),
+          current: totalDownloaded,
+          total: pageJson.data?.total || totalDownloaded,
+          percentage,
+        });
+        setSyncStatus(prev => ({ ...prev, syncProgress: percentage, syncStep: i18n.t('bootSync.syncing') }));
+
+        if (!nextCursor) {
+          break;
+        }
+        cursor = nextCursor;
       }
 
-      const result = await response.json();
-      console.log('🔄 [BootSync] 仅下载同步结果:', result);
+      setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: i18n.t('syncIndicator.syncStepVerify') }));
+      onProgress?.({ phase: i18n.t('syncIndicator.syncStepVerify'), current: totalDownloaded, total: totalDownloaded, percentage: 90 });
+      await fetchSyncStatus();
 
-      if (result.success) {
-        setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: i18n.t('syncIndicator.syncStepVerify') }));
-        onProgress?.({ phase: i18n.t('syncIndicator.syncStepVerify'), current: 0, total: 0, percentage: 90 });
-
-        // 更新同步状态
-        await fetchSyncStatus();
-
-setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndicator.syncComplete') }));
-      onProgress?.({ phase: i18n.t('syncIndicator.syncComplete'), current: 0, total: 0, percentage: 100 });
-        console.log('✅ [BootSync] 仅下载同步完成');
-
-        // 触发同步完成事件（通知其他组件刷新数据）
-        window.dispatchEvent(new CustomEvent('sync-completed'));
-
-        return {
-          success: true,
-          downloaded_count: result.data.downloaded_count,
-          preview_downloaded: result.data.preview_downloaded,
-        };
-      } else {
-        throw new Error(result.error || '仅下载同步失败');
-      }
-    } catch (error) {
-      console.error('❌ [BootSync] 仅下载同步失败:', error);
-      setSyncError(error.message);
-
-      // 触发同步失败事件
-      window.dispatchEvent(new CustomEvent('sync-failed', { detail: { error: error.message } }));
+      setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndicator.syncComplete') }));
+      onProgress?.({ phase: i18n.t('syncIndicator.syncComplete'), current: totalDownloaded, total: totalDownloaded, percentage: 100 });
+      window.dispatchEvent(new CustomEvent('sync-completed'));
 
       return {
+        success: true,
+        downloaded_count: totalDownloaded,
+        inserted_count: totalInserted,
+        updated_count: totalUpdated,
+        skipped_count: totalSkipped,
+        preview_downloaded: totalPreviewDownloaded,
+        rpp_downloaded: totalRppDownloaded,
+        metadata_downloaded: totalMetadataDownloaded,
+      };
+    } catch (error) {
+      console.error('❌ [BootSync] 分页轻同步失败:', error);
+      const finalError = normalizeBootSyncErrorMessage(error.message);
+      setSyncError(finalError);
+      window.dispatchEvent(new CustomEvent('sync-failed', { detail: { error: finalError } }));
+      return {
         success: false,
-        error: error.message,
+        error: finalError,
       };
     } finally {
       setSyncStatus(prev => ({ ...prev, isSyncing: false }));
@@ -255,7 +338,7 @@ setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndic
    */
   const markForSync = useCallback(async (tableName, recordId, operation = 'update') => {
     try {
-      const response = await fetch('http://localhost:5002/api/sync/mark-pending', {
+      const response = await fetch(`${LOCAL_API_BASE}/sync/mark-pending`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -289,7 +372,7 @@ setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndic
    */
   const getConflicts = useCallback(async () => {
     try {
-      const response = await fetch('http://localhost:5002/api/sync/conflicts', {
+      const response = await fetch(`${LOCAL_API_BASE}/sync/conflicts`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -314,7 +397,7 @@ setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndic
    */
   const resolveConflict = useCallback(async (conflictId, resolution) => {
     try {
-      const response = await fetch('http://localhost:5002/api/sync/resolve-conflict', {
+      const response = await fetch(`${LOCAL_API_BASE}/sync/resolve-conflict`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -380,7 +463,7 @@ setSyncStatus(prev => ({ ...prev, syncProgress: 100, syncStep: i18n.t('syncIndic
         percentage: 10
       });
 
-      const response = await authFetch('http://localhost:5002/api/sync/lightweight', {
+      const response = await authFetch(`${LOCAL_API_BASE}/sync/lightweight`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

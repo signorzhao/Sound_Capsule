@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { LogOut, User, ChevronDown, Settings, X, FolderOpen } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getAppConfig, saveAppConfig } from '../utils/configApi';
+import { LOCAL_API_BASE } from '../utils/apiOrigins';
 import i18n, { configLangToI18n } from '../i18n';
 import * as authApi from '../utils/authApi';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -121,7 +122,7 @@ const UserMenu = () => {
       
       // 同步到 Python 后端
       try {
-        await fetch('http://localhost:5002/api/config/save', {
+        await fetch(`${LOCAL_API_BASE}/config/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -157,7 +158,7 @@ const UserMenu = () => {
     try {
       // Step 1: 清空数据库
       console.log('[路径变更] 开始清空数据库...');
-      const resetResponse = await fetch('http://localhost:5002/api/config/reset-local-db', {
+      const resetResponse = await fetch(`${LOCAL_API_BASE}/config/reset-local-db`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -171,7 +172,7 @@ const UserMenu = () => {
       
       // Step 2: 保存新配置到 Python 后端
       console.log('[路径变更] 保存配置到 Python 后端...');
-      await fetch('http://localhost:5002/api/config/save', {
+      await fetch(`${LOCAL_API_BASE}/config/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

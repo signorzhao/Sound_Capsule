@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig, resetAppConfig } from '../utils/configApi';
+import { LOCAL_API_BASE } from '../utils/apiOrigins';
 import i18n, { configLangToI18n } from '../i18n';
 import { useAuth } from '../contexts/AuthContext';
 import * as authApi from '../utils/authApi';
@@ -80,7 +81,7 @@ function SettingsPanel({ onClose }) {
 
       // 2. 同时同步到 Python 后端（不需要认证）
       try {
-        const response = await fetch('http://localhost:5002/api/config/save', {
+        const response = await fetch(`${LOCAL_API_BASE}/config/save`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

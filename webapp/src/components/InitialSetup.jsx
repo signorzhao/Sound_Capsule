@@ -4,6 +4,7 @@ import i18n, { i18nLangToConfig } from '../i18n';
 import { FolderOpen, Settings, Check, AlertCircle } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getAppConfig, saveAppConfig } from '../utils/configApi';
+import { LOCAL_API_BASE } from '../utils/apiOrigins';
 import './InitialSetup.css';
 
 /**
@@ -109,7 +110,7 @@ export default function InitialSetup({ onComplete }) {
       // 2. 🔑 关键修复：同步到 Python 后端
       // 解决初始化后导出目录不更新的问题（后端启动时配置尚不存在）
       try {
-        const response = await fetch('http://localhost:5002/api/config/save', {
+        const response = await fetch(`${LOCAL_API_BASE}/config/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

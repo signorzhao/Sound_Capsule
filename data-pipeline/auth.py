@@ -9,6 +9,7 @@
 """
 
 import uuid
+import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import sqlite3
@@ -603,14 +604,42 @@ class AuthManager:
         
         # ========================================
         # 降级到本地 JWT 验证
+        # 兼容：
+        # 1) 本地 SECRET_KEY 签发 token
+        # 2) Supabase JWT_SECRET/SUPABASE_JWT_SECRET 签发 token
         # ========================================
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            return payload
-        except jwt.ExpiredSignatureError:
-            return None
-        except jwt.InvalidTokenError:
-            return None
+        candidate_secrets = []
+        for secret in (
+            os.getenv('JWT_SECRET'),
+            os.getenv('SUPABASE_JWT_SECRET'),
+            SECRET_KEY,
+        ):
+            if secret and secret not in candidate_secrets:
+                candidate_secrets.append(secret)
+
+        for secret in candidate_secrets:
+            try:
+                payload = jwt.decode(
+                    token,
+                    secret,
+                    algorithms=['HS256', ALGORITHM],
+                    options={'verify_aud': False}
+                )
+                # Supabase token 通常只有 sub，这里归一化为 sidecar 期望字段
+                if payload.get('sub') and not payload.get('supabase_user_id') and not payload.get('user_id'):
+                    return {
+                        'user_id': payload.get('sub'),
+                        'supabase_user_id': payload.get('sub'),
+                        'email': payload.get('email'),
+                        'username': payload.get('email'),
+                    }
+                return payload
+            except jwt.ExpiredSignatureError:
+                return None
+            except jwt.InvalidTokenError:
+                continue
+
+        return None
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
         """
