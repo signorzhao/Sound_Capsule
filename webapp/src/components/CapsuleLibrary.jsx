@@ -778,7 +778,24 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
   // Phase G: 云同步处理函数
   const handleCloudSync = async (capsule) => {
-    const status = capsule.cloud_status;
+    if (capsule.is_mine !== true) {
+      return;
+    }
+
+    // 规则优先：由后端字段统一驱动前端行为
+    // 1) 云端不存在 -> 上传
+    // 2) 云端存在但关键词不一致 -> 同步更新关键词
+    // 3) 云端一致 -> 无需动作
+    const cloudExists = capsule.cloud_exists === true;
+    const keywordOutdated = capsule.cloud_keyword_outdated === true;
+    let status = capsule.cloud_status;
+    if (!cloudExists) {
+      status = 'local';
+    } else if (keywordOutdated) {
+      status = 'outdated';
+    } else {
+      status = 'synced';
+    }
 
     const startUploadProgressPoll = async (capsuleId, toastId, onDone) => {
       const { authFetch } = await import('../utils/apiClient.js');
@@ -950,9 +967,37 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         console.error('同步失败:', error);
         toast.error(t('librarySync.syncFailedError', { message: error.message }));
       }
+    } else if (status === 'outdated') {
+      // 状态 2: 云端已存在但关键词不一致 -> 同步关键词
+      try {
+        const { authFetch } = await import('../utils/apiClient.js');
+        const response = await authFetch('http://localhost:5002/api/sync/sync-tags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok && response.status !== 207) {
+          throw new Error(`关键词同步失败: ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result.success || response.status === 207) {
+          toast.success(t('librarySync.syncedCloudData'));
+          window.dispatchEvent(new CustomEvent('sync-completed'));
+          onSyncComplete && onSyncComplete();
+        } else {
+          toast.error(t('librarySync.syncFailedError', { message: result.error || t('librarySync.unknownError') }));
+        }
+      } catch (error) {
+        console.error('关键词同步失败:', error);
+        toast.error(t('librarySync.syncFailedError', { message: error.message }));
+      }
     } else if (status === 'synced') {
-      // 状态 3: 已同步 - 强制重新上传（用于修复文件缺失问题）
-      // 🔥 将变量声明移到 try 块外部，确保 catch 和 finally 中可访问
+      // 状态 3: 云端与本地一致 -> 无需操作
+      toast.info(t('cloudSync.syncedTooltip'));
+      return;
+
+      // 旧逻辑保留（不再触发）：强制重新上传
       let toastId = null;
       let toastFinalized = false;
       let stopProgressPoll = null;

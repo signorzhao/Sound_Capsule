@@ -597,6 +597,18 @@ function CollectSelectedItemsMedia()
     return mediaFiles, itemsInfo
 end
 
+-- 判断本次导出是否包含 MIDI Item（用于选择渲染模式）
+local function HasMidiItems(itemsInfo)
+    if not itemsInfo then return false end
+    for _, info in ipairs(itemsInfo) do
+        -- MIDI item 在采集阶段会写入 mediaFile = nil
+        if info and info.mediaFile == nil then
+            return true
+        end
+    end
+    return false
+end
+
 -- 复制媒体文件到目标 Audio 目录
 function CopyMediaFiles(mediaFiles, audioDir)
     reaper.ShowConsoleMsg("\n=== 复制媒体文件 ===\n")
@@ -625,7 +637,7 @@ function CopyMediaFiles(mediaFiles, audioDir)
 end
 
 -- 生成胶囊 RPP（读当前工程 RPP，修剪轨道/Item，替换路径，不打开工程）
-function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, startTime, endTime)
+function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, startTime, endTime, hasMidiItems)
     reaper.ShowConsoleMsg("\n=== 生成胶囊 RPP ===\n")
     local _, currentProjPath = reaper.EnumProjects(-1, "")
     local isTemporaryProject = (not currentProjPath or currentProjPath == "")
@@ -773,13 +785,16 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_FMT%s+[^\n]*\n?', '')
         content = content:gsub('RENDER_RANGE%s+[^\n]*\n?', '')
         content = content:gsub('RENDER_STEMS%s+[^\n]*\n?', '')
+        content = content:gsub('RENDER_1X%s+[^\n]*\n?', '')
         content = content:gsub('%s*<RENDER_CFG%s*\n%s*[%w%+%/=]+%s*\n%s*>', '')
+        local render1x = hasMidiItems and 2 or 0
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
 RENDER_RANGE 2 0 0 0 1000
 RENDER_STEMS 0
-]], renderDir, capsuleName)
+RENDER_1X %d
+]], renderDir, capsuleName, render1x)
         content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
         local renderCfgBlock = "\n  <RENDER_CFG\n    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==\n  >"
         content = content:gsub('(SAMPLERATE%s+[^\n]+\n)', '%1' .. renderCfgBlock .. '\n')
@@ -1294,16 +1309,33 @@ function PruneItems(startTime, endTime, targetItem)
     end
 end
 
--- 扫描所有保留轨道的插件
+-- 收集选中 Item 的相关轨道（Item 所在轨道 + 父轨道 + Send 递归目标轨道）
+function CollectRelatedTracks()
+    local relatedTracks = {}
+    local numItems = reaper.CountSelectedMediaItems(0)
+
+    for i = 0, numItems - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        if item then
+            local itemRelatedTracks = GetRelatedTracks(item)
+            for track, _ in pairs(itemRelatedTracks) do
+                relatedTracks[track] = true
+            end
+        end
+    end
+
+    return relatedTracks
+end
+
+-- 扫描选中 Item 相关轨道的插件（精确版本）
 function ScanPlugins()
     local plugins = {}
-    local trackCount = reaper.CountTracks(0)
-    
-    for i = 0, trackCount - 1 do
-        local track = reaper.GetTrack(0, i)
+    local relatedTracks = CollectRelatedTracks()
+
+    for track, _ in pairs(relatedTracks) do
         if track ~= nil then
             local fxCount = reaper.TrackFX_GetCount(track)
-            
+
             for j = 0, fxCount - 1 do
                 local _, fxName = reaper.TrackFX_GetFXName(track, j, "")
                 if fxName ~= "" then
@@ -1669,6 +1701,7 @@ function FixRPPRenderSettings(rppPath, outputPath, startTime, endTime, capsuleNa
     content = string.gsub(content, 'RENDER_SETTINGS%s+%d+\n?', '')
     content = string.gsub(content, 'RENDER_RANGE%s+[^\n]*\n?', '')
     content = string.gsub(content, 'RENDER_STEMS%s+%d+\n?', '')
+    content = string.gsub(content, 'RENDER_1X%s+[^\n]*\n?', '')
     content = string.gsub(content, 'LOOP%s+%d+%.%d+%s+%d+%.%d+\n?', '')  -- 删除时间选择 LOOP
 
     -- 关键修复：替换 <APPLYFX_CFG> 内的 RENDER_FMT
@@ -1745,13 +1778,16 @@ function FixRPPRenderSettings(rppPath, outputPath, startTime, endTime, capsuleNa
     -- 从 outputPath 提取输出目录
     local outputDir_for_render = string.match(outputPath, "^(.*)/[^/]*$") or ""
 
+    local hasMidiInProject = content:lower():find("source midi", 1, true) ~= nil
+    local render1x = hasMidiInProject and 2 or 0
     local renderSettings = string.format([[
 RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
 RENDER_RANGE 2 %.6f %.6f 0 1000
 RENDER_STEMS 0
-]], outputDir_for_render, baseName, startTime, endTime)
+RENDER_1X %d
+]], outputDir_for_render, baseName, startTime, endTime, render1x)
 
     -- 在 <REAPER_PROJECT> 行后插入渲染设置
     content = string.gsub(content, '(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
@@ -2164,6 +2200,7 @@ function ExportCapsule()
 
     -- 步骤 1：收集选中 Item 的媒体文件
     local mediaFiles, collectedItemsInfo = CollectSelectedItemsMedia()
+    local hasMidiItems = HasMidiItems(collectedItemsInfo)
     local mediaCount = 0
     for _ in pairs(mediaFiles) do mediaCount = mediaCount + 1 end
     local hasItems = collectedItemsInfo and #collectedItemsInfo > 0
@@ -2184,7 +2221,7 @@ function ExportCapsule()
     local pathMapping, failedFiles = CopyMediaFiles(mediaFiles, audioDir)
 
     -- 步骤 3：生成胶囊 RPP（不切换工程）
-    local rppPath = GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, exportPreview, startTime, endTime)
+    local rppPath = GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, exportPreview, startTime, endTime, hasMidiItems)
     if not rppPath then
         reaper.ShowConsoleMsg("✗ RPP 生成失败\n")
         return false, "RPP 生成失败（请检查工程是否已保存或路径是否可写）"

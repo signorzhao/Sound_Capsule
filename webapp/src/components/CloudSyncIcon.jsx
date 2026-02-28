@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cloud, Upload, Download, Check } from 'lucide-react';
+import { Cloud, Upload, Check } from 'lucide-react';
 
 /**
  * CloudSyncIcon - 云同步状态图标
@@ -16,45 +16,41 @@ const CloudSyncIcon = ({ capsule, onClick, className = '' }) => {
   const { t } = useTranslation();
 
   const getSyncState = () => {
-    // 状态 1: 需上传 (Dirty)
-    // 条件: cloud_status === 'local' 表示仅存在本地，未上传
-    if (capsule.cloud_status === 'local') {
+    // 非作者：不显示云状态图标
+    if (capsule.is_mine !== true) {
+      return null;
+    }
+
+    // 作者 + 云端无数据：显示上传按钮
+    if (capsule.cloud_exists === false) {
       return {
         icon: Upload,
         color: 'text-orange-400',
         bg: 'bg-orange-900/20',
         border: 'border-orange-500/30',
-        tooltip: t('cloudSync.localTooltip')
+        tooltip: t('cloudSync.localTooltip', '本地有数据，云端不存在，点击上传')
       };
     }
 
-    if (capsule.cloud_status === 'remote') {
+    // 作者 + 云端有数据且关键词不一致：显示云同步按钮
+    if (capsule.cloud_exists === true && capsule.cloud_keyword_outdated === true) {
       return {
-        icon: Download,
+        icon: Cloud,
         color: 'text-blue-400',
         bg: 'bg-blue-900/20',
         border: 'border-blue-500/30',
-        tooltip: t('cloudSync.remoteTooltip')
+        tooltip: t('cloudSync.remoteTooltip', '本地关键词与云端不一致，点击同步更新')
       };
     }
 
-    if (capsule.asset_status === 'local' && !capsule.audio_uploaded) {
-      return {
-        icon: Upload,
-        color: 'text-orange-400',
-        bg: 'bg-orange-900/20',
-        border: 'border-orange-500/30',
-        tooltip: t('cloudSync.audioNotUploadedTooltip')
-      };
-    }
-
-    if (capsule.cloud_status === 'synced') {
+    // 作者 + 云端一致：显示已同步
+    if (capsule.cloud_exists === true && capsule.cloud_keyword_outdated === false) {
       return {
         icon: Check,
         color: 'text-green-400',
         bg: 'bg-green-900/20',
         border: 'border-green-500/30',
-        tooltip: t('cloudSync.syncedTooltip')
+        tooltip: t('cloudSync.syncedTooltip', '云端与本地一致')
       };
     }
 
@@ -68,6 +64,8 @@ const CloudSyncIcon = ({ capsule, onClick, className = '' }) => {
   };
   
   const state = getSyncState();
+  if (!state) return null;
+
   const Icon = state.icon;
   
   return (

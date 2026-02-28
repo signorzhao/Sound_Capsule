@@ -14,6 +14,8 @@ Core Routes:
 """
 
 import logging
+import json
+import re
 from flask import Blueprint, request, jsonify
 from pathlib import Path
 
@@ -28,6 +30,37 @@ logger = logging.getLogger(__name__)
 
 # Define Blueprint
 library_bp = Blueprint('library_bp', __name__)
+
+
+def _normalize_keywords(value):
+    """将关键词统一为可比较的集合（忽略大小写与分隔符差异）"""
+    if value is None:
+        return set()
+
+    if isinstance(value, list):
+        tokens = value
+    else:
+        tokens = re.split(r'[,;|，；\s]+', str(value))
+
+    normalized = []
+    for token in tokens:
+        token = str(token).strip().lower()
+        if token:
+            normalized.append(token)
+    return set(normalized)
+
+
+def _extract_cloud_keywords(cloud_record):
+    """从云端记录中提取 keywords 字段"""
+    metadata = cloud_record.get('metadata')
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+    if isinstance(metadata, dict):
+        return metadata.get('keywords')
+    return None
 
 
 # ============================================================
@@ -68,6 +101,27 @@ def get_capsules():
             offset=offset
         )
 
+        # 一次性批量拉取云端记录，避免每个胶囊单独请求
+        cloud_capsule_map = {}
+        cloud_ids = list({str(c.get('cloud_id')) for c in capsules if c.get('cloud_id')})
+        if cloud_ids:
+            try:
+                from supabase_client import get_supabase_client
+                supabase = get_supabase_client()
+                if supabase:
+                    cloud_result = (
+                        supabase.client
+                        .table('cloud_capsules')
+                        .select('id, metadata')
+                        .is_('deleted_at', None)
+                        .in_('id', cloud_ids)
+                        .execute()
+                    )
+                    for row in (cloud_result.data or []):
+                        cloud_capsule_map[str(row.get('id'))] = row
+            except Exception as e:
+                logger.warning(f"[CAPSULES] 云端状态批量查询失败: {e}")
+
         # Phase G: 获取当前用户 ID 以判断所有权
         current_user_id = None
         auth_header = request.headers.get('Authorization')
@@ -107,6 +161,20 @@ def get_capsules():
                 current_user_id and
                 capsule.get('owner_supabase_user_id') == current_user_id
             )
+
+            # 云端存在性与关键词差异（前端图标判定的单一可信来源）
+            cloud_id = capsule.get('cloud_id')
+            cloud_record = cloud_capsule_map.get(str(cloud_id)) if cloud_id else None
+            capsule['cloud_exists'] = bool(cloud_record)
+
+            if cloud_record:
+                local_keywords = capsule.get('keywords')
+                cloud_keywords = _extract_cloud_keywords(cloud_record)
+                capsule['cloud_keyword_outdated'] = (
+                    _normalize_keywords(local_keywords) != _normalize_keywords(cloud_keywords)
+                )
+            else:
+                capsule['cloud_keyword_outdated'] = False
 
         # Phase G: 应用过滤器
         if filter_type == 'mine':
