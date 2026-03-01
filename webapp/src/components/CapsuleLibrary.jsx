@@ -1156,7 +1156,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
         let { resp: metaResp, json: metaJson } = await postUploadCapsule(uploadPayload);
 
-        // 云端 5xx 常见于网关/代理或字段兼容问题；失败时做一次保守重试
+        // 云端 5xx 常见于网关/代理或字段兼容问题；失败时先做一次保守重试
         if ((!metaResp.ok || !metaJson?.success) && metaResp.status >= 500) {
           console.warn('[upload-capsule] first attempt failed, retry with conservative payload', {
             status: metaResp.status,
@@ -1175,8 +1175,26 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           metaJson = second.json;
         }
 
+        // 二次兜底：若仍是 5xx，移除 capsule.id（local_id）再试一次，
+        // 兼容部分云端环境对 local_id 类型/约束异常敏感的情况。
+        if ((!metaResp.ok || !metaJson?.success) && metaResp.status >= 500) {
+          console.warn('[upload-capsule] second attempt failed, retry without capsule.id', {
+            status: metaResp.status,
+            error: metaJson?.error,
+          });
+          const thirdPayload = {
+            ...uploadPayload,
+            capsule: Object.fromEntries(
+              Object.entries(uploadPayload.capsule || {}).filter(([k]) => k !== 'id')
+            ),
+          };
+          const third = await postUploadCapsule(thirdPayload);
+          metaResp = third.resp;
+          metaJson = third.json;
+        }
+
         if (!metaResp.ok || !metaJson?.success) {
-          throw new Error(metaJson?.error || `upload-capsule HTTP ${metaResp.status}`);
+          throw new Error(metaJson?.error || `upload-capsule HTTP ${metaResp.status} (write cloud_capsules failed)`);
         }
 
         // 元数据创建成功即视为云端记录已存在，先做前端即时状态覆盖
