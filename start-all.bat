@@ -12,6 +12,7 @@ set "PROJECT_ROOT=%~dp0"
 set "DATA_PIPELINE=%PROJECT_ROOT%data-pipeline"
 set "CONFIG_DIR=%USERPROFILE%\.soundcapsule"
 set "EXPORT_DIR=%USERPROFILE%\Documents\SoundCapsule\Exports"
+set "API_PORT=5003"
 
 :: 创建必需的目录
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
@@ -29,11 +30,11 @@ if not exist "%DATA_PIPELINE%\venv\Scripts\activate.bat" (
 )
 
 :: 启动后端 API（带必需参数）
-echo [1/2] 启动后端 API 服务器 (端口 5002)...
+echo [1/2] 启动后端 API 服务器 (端口 %API_PORT%)...
 echo       配置目录: %CONFIG_DIR%
 echo       导出目录: %EXPORT_DIR%
 echo       资源目录: %DATA_PIPELINE%
-start "Sound Capsule API" cmd /k "cd /d %DATA_PIPELINE% && venv\Scripts\activate && python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%" --resource-dir "%DATA_PIPELINE%""
+start "Sound Capsule API" cmd /k "cd /d %DATA_PIPELINE% && venv\Scripts\activate && python capsule_api.py --config-dir "%CONFIG_DIR%" --export-dir "%EXPORT_DIR%" --resource-dir "%DATA_PIPELINE%" --port %API_PORT%"
 
 :: 等待后端启动
 echo     等待后端启动...
@@ -42,7 +43,7 @@ timeout /t 5 /nobreak >nul
 :: 检查后端是否成功启动（兼容无 curl 的情况）
 where curl >nul 2>&1
 if %errorlevel% equ 0 (
-    curl -s "http://localhost:5002/api/capsules?limit=1" >nul 2>&1
+    curl -s "http://localhost:%API_PORT%/api/capsules?limit=1" >nul 2>&1
     if %errorlevel% neq 0 (
         echo [警告] 后端 API 可能未完全启动，请检查 API 窗口
     ) else (
@@ -62,7 +63,7 @@ echo   系统启动完成!
 echo ============================================
 echo.
 echo 服务信息:
-echo   - 后端 API: http://localhost:5002
+echo   - 后端 API: http://localhost:%API_PORT%
 echo   - 前端应用: Tauri 窗口
 echo   - 配置目录: %CONFIG_DIR%
 echo   - 导出目录: %EXPORT_DIR%
