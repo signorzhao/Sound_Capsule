@@ -301,6 +301,38 @@ export const SyncProvider = ({ children }) => {
         cursor = nextCursor;
       }
 
+      // 兜底：部分云端尚未返回 signed_urls，导致分页应用成功但本地文件 0 下载。
+      // 仅在确实出现“有胶囊但无轻资产”时触发一次本地 download-only 回退，避免影响正常路径。
+      const noAssetsDownloaded =
+        totalDownloaded > 0 &&
+        totalPreviewDownloaded === 0 &&
+        totalRppDownloaded === 0 &&
+        totalMetadataDownloaded === 0;
+
+      if (noAssetsDownloaded) {
+        console.warn('⚠️ [BootSync] 分页轻同步未下载到任何轻资产，触发 download-only 回退...');
+        const fallbackResp = await authFetch(`${LOCAL_API_BASE}/sync/download-only`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            include_previews: true,
+            cloud_api_origin: CLOUD_API_BASE.replace(/\/api$/, ''),
+          }),
+        });
+
+        const fallbackJson = await fallbackResp.json().catch(() => ({}));
+        if (fallbackResp.ok || fallbackResp.status === 207) {
+          const fallbackData = fallbackJson?.data || {};
+          totalPreviewDownloaded += fallbackData.preview_downloaded || 0;
+          // download-only 返回的是 downloaded_count（胶囊计数），非 rpp/metadata 细分；
+          // 为了保持指标语义，至少将其折算到 metadata 计数，避免 UI 仍显示“0 文件”。
+          totalMetadataDownloaded += fallbackData.downloaded_count || 0;
+        } else {
+          const fallbackErr = fallbackJson?.error || `download-only HTTP ${fallbackResp.status}`;
+          console.warn(`⚠️ [BootSync] download-only 回退失败: ${fallbackErr}`);
+        }
+      }
+
       setSyncStatus(prev => ({ ...prev, syncProgress: 90, syncStep: i18n.t('syncIndicator.syncStepVerify') }));
       onProgress?.({ phase: i18n.t('syncIndicator.syncStepVerify'), current: totalDownloaded, total: totalDownloaded, percentage: 90 });
       await fetchSyncStatus();

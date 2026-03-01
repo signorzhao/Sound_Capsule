@@ -2078,6 +2078,20 @@ def apply_lightweight_page():
 
                     if not effective_signed_urls:
                         errors.append(f"no signed urls provided for {file_path}")
+                        # 兜底：即使没有 signed urls，也尽量落一份 metadata.json，
+                        # 避免出现“库里有胶囊但本地目录完全空”的体验。
+                        try:
+                            pm = PathManager.get_instance()
+                            capsule_dir = Path(pm.export_dir) / file_path
+                            capsule_dir.mkdir(parents=True, exist_ok=True)
+                            metadata_file = capsule_dir / 'metadata.json'
+                            if not metadata_file.exists() and isinstance(metadata, dict) and metadata:
+                                with open(metadata_file, 'w', encoding='utf-8') as f:
+                                    json.dump(metadata, f, ensure_ascii=False, indent=2)
+                                downloaded_files += 1
+                                metadata_downloaded += 1
+                        except Exception as e:
+                            errors.append(f"write fallback metadata.json failed for {file_path}: {e}")
                         continue
 
                     try:
