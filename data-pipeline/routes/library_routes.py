@@ -286,12 +286,19 @@ def get_capsules():
             cloud_record = cloud_capsule_map.get(str(cloud_id)) if cloud_id else None
             capsule['cloud_exists'] = bool(cloud_record)
 
-            # 关键词同步图标只由本地 pending 状态驱动：
-            # - 改关键词后立即出现
-            # - 同步后清除 pending，刷新不回弹
+            # 关键词同步图标双保险：
+            # 1) 优先看本地 pending（改后立即出现）
+            # 2) 若 pending 丢失/异常，则回退比较本地与云端 keywords（避免漏显示）
             has_cloud_id = bool(cloud_id and str(cloud_id).strip())
+            local_keywords = _normalize_keywords(capsule.get('keywords'))
+            cloud_keywords = _normalize_keywords(_extract_cloud_keywords(cloud_record or {})) if cloud_record else set()
+            keyword_mismatch = bool(cloud_record) and (local_keywords != cloud_keywords)
             capsule['cloud_keyword_outdated'] = bool(
-                has_cloud_id and capsule.get('id') in pending_tag_capsule_ids
+                has_cloud_id and (
+                    capsule.get('id') in pending_tag_capsule_ids or
+                    keyword_mismatch or
+                    str(capsule.get('cloud_status') or '').strip().lower() == 'outdated'
+                )
             )
 
         # Phase G: 应用过滤器
@@ -643,6 +650,21 @@ def update_capsule_tags_api(capsule_id):
                     sync_service = get_sync_service()
                     sync_service.mark_for_sync('capsule_tags', capsule_id, 'update')
                     pending_sync = True
+                    # 额外写入胶囊状态，避免某些环境 pending 丢失时图标不出现
+                    try:
+                        conn = db.connect()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            """
+                            UPDATE capsules
+                            SET cloud_status = 'outdated'
+                            WHERE id = ?
+                            """,
+                            (capsule_id,)
+                        )
+                        conn.commit()
+                    finally:
+                        conn.close()
                     logger.info(f"[TAGS] ✓ 已标记关键词待同步: 胶囊 {capsule_id} (cloud_id: {capsule.get('cloud_id')})")
                 else:
                     logger.info(f"[TAGS] 胶囊 {capsule_id} 未上传到云端，跳过标记同步")

@@ -430,6 +430,45 @@ def _extract_supabase_sub_from_bearer(auth_header: str) -> str:
         return ''
 
 
+def _extract_identity_from_bearer(auth_header: str) -> dict:
+    """
+    从 Bearer JWT 提取弱身份信息（不验签）。
+    仅用于 token 失效时的命名兜底，不用于权限判断。
+    """
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return {'sub': '', 'email': '', 'username': '', 'display_name': ''}
+    token = auth_header.split(' ', 1)[1].strip()
+    parts = token.split('.')
+    if len(parts) != 3:
+        return {'sub': '', 'email': '', 'username': '', 'display_name': ''}
+
+    payload_b64 = parts[1]
+    padding = '=' * (-len(payload_b64) % 4)
+    try:
+        payload_json = base64.urlsafe_b64decode(payload_b64 + padding).decode('utf-8')
+        payload = json.loads(payload_json)
+    except Exception:
+        payload = {}
+
+    user_meta = payload.get('user_metadata') if isinstance(payload.get('user_metadata'), dict) else {}
+    email = str(payload.get('email') or user_meta.get('email') or '').strip()
+    username = str(
+        user_meta.get('username')
+        or user_meta.get('display_name')
+        or payload.get('preferred_username')
+        or payload.get('username')
+        or ''
+    ).strip()
+    display_name = str(user_meta.get('display_name') or username or '').strip()
+    sub = str(payload.get('sub') or '').strip()
+    return {
+        'sub': sub,
+        'email': email,
+        'username': username,
+        'display_name': display_name,
+    }
+
+
 def token_required(f):
     """
     Token 认证装饰器
@@ -1757,15 +1796,28 @@ def webui_export_api():
         except APIError as auth_err:
             if getattr(auth_err, 'status_code', 500) == 401:
                 auth_header = request.headers.get('Authorization', '')
-                fallback_sub = _extract_supabase_sub_from_bearer(auth_header)
+                fallback_identity = _extract_identity_from_bearer(auth_header)
+                fallback_sub = fallback_identity.get('sub')
                 if fallback_sub:
+                    auth_manager = get_auth_manager()
+                    cached_user = auth_manager.get_user_by_supabase_id(fallback_sub)
+                    fallback_email = fallback_identity.get('email') or ''
+                    fallback_email_name = fallback_email.split('@')[0] if fallback_email else ''
+                    fallback_username = (
+                        (cached_user or {}).get('username')
+                        or (cached_user or {}).get('display_name')
+                        or fallback_identity.get('username')
+                        or fallback_identity.get('display_name')
+                        or fallback_email_name
+                        or None
+                    )
                     logger.warning(f"[webui-export] token 校验失败，回退 sub 识别用户: {fallback_sub}")
                     current_user = {
                         'id': fallback_sub,
                         'supabase_user_id': fallback_sub,
-                        'username': None,
-                        'email': None,
-                        'display_name': None,
+                        'username': fallback_username,
+                        'email': fallback_email or None,
+                        'display_name': fallback_username,
                     }
                 else:
                     logger.warning(f"[webui-export] token 校验失败，降级匿名导出: {auth_err.message}")
@@ -1775,6 +1827,7 @@ def webui_export_api():
 
         owner_supabase_user_id = None
         capsule_username = None  # 用于胶囊命名的用户名
+        has_auth_header = bool(request.headers.get('Authorization'))
         if current_user:
             # 优先使用 supabase_user_id，兼容 id 字段
             owner_supabase_user_id = current_user.get('supabase_user_id') or current_user.get('id')
@@ -1785,6 +1838,11 @@ def webui_export_api():
             print(f"🔐 当前用户: {owner_supabase_user_id}, 用户名: {capsule_username}")
         else:
             print("⚠️ 未认证用户，胶囊将没有所有者")
+
+        # 关键保护：带认证头的保存请求，若无法解析登录用户名则拒绝导出，
+        # 避免降级成系统名/默认名导致后续上传与轻量拉取链路错位。
+        if has_auth_header and not capsule_username:
+            raise APIError('登录态异常：无法识别用户名，请重新登录后再保存胶囊', 401)
 
         # 获取 capsule_type (可能是 ID 数字或名称字符串)
         capsule_type_input = data.get('capsule_type', 'magic')

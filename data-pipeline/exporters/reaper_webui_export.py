@@ -265,11 +265,10 @@ class ReaperWebUIExporter:
             print(f"⚠ REAPER Web UI 未运行,但这不影响导出功能")
             print(f"  导出将通过 AppleScript/-nonewinst 直接执行")
 
-        # 获取用户名：优先使用传入的用户名，否则使用系统用户名
+        # 获取用户名：优先使用传入的用户名；不再回退系统用户名（避免机器名污染胶囊命名）
         if not username:
-            import getpass
-            username = getpass.getuser()
-            print(f"⚠️ 未传入用户名，使用系统用户名: {username}")
+            username = "user"
+            print(f"⚠️ 未传入用户名，使用安全默认值: {username}")
         else:
             print(f"✓ 使用登录用户名: {username}")
 
@@ -520,7 +519,7 @@ def quick_webui_export(
         webui_port: Web UI 端口
         capsule_type: 胶囊类型 (magic/impact/atmosphere)
         export_dir: 导出目录路径（可选）
-        username: 用户名（可选，用于胶囊命名，默认使用系统用户名）
+        username: 用户名（可选，用于胶囊命名，未传时使用安全默认值）
 
     Returns:
         导出结果

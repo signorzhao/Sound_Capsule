@@ -464,7 +464,17 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, capsules, refreshTrigger]); // 🔥 移除 tagsCache 依赖，避免无限循环
 
-  // 语义搜索：debounce 后请求 API
+  const resolveSemanticSearchError = (status, errorMsg = '') => {
+    if (status === 401 || status === 403) {
+      return t('auth.loginExpired') || '登录态失效或权限不足，请重新登录';
+    }
+    if (status >= 500) {
+      return t('librarySync.cloudUnavailable') || '云端暂不可用，请稍后重试';
+    }
+    return errorMsg || (t('library.searchFailed') || '语义搜索失败');
+  };
+
+  // 语义搜索：debounce 后请求云端 API
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) {
@@ -482,19 +492,19 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       try {
         const { authFetch } = await import('../utils/apiClient.js');
         const response = await authFetch(
-          `${LOCAL_API_BASE}/capsules/search?q=${encodeURIComponent(q)}&limit=50`
+          `${CLOUD_API_BASE}/capsules/search?q=${encodeURIComponent(q)}&limit=20`
         );
-        const data = await response.json();
-        if (data.success && Array.isArray(data.capsules)) {
+        const data = await response.json().catch(() => ({}));
+        if (response.ok && data.success && Array.isArray(data.capsules)) {
           setSemanticSearchResults(data.capsules);
-          setSemanticSearchError(data.error || null);
+          setSemanticSearchError(null);
         } else {
           setSemanticSearchResults([]);
-          setSemanticSearchError(data.error || 'search_failed');
+          setSemanticSearchError(resolveSemanticSearchError(response.status, data.error));
         }
       } catch (err) {
         setSemanticSearchResults([]);
-        setSemanticSearchError('search_failed');
+        setSemanticSearchError(t('librarySync.cloudUnavailable') || '云端暂不可用，请稍后重试');
       } finally {
         setSemanticSearchLoading(false);
       }
@@ -854,6 +864,141 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     return { cloudId, data: json?.data || {} };
   };
 
+  const FILE_META_PATCH_QUEUE_KEY = 'sc_cloud_file_meta_patch_queue_v1';
+
+  const getBasenameFromStoragePath = (storagePath, fallbackName = '') => {
+    const raw = typeof storagePath === 'string' ? storagePath.trim() : '';
+    if (!raw) return fallbackName || '';
+    const normalized = raw.replace(/\\/g, '/');
+    const last = normalized.split('/').pop();
+    return (last && last.trim()) || fallbackName || '';
+  };
+
+  const loadFileMetaPatchQueue = () => {
+    try {
+      const raw = localStorage.getItem(FILE_META_PATCH_QUEUE_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveFileMetaPatchQueue = (queue) => {
+    try {
+      localStorage.setItem(FILE_META_PATCH_QUEUE_KEY, JSON.stringify(queue || []));
+    } catch {
+      // localStorage 不可用时静默降级
+    }
+  };
+
+  const patchCloudFileMetadata = async (cloudId, payload, capsuleSnapshot = null) => {
+    const resp = await authFetch(`${CLOUD_API_BASE}/cloud/capsules/${encodeURIComponent(cloudId)}/sync-file-metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (resp.ok && json?.success) {
+      return json?.data || {};
+    }
+
+    // 云端若尚未部署新接口，回退到 upload-capsule 做幂等 metadata 回写
+    if ((resp.status === 404 || resp.status === 405) && capsuleSnapshot) {
+      const folderName = payload?.file_path || capsuleSnapshot.file_path || capsuleSnapshot.name;
+      const previewName = payload?.metadata?.preview_audio || null;
+      const rppName = payload?.metadata?.rpp_file || null;
+      const fallbackResp = await authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          capsule_folder_name: folderName,
+          capsule: {
+            id: capsuleSnapshot.id,
+            name: capsuleSnapshot.name || folderName,
+            file_path: folderName,
+            capsule_type: capsuleSnapshot.capsule_type || 'magic',
+            keywords: capsuleSnapshot.keywords || '',
+            description: capsuleSnapshot.description || '',
+            // 兼容旧口径：要求写 metadata 顶层
+            preview_audio: previewName,
+            rpp_file: rppName,
+            metadata: {
+              preview_audio: previewName,
+              rpp_file: rppName,
+            },
+          },
+          tags: [],
+          coordinates: [],
+          files: {},
+        }),
+      });
+      const fallbackJson = await fallbackResp.json().catch(() => ({}));
+      if (fallbackResp.ok && fallbackJson?.success) {
+        return fallbackJson?.data || {};
+      }
+      throw new Error(
+        fallbackJson?.error ||
+        `upload-capsule fallback HTTP ${fallbackResp.status}`
+      );
+    }
+
+    throw new Error(json?.error || `sync-file-metadata HTTP ${resp.status}`);
+  };
+
+  const enqueueFileMetaPatch = (cloudId, payload, capsuleSnapshot = null, errorMessage = '') => {
+    if (!cloudId || !payload) return;
+    const queue = loadFileMetaPatchQueue();
+    const now = Date.now();
+    const current = queue.find(x => x.cloud_id === cloudId);
+    const base = current || { retry_count: 0 };
+    const nextRetryMs = Math.min(10 * 60 * 1000, 1000 * (2 ** Math.min(base.retry_count || 0, 8)));
+    const item = {
+      cloud_id: cloudId,
+      payload,
+      retry_count: base.retry_count || 0,
+      next_retry_at: now + nextRetryMs,
+      last_error: errorMessage || base.last_error || '',
+      updated_at: now,
+      capsule_snapshot: capsuleSnapshot || base.capsule_snapshot || null,
+    };
+    const nextQueue = [...queue.filter(x => x.cloud_id !== cloudId), item];
+    saveFileMetaPatchQueue(nextQueue);
+  };
+
+  const flushFileMetaPatchQueue = async () => {
+    const queue = loadFileMetaPatchQueue();
+    if (!queue.length) return;
+    const now = Date.now();
+    const nextQueue = [];
+    for (const item of queue) {
+      if (!item?.cloud_id || !item?.payload) continue;
+      if ((item.next_retry_at || 0) > now) {
+        nextQueue.push(item);
+        continue;
+      }
+      try {
+        await patchCloudFileMetadata(item.cloud_id, item.payload, item.capsule_snapshot || null);
+      } catch (err) {
+        const retryCount = (item.retry_count || 0) + 1;
+        const nextRetryMs = Math.min(10 * 60 * 1000, 1000 * (2 ** Math.min(retryCount, 8)));
+        nextQueue.push({
+          ...item,
+          retry_count: retryCount,
+          next_retry_at: Date.now() + nextRetryMs,
+          last_error: err?.message || 'unknown_error',
+          updated_at: Date.now(),
+        });
+      }
+    }
+    saveFileMetaPatchQueue(nextQueue);
+  };
+
+  useEffect(() => {
+    flushFileMetaPatchQueue().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Phase G: 云同步处理函数
   const handleCloudSync = async (capsule, action = null) => {
     if (action === 'download') {
@@ -949,6 +1094,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       let toastFinalized = false;
       
       try {
+        // 启动时/上传前先冲刷历史 patch 队列（幂等）
+        await flushFileMetaPatchQueue().catch(() => {});
+
         if (uploadingCapsules[capsule.id]) {
           toast.info(t('librarySync.uploadingPleaseWait'));
           return;
@@ -966,6 +1114,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             capsule_type: capsule.capsule_type || 'magic',
             keywords: capsule.keywords || '',
             description: capsule.description || '',
+            // 兼容旧口径：要求写 metadata 顶层
+            preview_audio: capsule.preview_audio || null,
+            rpp_file: capsule.rpp_file || null,
             metadata: {
               preview_audio: capsule.preview_audio || null,
               rpp_file: capsule.rpp_file || null,
@@ -1089,6 +1240,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 ok: false,
                 file_type: s.file_type || localMeta?.file_type,
                 filename: s.filename || localMeta?.filename,
+                storage_path: s.storage_path || null,
               });
               continue;
             }
@@ -1103,6 +1255,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 ok: false,
                 file_type: localMeta.file_type,
                 filename: localMeta.filename,
+                storage_path: s.storage_path || null,
               });
               continue;
             }
@@ -1121,6 +1274,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 ok: false,
                 file_type: localMeta.file_type,
                 filename: localMeta.filename,
+                storage_path: s.storage_path || null,
               });
               continue;
             }
@@ -1130,11 +1284,49 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
               ok: true,
               file_type: localMeta.file_type,
               filename: localMeta.filename,
+              storage_path: s.storage_path || null,
             });
             toast.update(toastId, `${t('librarySync.uploadingCapsule', { name: capsule.name })} ${uploaded}/${signedItems.length}`, 'info', 0);
           }
 
-          // Step 4) metadata.json 上传成功后，非阻断触发插件信息回填
+          // Step 4) 上传成功后，按真实落盘文件名回写 metadata（新格式）
+          const uploadedPreview = uploadResults.find(
+            (x) => x.ok && String(x.file_type || '').toLowerCase() === 'preview'
+          );
+          const uploadedRpp = uploadResults.find(
+            (x) => x.ok && String(x.file_type || '').toLowerCase() === 'rpp'
+          );
+          const realPreviewName = uploadedPreview
+            ? getBasenameFromStoragePath(uploadedPreview.storage_path, uploadedPreview.filename)
+            : null;
+          const realRppName = uploadedRpp
+            ? getBasenameFromStoragePath(uploadedRpp.storage_path, uploadedRpp.filename)
+            : null;
+          const patchPayload = {
+            file_path: capsuleFolderName,
+            metadata: {
+              ...(realPreviewName ? { preview_audio: realPreviewName } : {}),
+              ...(realRppName ? { rpp_file: realRppName } : {}),
+            },
+          };
+          if (uploadedCloudId) {
+            const capsuleSnapshot = {
+              id: capsule.id,
+              name: capsule.name,
+              file_path: capsuleFolderName,
+              capsule_type: capsule.capsule_type || 'magic',
+              keywords: capsule.keywords || '',
+              description: capsule.description || '',
+            };
+            try {
+              await patchCloudFileMetadata(uploadedCloudId, patchPayload, capsuleSnapshot);
+            } catch (metaPatchErr) {
+              console.warn('[FileMetaPatch] immediate patch failed, queued for retry:', metaPatchErr);
+              enqueueFileMetaPatch(uploadedCloudId, patchPayload, capsuleSnapshot, metaPatchErr?.message || '');
+            }
+          }
+
+          // Step 5) metadata.json 上传成功后，非阻断触发插件信息回填
           const metadataUploaded = uploadResults.some(
             (x) => x.ok && (x.file_type === 'metadata' || String(x.filename || '').toLowerCase() === 'metadata.json')
           );
@@ -2001,6 +2193,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                   </button>
                 )}
               </div>
+              {!!semanticSearchError && (
+                <div className="mt-2 px-1 text-xs text-amber-400">{semanticSearchError}</div>
+              )}
             </div>
 
             {/* 类型过滤按钮 */}

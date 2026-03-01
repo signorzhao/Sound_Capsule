@@ -146,6 +146,36 @@ def _extract_plugin_fields_from_metadata_obj(metadata_obj):
     return plugin_count, plugin_list
 
 
+def _normalize_cloud_metadata(raw_metadata):
+    if isinstance(raw_metadata, str):
+        try:
+            raw_metadata = json.loads(raw_metadata)
+        except Exception:
+            raw_metadata = {}
+    if not isinstance(raw_metadata, dict):
+        raw_metadata = {}
+
+    nested_metadata = raw_metadata.get("metadata")
+    if not isinstance(nested_metadata, dict):
+        nested_metadata = {}
+
+    preview_audio = nested_metadata.get("preview_audio") or raw_metadata.get("preview_audio")
+    rpp_file = nested_metadata.get("rpp_file") or raw_metadata.get("rpp_file")
+    if preview_audio:
+        nested_metadata["preview_audio"] = preview_audio
+    if rpp_file:
+        nested_metadata["rpp_file"] = rpp_file
+
+    normalized = dict(raw_metadata)
+    normalized["metadata"] = nested_metadata
+    # 兼容策略：双写顶层与 metadata.metadata，避免旧链路漏读
+    if preview_audio:
+        normalized["preview_audio"] = preview_audio
+    if rpp_file:
+        normalized["rpp_file"] = rpp_file
+    return normalized
+
+
 @cloud_bp.route("/signed-upload-url", methods=["POST", "OPTIONS"])
 @token_required
 def signed_upload_url(current_user):
@@ -212,16 +242,23 @@ def upload_capsule(current_user):
     if not supabase:
         raise APIError("Supabase 客户端未初始化", 500)
 
-    metadata = capsule.get("metadata") or {}
+    metadata = _normalize_cloud_metadata(capsule.get("metadata") or {})
+    nested_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
     capsule_data = {
         "id": capsule.get("id"),
         "name": capsule.get("name") or folder,
-        "file_path": capsule.get("file_path") or folder,
+        "file_path": folder,
         "capsule_type": capsule.get("capsule_type"),
         "keywords": capsule.get("keywords"),
         "description": capsule.get("description"),
-        "preview_audio": (metadata or {}).get("preview_audio") or ((files.get("preview") or {}).get("filename")),
-        "metadata": metadata,
+        # 兼容旧读取口径：顶层同时写 preview_audio/rpp_file
+        "preview_audio": nested_metadata.get("preview_audio") or ((files.get("preview") or {}).get("filename")),
+        "rpp_file": nested_metadata.get("rpp_file") or ((files.get("rpp") or {}).get("filename")),
+        "metadata": {
+            **nested_metadata,
+            "preview_audio": nested_metadata.get("preview_audio") or ((files.get("preview") or {}).get("filename")),
+            "rpp_file": nested_metadata.get("rpp_file") or ((files.get("rpp") or {}).get("filename")),
+        },
     }
 
     cloud_capsule = supabase.upload_capsule(owner_id, capsule_data)
@@ -554,6 +591,125 @@ def sync_plugin_metadata(current_user, capsule_ref):
     })
 
 
+@cloud_bp.route("/capsules/<capsule_ref>/sync-file-metadata", methods=["POST", "OPTIONS"])
+@token_required
+def sync_file_metadata(current_user, capsule_ref):
+    """
+    上传文件后回写 cloud_capsules.metadata 里的轻资产路径信息：
+    - metadata.file_path
+    - metadata.metadata.preview_audio
+    - metadata.metadata.rpp_file
+    """
+    data = request.get_json(silent=True) or {}
+    owner_id = current_user.get("supabase_user_id") or str(current_user.get("id", ""))
+    if not owner_id:
+        raise APIError("用户 ID 不存在", 400)
+
+    supabase = get_supabase_client()
+    if not supabase:
+        raise APIError("Supabase 客户端未初始化", 500)
+
+    cloud_id = str(capsule_ref or "").strip()
+    cloud_capsule = None
+
+    if cloud_id:
+        try:
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id,user_id,metadata")
+                .eq("id", cloud_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+        except Exception:
+            cloud_capsule = None
+
+    if not cloud_capsule:
+        try:
+            local_id = int(capsule_ref)
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id,user_id,metadata")
+                .eq("local_id", local_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+                cloud_id = str(cloud_capsule.get("id") or "").strip()
+        except Exception:
+            pass
+
+    if not cloud_capsule or not cloud_id:
+        raise APIError("云端胶囊不存在或无权限", 404)
+
+    file_path = str(data.get("file_path") or "").strip()
+    incoming_meta = data.get("metadata") or {}
+    if not isinstance(incoming_meta, dict):
+        incoming_meta = {}
+
+    existing_metadata = _normalize_cloud_metadata(cloud_capsule.get("metadata") or {})
+    nested_metadata = existing_metadata.get("metadata") if isinstance(existing_metadata.get("metadata"), dict) else {}
+    nested_metadata = dict(nested_metadata)
+
+    if "preview_audio" in incoming_meta:
+        preview_name = incoming_meta.get("preview_audio")
+        if preview_name is None:
+            nested_metadata.pop("preview_audio", None)
+            existing_metadata.pop("preview_audio", None)
+        else:
+            normalized_preview = str(preview_name).strip()
+            nested_metadata["preview_audio"] = normalized_preview
+            existing_metadata["preview_audio"] = normalized_preview
+
+    if "rpp_file" in incoming_meta:
+        rpp_name = incoming_meta.get("rpp_file")
+        if rpp_name is None:
+            nested_metadata.pop("rpp_file", None)
+            existing_metadata.pop("rpp_file", None)
+        else:
+            normalized_rpp = str(rpp_name).strip()
+            nested_metadata["rpp_file"] = normalized_rpp
+            existing_metadata["rpp_file"] = normalized_rpp
+
+    merged_metadata = dict(existing_metadata)
+    merged_metadata["metadata"] = nested_metadata
+    if file_path:
+        merged_metadata["file_path"] = file_path
+
+    try:
+        (
+            supabase.client
+            .table("cloud_capsules")
+            .update({
+                "metadata": merged_metadata,
+                "last_write_at": datetime.utcnow().isoformat(),
+            })
+            .eq("id", cloud_id)
+            .eq("user_id", owner_id)
+            .execute()
+        )
+    except Exception as e:
+        raise APIError(f"更新文件元数据失败: {e}", 500)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "cloud_id": cloud_id,
+            "file_path": merged_metadata.get("file_path"),
+            "preview_audio": (merged_metadata.get("metadata") or {}).get("preview_audio"),
+            "rpp_file": (merged_metadata.get("metadata") or {}).get("rpp_file"),
+        },
+        "error": None,
+    })
+
+
 @cloud_bp.route("/lightweight-assets", methods=["POST", "OPTIONS"])
 @token_required
 def lightweight_assets(current_user):
@@ -590,22 +746,18 @@ def lightweight_assets(current_user):
             )
             cap = resp.data or {}
             owner_id = cap.get("user_id")
-            metadata = cap.get("metadata") or {}
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except Exception:
-                    metadata = {}
+            metadata = _normalize_cloud_metadata(cap.get("metadata") or {})
+            nested_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), dict) else {}
             folder = metadata.get("file_path") or cap.get("name")
             if not owner_id or not folder:
                 errors.append(f"{cloud_id}: missing owner/folder")
                 continue
 
             plan = [("metadata", "metadata.json")]
-            preview_name = metadata.get("preview_audio")
+            preview_name = nested_metadata.get("preview_audio") or metadata.get("preview_audio")
             if include_previews and preview_name:
                 plan.append(("preview", preview_name))
-            rpp_name = metadata.get("rpp_file") or f"{folder}.rpp"
+            rpp_name = nested_metadata.get("rpp_file") or metadata.get("rpp_file") or f"{folder}.rpp"
             plan.append(("rpp", rpp_name))
 
             files = []

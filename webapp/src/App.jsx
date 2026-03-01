@@ -13,6 +13,7 @@ import { sendNotification, requestNotificationPermission } from './utils/tauriAp
 import { getAppConfig } from './utils/configApi';
 import { getTagDisplayText } from './utils/tagUtils';
 import { LOCAL_API_BASE } from './utils/apiOrigins';
+import { authFetch } from './utils/apiClient';
 import { invoke } from '@tauri-apps/api/core'; // 🔥 用于调用 Rust 命令
 import './components/SaveCapsuleHome.css';
 import './components/CapsuleCard.css';
@@ -546,15 +547,9 @@ export default function App() {
 
     try {
       console.log('📡 发送导出请求到 API...');
-      // 获取当前用户的 access_token，用于设置胶囊所有者
-      const accessToken = localStorage.getItem('access_token');
-      const headers = { 'Content-Type': 'application/json' };
-      if (accessToken) {
-        headers['Authorization'] = `Bearer ${accessToken}`;
-      }
-      const response = await fetch(`${LOCAL_API_BASE}/capsules/webui-export`, {
+      const response = await authFetch(`${LOCAL_API_BASE}/capsules/webui-export`, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
       });
 

@@ -86,6 +86,22 @@ def _extract_supabase_sub_from_bearer() -> str:
         return ''
 
 
+def _normalize_cloud_capsule_metadata(raw_metadata):
+    if isinstance(raw_metadata, str):
+        try:
+            raw_metadata = json.loads(raw_metadata)
+        except Exception:
+            raw_metadata = {}
+    if not isinstance(raw_metadata, dict):
+        raw_metadata = {}
+
+    nested = raw_metadata.get('metadata')
+    if not isinstance(nested, dict):
+        nested = {}
+
+    return raw_metadata, nested
+
+
 def _download_lightweight_assets_via_cloud(cloud_api_origin: str, include_previews: bool = True):
     """
     本地 sidecar 无 service_role 时，回退到云端 API 拉取轻量文件并落盘。
@@ -967,16 +983,17 @@ def download_from_cloud(current_user):
                                 cursor.execute("SELECT id FROM capsules WHERE uuid = ?", (record.get('id'),))
                                 existing = cursor.fetchone()
 
-                            # 准备本地数据
-                            capsule_folder_name = (record.get('metadata') or {}).get('file_path') or record.get('name', '')
+                            # 准备本地数据（新格式优先）
+                            record_metadata, record_nested_meta = _normalize_cloud_capsule_metadata(record.get('metadata') or {})
+                            capsule_folder_name = record_metadata.get('file_path') or record.get('name', '')
 
                             local_data = {
                                 'uuid': record.get('id'),
                                 'name': record.get('name'),
                                 'file_path': capsule_folder_name,
-                                'preview_audio': record.get('metadata', {}).get('preview_audio'),
-                                'rpp_file': record.get('metadata', {}).get('rpp_file'),
-                                'capsule_type': record.get('metadata', {}).get('capsule_type', 'magic'),
+                                'preview_audio': record_nested_meta.get('preview_audio') or record_metadata.get('preview_audio'),
+                                'rpp_file': record_nested_meta.get('rpp_file') or record_metadata.get('rpp_file'),
+                                'capsule_type': record_metadata.get('capsule_type', 'magic'),
                                 'cloud_status': 'synced',
                                 'cloud_id': record.get('id'),
                                 'cloud_version': record.get('version', 1),
@@ -1640,13 +1657,14 @@ def lightweight_page(current_user):
                 'capsule': cap,
                 'tags': tags,
                 'coordinates': coordinates,
-                'preview': cap.get('metadata', {}).get('preview_audio') if include_previews else None,
+                'preview': None,
             })
             if include_signed_urls:
-                metadata = cap.get('metadata') or {}
+                metadata, nested_metadata = _normalize_cloud_capsule_metadata(cap.get('metadata') or {})
                 owner_id = cap.get('user_id')
                 folder = metadata.get('file_path') or cap.get('name')
                 signed_urls = {}
+                preview_name = nested_metadata.get('preview_audio') or metadata.get('preview_audio')
 
                 if owner_id and folder:
                     def _try_signed(path: str):
@@ -1669,22 +1687,61 @@ def lightweight_page(current_user):
                     else:
                         errors.append(f"{cloud_id}: metadata signed url failed: {meta_signed.get('error')}")
 
-                    preview_name = metadata.get('preview_audio')
-                    if include_previews and preview_name:
-                        preview_path = f"{owner_id}/{folder}/{preview_name}"
-                        preview_signed = _try_signed(preview_path)
-                        if preview_signed.get('signed_url'):
+                    if include_previews:
+                        preview_signed = None
+
+                        # 优先使用 metadata 指定的预览文件名（主路径，保持现有行为）
+                        if preview_name:
+                            preview_path = f"{owner_id}/{folder}/{preview_name}"
+                            current = _try_signed(preview_path)
+                            if current.get('signed_url'):
+                                preview_signed = (preview_name, current)
+                            else:
+                                errors.append(f"{cloud_id}: preview signed url failed: {current.get('error')}")
+
+                        # 兜底：历史数据里 preview_audio 缺失或命名不一致时，自动扫描目录内音频文件
+                        if not preview_signed:
+                            discovered_preview = None
+                            for bucket_name in ('capsule-files', 'capsules'):
+                                try:
+                                    obj_list = supabase.client.storage.from_(bucket_name).list(f"{owner_id}/{folder}") or []
+                                    audio_names = []
+                                    for obj in obj_list:
+                                        name = (obj or {}).get('name')
+                                        if isinstance(name, str) and name.lower().endswith(('.ogg', '.mp3', '.wav')):
+                                            audio_names.append(name)
+
+                                    if audio_names:
+                                        # 优先挑选名称带 preview 的文件，其次取第一个音频文件
+                                        preferred = next((n for n in audio_names if 'preview' in n.lower()), audio_names[0])
+                                        path = f"{owner_id}/{folder}/{preferred}"
+                                        signed = supabase.create_signed_download_url(
+                                            path,
+                                            expires_in=signed_url_expires_in,
+                                            bucket_name=bucket_name,
+                                        )
+                                        if signed.get('signed_url'):
+                                            discovered_preview = (preferred, signed)
+                                            break
+                                except Exception:
+                                    continue
+
+                            if discovered_preview:
+                                preview_signed = discovered_preview
+                            elif preview_name:
+                                errors.append(f"{cloud_id}: preview fallback scan failed")
+
+                        if preview_signed:
+                            pname, psigned = preview_signed
                             signed_urls['preview'] = {
-                                'url': preview_signed['signed_url'],
-                                'filename': preview_name,
+                                'url': psigned['signed_url'],
+                                'filename': pname,
                             }
-                        else:
-                            errors.append(f"{cloud_id}: preview signed url failed: {preview_signed.get('error')}")
 
                     # 兼容历史 RPP 命名：先尝试常见命名，再回退到目录扫描 *.rpp
                     rpp_candidates = []
                     for candidate in (
-                        metadata.get('rpp_file'),
+                        nested_metadata.get('rpp_file') or metadata.get('rpp_file'),
                         metadata.get('project_file'),
                         metadata.get('rpp'),
                         f"{folder}.rpp",
@@ -1743,6 +1800,7 @@ def lightweight_page(current_user):
                 else:
                     errors.append(f"{cloud_id}: missing owner_id/folder for signed urls")
 
+                items[-1]['preview'] = preview_name if include_previews else None
                 items[-1]['signed_urls'] = signed_urls
         except Exception as e:
             errors.append(str(e))
@@ -1795,7 +1853,7 @@ def apply_lightweight_page():
                 coordinates = item.get('coordinates') or []
                 signed_urls = item.get('signed_urls') or {}
                 cloud_id = capsule.get('id')
-                metadata = capsule.get('metadata') or {}
+                metadata, nested_metadata = _normalize_cloud_capsule_metadata(capsule.get('metadata') or {})
                 file_path = metadata.get('file_path') or capsule.get('name') or ''
                 owner_supabase_user_id = capsule.get('user_id') or None
 
@@ -1830,8 +1888,8 @@ def apply_lightweight_page():
                         (
                             capsule.get('name') or file_path,
                             file_path,
-                            metadata.get('preview_audio'),
-                            metadata.get('rpp_file'),
+                            nested_metadata.get('preview_audio') or metadata.get('preview_audio'),
+                            nested_metadata.get('rpp_file') or metadata.get('rpp_file'),
                             metadata.get('capsule_type', 'magic'),
                             metadata.get('keywords') or '',
                             capsule.get('description') or '',
@@ -1852,8 +1910,8 @@ def apply_lightweight_page():
                             cloud_id,
                             capsule.get('name') or file_path,
                             file_path,
-                            metadata.get('preview_audio'),
-                            metadata.get('rpp_file'),
+                            nested_metadata.get('preview_audio') or metadata.get('preview_audio'),
+                            nested_metadata.get('rpp_file') or metadata.get('rpp_file'),
                             metadata.get('capsule_type', 'magic'),
                             metadata.get('keywords') or '',
                             capsule.get('description') or '',
@@ -2041,14 +2099,21 @@ def apply_lightweight_page():
                     preview_obj = _pick_asset_obj('preview')
                     if 'preview' not in effective_signed_urls:
                         preview_url = _pick_url(preview_obj)
-                        preview_filename = _guess_filename(preview_obj, metadata.get('preview_audio') or 'preview.ogg')
+                        nested_metadata = metadata.get('metadata') if isinstance(metadata.get('metadata'), dict) else {}
+                        preview_filename = _guess_filename(
+                            preview_obj,
+                            nested_metadata.get('preview_audio') or metadata.get('preview_audio') or 'preview.ogg'
+                        )
                         if preview_url and preview_filename:
                             effective_signed_urls['preview'] = {'url': preview_url, 'filename': preview_filename}
 
                     rpp_obj = _pick_asset_obj('rpp')
                     if 'rpp' not in effective_signed_urls:
                         rpp_url = _pick_url(rpp_obj)
-                        rpp_filename = _guess_filename(rpp_obj, metadata.get('rpp_file') or f"{file_path}.rpp")
+                        rpp_filename = _guess_filename(
+                            rpp_obj,
+                            nested_metadata.get('rpp_file') or metadata.get('rpp_file') or f"{file_path}.rpp"
+                        )
                         if rpp_url and rpp_filename:
                             effective_signed_urls['rpp'] = {'url': rpp_url, 'filename': rpp_filename}
                         elif isinstance(rpp_obj, dict) and bool(rpp_obj.get('exists', False)):
