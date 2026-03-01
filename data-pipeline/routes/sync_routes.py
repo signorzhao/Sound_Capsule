@@ -23,6 +23,7 @@ import base64
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 from flask import Blueprint, request, jsonify
 from functools import wraps
 
@@ -118,6 +119,124 @@ def _download_lightweight_assets_via_cloud(cloud_api_origin: str, include_previe
             'errors': [],
             'duration_seconds': time.time() - start,
         }
+
+
+def _sync_tags_via_cloud_capsule_api(cloud_api_origin: str, capsule_ids, auth_header: str):
+    """
+    本地无 Supabase 客户端时，按胶囊逐个调用云端
+    /api/cloud/capsules/<cloud_id>/sync-tags（服务端到服务端，无 CORS 问题）。
+    """
+    cloud_api_origin = (cloud_api_origin or '').rstrip('/')
+    if not cloud_api_origin:
+        return {
+            'success': False,
+            'uploaded': 0,
+            'downloaded': 0,
+            'errors': ['missing_cloud_api_origin'],
+            'synced_capsule_ids': [],
+        }
+
+    db = get_database()
+    db.connect()
+    cursor = db.conn.cursor()
+    try:
+        if capsule_ids:
+            placeholders = ','.join('?' * len(capsule_ids))
+            cursor.execute(f"""
+                SELECT id, cloud_id, keywords
+                FROM capsules
+                WHERE id IN ({placeholders})
+            """, tuple(capsule_ids))
+        else:
+            cursor.execute("""
+                SELECT id, cloud_id, keywords
+                FROM capsules
+                WHERE cloud_id IS NOT NULL AND TRIM(cloud_id) != ''
+            """)
+        rows = cursor.fetchall()
+    finally:
+        db.close()
+
+    uploaded = 0
+    errors = []
+    synced_capsule_ids = []
+
+    for row in rows:
+        local_id = int(row[0])
+        cloud_id = str(row[1] or '').strip()
+        keywords = row[2] or ''
+        if not cloud_id:
+            errors.append(f"{local_id}: missing_cloud_id")
+            continue
+
+        # 读取本地 tags（扁平数组）
+        db2 = get_database()
+        db2.connect()
+        c2 = db2.conn.cursor()
+        try:
+            c2.execute("""
+                SELECT lens, word_id, word_cn, word_en, x, y
+                FROM capsule_tags
+                WHERE capsule_id = ?
+            """, (local_id,))
+            tag_rows = c2.fetchall()
+        finally:
+            db2.close()
+
+        tags = []
+        for t in tag_rows:
+            tags.append({
+                'lens': t[0],
+                'word_id': t[1],
+                'word_cn': t[2],
+                'word_en': t[3],
+                'x': t[4],
+                'y': t[5],
+            })
+
+        url = f"{cloud_api_origin}/api/cloud/capsules/{urllib.parse.quote(cloud_id)}/sync-tags"
+        payload = json.dumps({
+            'tags': tags,
+            'keywords': keywords,
+            'local_capsule_id': local_id,
+        }).encode('utf-8')
+
+        req = urllib.request.Request(
+            url=url,
+            data=payload,
+            method='POST',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': auth_header or '',
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                body = resp.read().decode('utf-8')
+                data = json.loads(body) if body else {}
+                if data.get('success'):
+                    uploaded += 1
+                    synced_capsule_ids.append(local_id)
+                else:
+                    errors.append(f"{local_id}: {data.get('error') or 'cloud_sync_failed'}")
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = e.read().decode('utf-8')
+                err_json = json.loads(err_body) if err_body else {}
+                err_msg = err_json.get('error') or f"HTTP {e.code}"
+            except Exception:
+                err_msg = f"HTTP {e.code}"
+            errors.append(f"{local_id}: {err_msg}")
+        except Exception as e:
+            errors.append(f"{local_id}: {e}")
+
+    return {
+        'success': len(errors) == 0 and uploaded > 0,
+        'uploaded': uploaded,
+        'downloaded': 0,
+        'errors': errors,
+        'synced_capsule_ids': synced_capsule_ids,
+    }
 
     req_capsules = []
     for r in rows:
@@ -1280,9 +1399,8 @@ def upload_audio_folders(current_user):
         raise APIError(f"上传 Audio 文件夹失败: {e}", 500)
 
 
-@sync_bp.route('/sync-tags', methods=['POST'])
-@token_required
-def sync_tags_only(current_user):
+@sync_bp.route('/sync-tags', methods=['POST', 'OPTIONS'])
+def sync_tags_only():
     """
     只同步关键词数据（capsule_tags）
     
@@ -1293,16 +1411,104 @@ def sync_tags_only(current_user):
     只同步有变化的数据，通过 updated_at 比对
     """
     try:
+        if request.method == 'OPTIONS':
+            return jsonify({'success': True}), 200
+
         sync_service = get_sync_service()
-        user_id = current_user.get('supabase_user_id') or str(current_user.get('id', ''))
+        # 优先走正常验签；若本地 JWT 配置不完整，回退提取 Bearer 的 sub。
+        current_user = None
+        try:
+            current_user = get_current_user()
+        except Exception:
+            current_user = None
+
+        user_id = ''
+        if current_user:
+            user_id = current_user.get('supabase_user_id') or str(current_user.get('id', '')).strip()
         if not user_id:
-            raise APIError('用户 ID 不存在', 400)
+            user_id = _extract_supabase_sub_from_bearer()
 
-        result = sync_service.sync_tags_only(user_id=user_id)
+        if not user_id:
+            raise APIError('需要认证', 401)
 
-        if result['success']:
+        data = request.get_json(silent=True) or {}
+        raw_capsule_ids = data.get('capsule_ids')
+        capsule_ids = None
+        if isinstance(raw_capsule_ids, list):
+            capsule_ids = []
+            for item in raw_capsule_ids:
+                try:
+                    capsule_ids.append(int(item))
+                except Exception:
+                    continue
+            if not capsule_ids:
+                capsule_ids = None
+
+        cloud_api_origin = (
+            (data.get('cloud_api_origin') or '').strip()
+            or os.getenv('CLOUD_API_ORIGIN', '').strip()
+            or os.getenv('API_ORIGIN', '').strip()
+            or os.getenv('VITE_CLOUD_API_ORIGIN', '').strip()
+        ).rstrip('/')
+        result = sync_service.sync_tags_only(user_id=user_id, capsule_ids=capsule_ids)
+
+        if result.get('success'):
             logger.info(f"✅ 关键词同步成功: 上传 {result.get('uploaded', 0)}, 下载 {result.get('downloaded', 0)}")
             return jsonify({'success': True, 'data': result})
+
+        # 本地 sidecar 无 Supabase 客户端时，回退到云端 capsule 级同步 API，再清理本地 pending
+        errors = result.get('errors') or []
+        need_cloud_fallback = any('Supabase 客户端未初始化' in str(e) for e in errors)
+        if need_cloud_fallback and cloud_api_origin:
+            try:
+                auth_header = request.headers.get('Authorization', '')
+                cloud_result = _sync_tags_via_cloud_capsule_api(
+                    cloud_api_origin=cloud_api_origin,
+                    capsule_ids=capsule_ids,
+                    auth_header=auth_header,
+                )
+
+                if cloud_result.get('success'):
+                    # 云端已完成同步，清理本地关键词 pending，防止刷新后图标回弹
+                    # 优先清理实际成功的 capsule 列表。
+                    synced_ids = cloud_result.get('synced_capsule_ids') or capsule_ids
+                    sync_service._clear_tags_pending_status(synced_ids)
+                    logger.info("✅ 关键词同步通过云端回退成功，并已清理本地 pending")
+                    return jsonify({
+                        'success': True,
+                        'data': {
+                            'uploaded': cloud_result.get('uploaded', 0),
+                            'downloaded': 0,
+                            'errors': [],
+                        },
+                        'fallback': 'cloud',
+                    })
+                # 云端回退已执行但失败：返回具体错误，避免前端只看到泛化信息
+                return jsonify({
+                    'success': False,
+                    'error': '关键词同步失败（云端回退失败）',
+                    'data': {
+                        'success': False,
+                        'uploaded': cloud_result.get('uploaded', 0),
+                        'downloaded': 0,
+                        'errors': cloud_result.get('errors') or ['cloud_fallback_failed'],
+                    }
+                }), 207
+            except Exception as e:
+                logger.warning(f"关键词同步云端回退失败: {e}")
+        elif need_cloud_fallback and not cloud_api_origin:
+            logger.warning("关键词同步需要云端回退，但 cloud_api_origin 缺失")
+            return jsonify({
+                'success': False,
+                'error': '关键词同步失败：本地 Supabase 未初始化，且 cloud_api_origin 未提供',
+                'data': {
+                    'success': False,
+                    'uploaded': 0,
+                    'downloaded': 0,
+                    'errors': ['Supabase 客户端未初始化', 'missing_cloud_api_origin'],
+                }
+            }), 503
+
         return jsonify({'success': False, 'error': '关键词同步失败', 'data': result}), 207
     except APIError:
         raise
@@ -1311,6 +1517,57 @@ def sync_tags_only(current_user):
         import traceback
         logger.error(traceback.format_exc())
         raise APIError(f"关键词同步失败: {e}", 500)
+
+
+@sync_bp.route('/clear-tags-pending', methods=['POST', 'OPTIONS'])
+def clear_tags_pending_only():
+    """
+    仅清理本地关键词 pending 状态（用于云端显式同步成功后的本地确认）。
+    """
+    try:
+        if request.method == 'OPTIONS':
+            return jsonify({'success': True}), 200
+
+        current_user = None
+        try:
+            current_user = get_current_user()
+        except Exception:
+            current_user = None
+
+        user_id = ''
+        if current_user:
+            user_id = current_user.get('supabase_user_id') or str(current_user.get('id', '')).strip()
+        if not user_id:
+            user_id = _extract_supabase_sub_from_bearer()
+        if not user_id:
+            raise APIError('需要认证', 401)
+
+        data = request.get_json(silent=True) or {}
+        raw_capsule_ids = data.get('capsule_ids')
+        capsule_ids = None
+        if isinstance(raw_capsule_ids, list):
+            capsule_ids = []
+            for item in raw_capsule_ids:
+                try:
+                    capsule_ids.append(int(item))
+                except Exception:
+                    continue
+            if not capsule_ids:
+                capsule_ids = None
+
+        sync_service = get_sync_service()
+        sync_service._clear_tags_pending_status(capsule_ids)
+        return jsonify({
+            'success': True,
+            'data': {
+                'cleared_capsule_ids': capsule_ids or [],
+            }
+        })
+    except APIError:
+        raise
+    except Exception as e:
+        logger.error(f"清理关键词 pending 失败: {e}")
+        raise APIError(f"清理关键词 pending 失败: {e}", 500)
 
 
 @sync_bp.route('/upload-progress', methods=['GET'])
@@ -1646,9 +1903,21 @@ def apply_lightweight_page():
                 plugin_list = metadata.get('plugin_list')
                 if plugin_list is None and isinstance(metadata.get('plugins'), dict):
                     plugin_list = metadata.get('plugins', {}).get('list')
+                if plugin_list is None and isinstance(metadata.get('plugins'), list):
+                    plugin_list = metadata.get('plugins')
+                if plugin_list is None and isinstance(metadata.get('info'), dict):
+                    info_plugins = metadata.get('info', {}).get('plugins')
+                    if isinstance(info_plugins, dict):
+                        plugin_list = info_plugins.get('list')
                 plugin_count = metadata.get('plugin_count')
                 if plugin_count is None and isinstance(metadata.get('plugins'), dict):
                     plugin_count = metadata.get('plugins', {}).get('count')
+                if plugin_count is None and isinstance(metadata.get('plugins'), list):
+                    plugin_count = len(metadata.get('plugins'))
+                if plugin_count is None and isinstance(metadata.get('info'), dict):
+                    info_plugins = metadata.get('info', {}).get('plugins')
+                    if isinstance(info_plugins, dict):
+                        plugin_count = info_plugins.get('count')
                 if plugin_count is None and isinstance(plugin_list, list):
                     plugin_count = len(plugin_list)
 
@@ -1875,6 +2144,60 @@ def apply_lightweight_page():
                                 metadata_downloaded += 1
                             except Exception as e:
                                 errors.append(f"write fallback metadata.json failed for {file_path}: {e}")
+
+                        # 二次回填：优先从本地 metadata.json 提取插件信息写入 capsule_metadata
+                        # 兼容云端 lightweight payload 未携带完整 plugin 字段的情况
+                        if metadata_file.exists():
+                            try:
+                                with open(metadata_file, 'r', encoding='utf-8') as f:
+                                    meta_file_obj = json.load(f) or {}
+                                if not isinstance(meta_file_obj, dict):
+                                    meta_file_obj = {}
+
+                                info_obj = meta_file_obj.get('info') if isinstance(meta_file_obj.get('info'), dict) else {}
+                                routing_obj = meta_file_obj.get('routing_info') if isinstance(meta_file_obj.get('routing_info'), dict) else {}
+
+                                plugin_list2 = meta_file_obj.get('plugin_list')
+                                if plugin_list2 is None and isinstance(meta_file_obj.get('plugins'), dict):
+                                    plugin_list2 = meta_file_obj.get('plugins', {}).get('list')
+                                if plugin_list2 is None and isinstance(meta_file_obj.get('plugins'), list):
+                                    plugin_list2 = meta_file_obj.get('plugins')
+                                if plugin_list2 is None and isinstance(info_obj.get('plugins'), dict):
+                                    plugin_list2 = info_obj.get('plugins', {}).get('list')
+
+                                plugin_count2 = meta_file_obj.get('plugin_count')
+                                if plugin_count2 is None and isinstance(meta_file_obj.get('plugins'), dict):
+                                    plugin_count2 = meta_file_obj.get('plugins', {}).get('count')
+                                if plugin_count2 is None and isinstance(meta_file_obj.get('plugins'), list):
+                                    plugin_count2 = len(meta_file_obj.get('plugins'))
+                                if plugin_count2 is None and isinstance(info_obj.get('plugins'), dict):
+                                    plugin_count2 = info_obj.get('plugins', {}).get('count')
+                                if plugin_count2 is None and isinstance(plugin_list2, list):
+                                    plugin_count2 = len(plugin_list2)
+
+                                if plugin_list2 is not None or plugin_count2 is not None:
+                                    if isinstance(plugin_list2, list):
+                                        plugin_list2 = json.dumps(plugin_list2, ensure_ascii=False)
+                                    cursor.execute(
+                                        """
+                                        INSERT OR REPLACE INTO capsule_metadata
+                                        (capsule_id, bpm, duration, sample_rate, plugin_count, plugin_list, has_sends, has_folder_bus, tracks_included)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        """,
+                                        (
+                                            local_id,
+                                            meta_file_obj.get('bpm') or info_obj.get('bpm'),
+                                            meta_file_obj.get('duration') or info_obj.get('duration') or info_obj.get('length'),
+                                            meta_file_obj.get('sample_rate') or info_obj.get('sample_rate'),
+                                            plugin_count2 or 0,
+                                            plugin_list2 or '[]',
+                                            meta_file_obj.get('has_sends') if meta_file_obj.get('has_sends') is not None else routing_obj.get('has_sends'),
+                                            meta_file_obj.get('has_folder_bus') if meta_file_obj.get('has_folder_bus') is not None else routing_obj.get('has_folder_bus'),
+                                            meta_file_obj.get('tracks_included') if meta_file_obj.get('tracks_included') is not None else routing_obj.get('tracks_included'),
+                                        ),
+                                    )
+                            except Exception as e:
+                                errors.append(f"extract plugin metadata from metadata.json failed for {file_path}: {e}")
 
                         if downloaded_for_capsule > 0:
                             cursor.execute(

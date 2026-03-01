@@ -7,6 +7,7 @@
 import sqlite3
 import os
 import logging
+import ast
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -14,6 +15,38 @@ import json
 
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_plugin_list_value(raw_value):
+    """
+    容错解析 plugin_list：
+    - 已是 list 直接返回
+    - JSON 字符串（["a","b"]）优先 json.loads
+    - Python 列表字面量（['a','b']）回退 ast.literal_eval
+    - 其他格式返回 []
+    """
+    if isinstance(raw_value, list):
+        return raw_value
+    if raw_value is None:
+        return []
+
+    if isinstance(raw_value, str):
+        text = raw_value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+        try:
+            parsed = ast.literal_eval(text)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass
+    return []
 
 
 class CapsuleDatabase:
@@ -117,6 +150,16 @@ class CapsuleDatabase:
         self.connect()
         try:
             self.conn.executescript(schema_sql)
+            # 保护性唯一约束：非空 cloud_id 在本地必须唯一，防止同一云胶囊出现重复本地记录
+            try:
+                self.conn.execute("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_capsules_cloud_id_nonempty
+                    ON capsules(cloud_id)
+                    WHERE cloud_id IS NOT NULL AND TRIM(cloud_id) != ''
+                """)
+            except sqlite3.IntegrityError as e:
+                # 历史库若已存在重复 cloud_id，不阻断启动，先告警后由清理逻辑处理
+                logger.warning(f"⚠️ 无法创建 cloud_id 唯一索引（存在历史重复数据）: {e}")
             self.conn.commit()
             print(f"✓ 数据库初始化成功: {self.db_path}")
         finally:
@@ -694,15 +737,8 @@ class CapsuleDatabase:
                 metadata_row = cursor.fetchone()
 
                 if metadata_row:
-                    # 解析 plugin_list JSON 字符串
-                    plugin_list = metadata_row[4]  # plugin_list
-                    if plugin_list:
-                        try:
-                            plugin_list = json.loads(plugin_list)
-                        except:
-                            plugin_list = []
-                    else:
-                        plugin_list = []
+                    # 解析 plugin_list（兼容 JSON / Python 列表字面量）
+                    plugin_list = _parse_plugin_list_value(metadata_row[4])
 
                     # 构建前端期望的 metadata 格式
                     capsule['metadata'] = {
@@ -876,15 +912,8 @@ class CapsuleDatabase:
                 metadata_row = cursor.fetchone()
 
                 if metadata_row:
-                    # 解析 plugin_list JSON 字符串
-                    plugin_list = metadata_row[4]  # plugin_list
-                    if plugin_list:
-                        try:
-                            plugin_list = json.loads(plugin_list)
-                        except:
-                            plugin_list = []
-                    else:
-                        plugin_list = []
+                    # 解析 plugin_list（兼容 JSON / Python 列表字面量）
+                    plugin_list = _parse_plugin_list_value(metadata_row[4])
 
                     # 构建前端期望的 metadata 格式
                     capsule['metadata'] = {
@@ -953,15 +982,8 @@ class CapsuleDatabase:
                 metadata_row = cursor.fetchone()
 
                 if metadata_row:
-                    # 解析 plugin_list JSON 字符串
-                    plugin_list = metadata_row[4]  # plugin_list
-                    if plugin_list:
-                        try:
-                            plugin_list = json.loads(plugin_list)
-                        except:
-                            plugin_list = []
-                    else:
-                        plugin_list = []
+                    # 解析 plugin_list（兼容 JSON / Python 列表字面量）
+                    plugin_list = _parse_plugin_list_value(metadata_row[4])
 
                     # 构建前端期望的 metadata 格式
                     capsule['metadata'] = {

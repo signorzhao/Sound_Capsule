@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import uuid
+from datetime import datetime
 from functools import wraps
 
 from flask import Blueprint, jsonify, request
@@ -74,6 +75,75 @@ def _upload_bytes_to_storage(supabase, owner_id: str, folder: str, relative_path
         "path": storage_path,
         "result": result,
     }
+
+
+def _normalize_tags_payload(tags):
+    """
+    兼容两种 tags 结构：
+    1) 扁平数组: [{lens, word_id, ...}]
+    2) 分组对象: {texture: [...], source: [...]}
+    """
+    if isinstance(tags, list):
+        return tags
+    if not isinstance(tags, dict):
+        return []
+
+    flattened = []
+    for lens, tag_list in tags.items():
+        if not isinstance(tag_list, list):
+            continue
+        for tag in tag_list:
+            if not isinstance(tag, dict):
+                continue
+            flattened.append({
+                "lens": tag.get("lens") or tag.get("lens_id") or lens,
+                "word_id": tag.get("word_id") or tag.get("id") or tag.get("word"),
+                "word_cn": tag.get("word_cn") or tag.get("zh"),
+                "word_en": tag.get("word_en") or tag.get("en") or tag.get("word"),
+                "x": tag.get("x"),
+                "y": tag.get("y"),
+            })
+    return flattened
+
+
+def _extract_plugin_fields_from_metadata_obj(metadata_obj):
+    """
+    从 metadata.json 兼容提取插件信息，返回 (plugin_count, plugin_list)
+    """
+    if not isinstance(metadata_obj, dict):
+        return 0, []
+
+    plugin_list = metadata_obj.get("plugin_list")
+    plugins_field = metadata_obj.get("plugins")
+    info_obj = metadata_obj.get("info") if isinstance(metadata_obj.get("info"), dict) else {}
+    info_plugins = info_obj.get("plugins") if isinstance(info_obj.get("plugins"), dict) else {}
+
+    if plugin_list is None and isinstance(plugins_field, dict):
+        plugin_list = plugins_field.get("list")
+    if plugin_list is None and isinstance(plugins_field, list):
+        plugin_list = plugins_field
+    if plugin_list is None:
+        plugin_list = info_plugins.get("list")
+
+    if not isinstance(plugin_list, list):
+        plugin_list = []
+
+    plugin_count = metadata_obj.get("plugin_count")
+    if plugin_count is None and isinstance(plugins_field, dict):
+        plugin_count = plugins_field.get("count")
+    if plugin_count is None and isinstance(plugins_field, list):
+        plugin_count = len(plugins_field)
+    if plugin_count is None:
+        plugin_count = info_plugins.get("count")
+    if plugin_count is None:
+        plugin_count = len(plugin_list)
+
+    try:
+        plugin_count = int(plugin_count)
+    except Exception:
+        plugin_count = len(plugin_list)
+
+    return plugin_count, plugin_list
 
 
 @cloud_bp.route("/signed-upload-url", methods=["POST", "OPTIONS"])
@@ -249,6 +319,236 @@ def upload_capsule(current_user):
                 "uploaded": storage_uploaded,
                 "errors": storage_errors,
             },
+        },
+        "error": None,
+    })
+
+
+@cloud_bp.route("/capsules/<capsule_ref>/sync-tags", methods=["POST", "OPTIONS"])
+@token_required
+def sync_capsule_tags(current_user, capsule_ref):
+    """
+    云端显式关键词同步：
+    - 写 cloud_capsule_tags
+    - 更新 cloud_capsules.metadata.keywords
+    """
+    data = request.get_json(silent=True) or {}
+    raw_tags = data.get("tags") or []
+    tags = _normalize_tags_payload(raw_tags)
+    keywords = data.get("keywords")
+
+    owner_id = current_user.get("supabase_user_id") or str(current_user.get("id", ""))
+    if not owner_id:
+        raise APIError("用户 ID 不存在", 400)
+
+    supabase = get_supabase_client()
+    if not supabase:
+        raise APIError("Supabase 客户端未初始化", 500)
+
+    cloud_id = str(capsule_ref or "").strip()
+    cloud_capsule = None
+
+    # 1) 优先按 cloud_id + user_id 查
+    if cloud_id:
+        try:
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id, metadata")
+                .eq("id", cloud_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+        except Exception:
+            cloud_capsule = None
+
+    # 2) 若 capsule_ref 不是 cloud_id，尝试按 local_id + user_id 查
+    if not cloud_capsule:
+        try:
+            local_id = int(capsule_ref)
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id, metadata")
+                .eq("local_id", local_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+                cloud_id = str(cloud_capsule.get("id") or "").strip()
+        except Exception:
+            pass
+
+    if not cloud_capsule or not cloud_id:
+        raise APIError("云端胶囊不存在或无权限", 404)
+
+    tags_ok = supabase.upload_tags(owner_id, cloud_id, tags)
+    if not tags_ok:
+        raise APIError("上传 tags 到云端失败", 500)
+
+    # 更新 metadata.keywords（可选）
+    if keywords is not None:
+        metadata = cloud_capsule.get("metadata") or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except Exception:
+                metadata = {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        metadata["keywords"] = keywords
+        try:
+            (
+                supabase.client
+                .table("cloud_capsules")
+                .update({
+                    "metadata": metadata,
+                    "last_write_at": datetime.utcnow().isoformat(),
+                })
+                .eq("id", cloud_id)
+                .eq("user_id", owner_id)
+                .execute()
+            )
+        except Exception as e:
+            raise APIError(f"更新 cloud_capsules.keywords 失败: {e}", 500)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "cloud_id": cloud_id,
+            "tags_uploaded": len(tags),
+            "keywords_updated": keywords is not None,
+        },
+        "error": None,
+    })
+
+
+@cloud_bp.route("/capsules/<capsule_ref>/sync-plugin-metadata", methods=["POST", "OPTIONS"])
+@token_required
+def sync_plugin_metadata(current_user, capsule_ref):
+    """
+    从 Storage 的 metadata.json 回填 cloud_capsules.metadata 的插件字段。
+    """
+    owner_id = current_user.get("supabase_user_id") or str(current_user.get("id", ""))
+    if not owner_id:
+        raise APIError("用户 ID 不存在", 400)
+
+    supabase = get_supabase_client()
+    if not supabase:
+        raise APIError("Supabase 客户端未初始化", 500)
+
+    cloud_id = str(capsule_ref or "").strip()
+    cloud_capsule = None
+
+    # 1) 优先按 cloud_id + user_id 查
+    if cloud_id:
+        try:
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id, user_id, name, metadata")
+                .eq("id", cloud_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+        except Exception:
+            cloud_capsule = None
+
+    # 2) 若 capsule_ref 可能是 local_id，尝试 local_id + user_id
+    if not cloud_capsule:
+        try:
+            local_id = int(capsule_ref)
+            r = (
+                supabase.client
+                .table("cloud_capsules")
+                .select("id, user_id, name, metadata")
+                .eq("local_id", local_id)
+                .eq("user_id", owner_id)
+                .limit(1)
+                .execute()
+            )
+            if r.data:
+                cloud_capsule = r.data[0]
+                cloud_id = str(cloud_capsule.get("id") or "").strip()
+        except Exception:
+            pass
+
+    if not cloud_capsule or not cloud_id:
+        raise APIError("云端胶囊不存在或无权限", 404)
+
+    metadata = cloud_capsule.get("metadata") or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except Exception:
+            metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    folder = metadata.get("file_path") or cloud_capsule.get("name")
+    if not folder:
+        raise APIError("缺少 file_path/name，无法定位 metadata.json", 400)
+
+    storage_path = f"{owner_id}/{folder}/metadata.json"
+    metadata_bytes = None
+    last_err = None
+
+    # 兼容历史 bucket：优先 capsule-files，再回退 capsules
+    for bucket in ("capsule-files", "capsules"):
+        try:
+            metadata_bytes = supabase.client.storage.from_(bucket).download(storage_path)
+            if metadata_bytes:
+                break
+        except Exception as e:
+            last_err = e
+            metadata_bytes = None
+
+    if not metadata_bytes:
+        raise APIError(f"读取 Storage metadata.json 失败: {last_err or 'file_not_found'}", 404)
+
+    try:
+        metadata_file_obj = json.loads(metadata_bytes.decode("utf-8"))
+    except Exception as e:
+        raise APIError(f"metadata.json 解析失败: {e}", 400)
+
+    plugin_count, plugin_list = _extract_plugin_fields_from_metadata_obj(metadata_file_obj)
+
+    # 回填到 cloud_capsules.metadata，同时保留原字段
+    merged_metadata = dict(metadata)
+    merged_metadata["plugin_count"] = plugin_count
+    merged_metadata["plugin_list"] = plugin_list
+    merged_metadata["plugins"] = {"count": plugin_count, "list": plugin_list}
+
+    try:
+        (
+            supabase.client
+            .table("cloud_capsules")
+            .update({
+                "metadata": merged_metadata,
+                "last_write_at": datetime.utcnow().isoformat(),
+            })
+            .eq("id", cloud_id)
+            .eq("user_id", owner_id)
+            .execute()
+        )
+    except Exception as e:
+        raise APIError(f"回填插件信息失败: {e}", 500)
+
+    return jsonify({
+        "success": True,
+        "data": {
+            "cloud_id": cloud_id,
+            "plugin_count": plugin_count,
+            "plugin_list_len": len(plugin_list or []),
+            "metadata_storage_path": storage_path,
         },
         "error": None,
     })

@@ -9,11 +9,10 @@ import {
 } from 'lucide-react';
 import { useToast } from './Toast';
 import UserMenu from './UserMenu';
-import SyncIndicator from './SyncIndicator';
 import SmartActionButton from './SmartActionButton';
 import CloudSyncIcon from './CloudSyncIcon';
 import { getTagDisplayText } from '../utils/tagUtils';
-import { CLOUD_API_BASE, LOCAL_API_BASE, DIRECT_UPLOAD_SIGNED_URL } from '../utils/apiOrigins';
+import { CLOUD_API_BASE, LOCAL_API_BASE } from '../utils/apiOrigins';
 import { authFetch } from '../utils/apiClient';
 import i18n from '../i18n';
 import './CapsuleLibrary.css';
@@ -25,6 +24,26 @@ const ICON_COMPONENTS = {
   Piano, Mic, Volume2, Bell,
   Signal, Heart, Timer, Clock,
   Target, Star, Sun, Moon, Snowflake
+};
+
+// 统一解析插件信息：兼容 metadata.plugins.{count,list} 与 metadata.{plugin_count,plugin_list}
+const getPluginInfoFromCapsule = (capsuleMetadata) => {
+  const meta = (capsuleMetadata && typeof capsuleMetadata === 'object') ? capsuleMetadata : {};
+  const pluginsObj = (meta.plugins && typeof meta.plugins === 'object' && !Array.isArray(meta.plugins))
+    ? meta.plugins
+    : null;
+
+  const nestedList = Array.isArray(pluginsObj?.list) ? pluginsObj.list : null;
+  const flatList = Array.isArray(meta.plugin_list) ? meta.plugin_list : null;
+  const pluginList = nestedList || flatList || [];
+
+  const nestedCountRaw = pluginsObj?.count;
+  const flatCountRaw = meta.plugin_count;
+  const nestedCount = Number.isFinite(Number(nestedCountRaw)) ? Number(nestedCountRaw) : null;
+  const flatCount = Number.isFinite(Number(flatCountRaw)) ? Number(flatCountRaw) : null;
+  const pluginCount = nestedCount ?? flatCount ?? pluginList.length;
+
+  return { pluginList, pluginCount };
 };
 
 /**
@@ -91,6 +110,10 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
   // 单个胶囊上传中状态（用于提示与防重复点击）
   const [uploadingCapsules, setUploadingCapsules] = useState({});
+  // 上传成功后的云状态即时覆盖（避免列表刷新前仍显示上传图标）
+  const [cloudSyncOverrides, setCloudSyncOverrides] = useState({});
+  // 插件信息回填失败待重试（capsule_id -> { cloudId }）
+  const [pluginBackfillRetryMap, setPluginBackfillRetryMap] = useState({});
 
   // 默认胶囊类型（防御性降级）
   const DEFAULT_CAPSULE_TYPES = [
@@ -807,6 +830,30 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
   // 旧函数保持兼容
   const handleImportToReaper = handleSmartClick;
 
+  const getCapsuleForCloudSync = (capsule) => {
+    const override = cloudSyncOverrides[capsule.id];
+    if (!override) return capsule;
+    return { ...capsule, ...override };
+  };
+
+  const syncPluginMetadataBackfill = async (capsule, cloudIdOverride = null) => {
+    const { authFetch } = await import('../utils/apiClient.js');
+    const cloudId = (cloudIdOverride || capsule.cloud_id || '').toString().trim();
+    if (!cloudId) {
+      throw new Error('缺少 cloud_id，无法补插件信息');
+    }
+    const resp = await authFetch(`${CLOUD_API_BASE}/cloud/capsules/${encodeURIComponent(cloudId)}/sync-plugin-metadata`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || !json?.success) {
+      throw new Error(json?.error || `sync-plugin-metadata HTTP ${resp.status}`);
+    }
+    return { cloudId, data: json?.data || {} };
+  };
+
   // Phase G: 云同步处理函数
   const handleCloudSync = async (capsule, action = null) => {
     if (action === 'download') {
@@ -898,10 +945,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     
     if (status === 'local') {
       // 状态 1: 需上传 - 上传元数据到云端
-      // 🔥 将变量声明移到 try 块外部，确保 catch 和 finally 中可访问
       let toastId = null;
       let toastFinalized = false;
-      let stopProgressPoll = null;
       
       try {
         if (uploadingCapsules[capsule.id]) {
@@ -930,60 +975,207 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           coordinates: capsule.coordinates || [],
           files: {},
         };
-
-        const requestPromise = DIRECT_UPLOAD_SIGNED_URL
-          ? authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(uploadPayload),
-            })
-          : authFetch(`${LOCAL_API_BASE}/sync/lightweight`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                include_previews: true,
-                capsule_ids: [capsule.id],
-              }),
-            });
-        stopProgressPoll = await startUploadProgressPoll(capsule.id, toastId, (status) => {
-          if (status === 'completed') {
-            window.dispatchEvent(new CustomEvent('sync-completed'));
-            onSyncComplete && onSyncComplete();
-          }
+        // 固定新链路：受控元数据 + 签名URL直传文件（不再走 /sync/lightweight）
+        // Step 1) 先走受控 API 上送元数据/标签/坐标
+        const metaResp = await authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(uploadPayload),
         });
-        const response = await requestPromise;
-        
-        const isOk = response.ok || response.status === 207;
-        if (isOk) {
-          const result = await response.json();
-          if (result.success) {
-            toast.update(toastId, t('librarySync.uploadedToCloud'), 'success');
-            toastFinalized = true;
-            
-            // 🔥 清除该胶囊的状态缓存，强制 UI 刷新
-            setAssetStatusCache(prev => {
-              const newCache = { ...prev };
-              delete newCache[capsule.id];
-              return newCache;
+        const metaJson = await metaResp.json().catch(() => ({}));
+        if (!metaResp.ok || !metaJson?.success) {
+          throw new Error(metaJson?.error || `upload-capsule HTTP ${metaResp.status}`);
+        }
+
+        // 元数据创建成功即视为云端记录已存在，先做前端即时状态覆盖
+        const uploadedCloudId =
+          metaJson?.data?.cloud_capsule?.id ||
+          metaJson?.data?.id ||
+          capsule.cloud_id ||
+          null;
+        setCloudSyncOverrides(prev => ({
+          ...prev,
+          [capsule.id]: {
+            cloud_exists: true,
+            cloud_keyword_outdated: false,
+            ...(uploadedCloudId ? { cloud_id: uploadedCloudId } : {}),
+          },
+        }));
+
+        // 持久化本地 cloud_id，确保刷新页面后图标状态不回退
+        if (uploadedCloudId) {
+          try {
+            await authFetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/link-cloud`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cloud_id: uploadedCloudId }),
             });
-            
-            // 手动刷新胶囊列表
-            window.dispatchEvent(new CustomEvent('sync-completed'));
-            onSyncComplete && onSyncComplete();
-          } else {
-            const message = result.error || t('librarySync.syncWarning');
-            const type = response.status === 207 ? 'warning' : 'error';
-            toast.update(toastId, t('librarySync.uploadCompleteWithMessage', { message }), type);
-            toastFinalized = true;
-            if (response.status === 207) {
-              window.dispatchEvent(new CustomEvent('sync-completed'));
-              onSyncComplete && onSyncComplete();
+          } catch (linkErr) {
+            // 仅记录日志，不中断主上传流程
+            console.warn('回写本地 cloud_id 失败:', linkErr);
+          }
+        }
+
+        const capsuleFolderName = metaJson?.data?.cloud_capsule?.file_path || uploadPayload.capsule_folder_name;
+
+        // Step 2) 获取本地可上传文件清单
+        const localFilesResp = await authFetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/uploadable-files`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const localFilesJson = await localFilesResp.json().catch(() => ({}));
+        const localFiles = localFilesJson?.data?.files || [];
+
+        if (!Array.isArray(localFiles) || localFiles.length === 0) {
+          toast.update(toastId, `${t('librarySync.uploadedToCloud')}（仅元数据）`, 'success');
+          toastFinalized = true;
+        } else {
+          const relKey = (f) => `${f.file_type || ''}|${f.filename || ''}`;
+          const localFileMap = new Map(localFiles.map(f => [relKey(f), f]));
+
+          // Step 3) 申请签名上传 URL（新接口优先，旧接口兜底）
+          const signedReqBody = {
+            capsule_folder_name: capsuleFolderName,
+            upsert: true,
+            files: localFiles.map(f => ({
+              file_type: f.file_type,
+              filename: f.filename,
+              relative_path: f.relative_path,
+              content_type: f.content_type,
+              size: f.size,
+            })),
+          };
+
+          let signedResp = await authFetch(`${CLOUD_API_BASE}/cloud/storage/upload-signed-urls`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(signedReqBody),
+          });
+          let signedJson = await signedResp.json().catch(() => ({}));
+
+          if (!signedResp.ok || !signedJson?.success) {
+            const firstErr = signedJson?.data?.errors?.[0];
+            const firstErrMsg = firstErr?.error || firstErr?.message;
+            throw new Error(
+              firstErrMsg ||
+              signedJson?.error ||
+              `upload-signed-urls HTTP ${signedResp.status}`
+            );
+          }
+
+          const signedItemsRaw = signedJson?.data?.files || signedJson?.data?.items || [];
+          const signedItems = signedItemsRaw.map(item => {
+            const signed = item?.signed || {};
+            return {
+              file_type: item?.file_type || item?.type,
+              filename: item?.filename,
+              relative_path: item?.relative_path,
+              storage_path: item?.storage_path || item?.path,
+              signed_url: item?.signed_url || signed?.signed_url || signed?.url,
+              content_type: item?.content_type,
+            };
+          });
+
+          let uploaded = 0;
+          const uploadErrors = [];
+          const uploadResults = [];
+          for (const s of signedItems) {
+            const key = `${s.file_type || ''}|${s.filename || ''}`;
+            const localMeta = localFileMap.get(key);
+            const signedUrl = s.signed_url;
+            if (!localMeta || !signedUrl) {
+              uploadErrors.push(`${key}: missing localMeta/signed_url`);
+              uploadResults.push({
+                ok: false,
+                file_type: s.file_type || localMeta?.file_type,
+                filename: s.filename || localMeta?.filename,
+              });
+              continue;
+            }
+
+            const fileResp = await authFetch(
+              `${LOCAL_API_BASE}/capsules/${capsule.id}/file-content?relative_path=${encodeURIComponent(localMeta.relative_path)}`,
+              { method: 'GET' }
+            );
+            if (!fileResp.ok) {
+              uploadErrors.push(`${localMeta.relative_path}: read local file failed ${fileResp.status}`);
+              uploadResults.push({
+                ok: false,
+                file_type: localMeta.file_type,
+                filename: localMeta.filename,
+              });
+              continue;
+            }
+            const blob = await fileResp.blob();
+
+            const putResp = await fetch(signedUrl, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': s.content_type || localMeta.content_type || 'application/octet-stream',
+              },
+              body: blob,
+            });
+            if (!putResp.ok) {
+              uploadErrors.push(`${localMeta.relative_path}: PUT failed ${putResp.status}`);
+              uploadResults.push({
+                ok: false,
+                file_type: localMeta.file_type,
+                filename: localMeta.filename,
+              });
+              continue;
+            }
+
+            uploaded += 1;
+            uploadResults.push({
+              ok: true,
+              file_type: localMeta.file_type,
+              filename: localMeta.filename,
+            });
+            toast.update(toastId, `${t('librarySync.uploadingCapsule', { name: capsule.name })} ${uploaded}/${signedItems.length}`, 'info', 0);
+          }
+
+          // Step 4) metadata.json 上传成功后，非阻断触发插件信息回填
+          const metadataUploaded = uploadResults.some(
+            (x) => x.ok && (x.file_type === 'metadata' || String(x.filename || '').toLowerCase() === 'metadata.json')
+          );
+          if (metadataUploaded && uploadedCloudId) {
+            try {
+              await syncPluginMetadataBackfill(capsule, uploadedCloudId);
+              setPluginBackfillRetryMap(prev => {
+                const next = { ...prev };
+                delete next[capsule.id];
+                return next;
+              });
+            } catch (pluginErr) {
+              console.warn('[PluginMetadata] sync failed, non-blocking:', pluginErr);
+              setPluginBackfillRetryMap(prev => ({
+                ...prev,
+                [capsule.id]: { cloudId: uploadedCloudId },
+              }));
+              toast.warning(`插件信息回填失败，可重试：${pluginErr.message}`);
             }
           }
-        } else {
-          toast.update(toastId, t('librarySync.uploadFailedHttp', { status: response.status }), 'error');
+
+          if (uploadErrors.length > 0) {
+            toast.update(
+              toastId,
+              t('librarySync.uploadCompleteWithMessage', { message: uploadErrors[0] }),
+              'warning'
+            );
+          } else {
+            toast.update(toastId, t('librarySync.uploadedToCloud'), 'success');
+          }
           toastFinalized = true;
         }
+
+        // 统一刷新
+        setAssetStatusCache(prev => {
+          const newCache = { ...prev };
+          delete newCache[capsule.id];
+          return newCache;
+        });
+        window.dispatchEvent(new CustomEvent('sync-completed'));
+        onSyncComplete && onSyncComplete();
       } catch (error) {
         console.error('上传失败:', error);
         if (toastId) {
@@ -993,7 +1185,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           toast.error(t('librarySync.uploadFailedError', { message: error.message }));
         }
       } finally {
-        if (stopProgressPoll) stopProgressPoll();
         if (toastId && !toastFinalized) {
           toast.dismiss(toastId);
         }
@@ -1035,28 +1226,121 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       }
     } else if (status === 'outdated') {
       // 状态 2: 云端已存在但关键词不一致 -> 同步关键词
+      let syncToastId = null;
       try {
         const { authFetch } = await import('../utils/apiClient.js');
-        const response = await authFetch(`${CLOUD_API_BASE}/sync/sync-tags`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
+        const withTimeout = (promise, ms, message) => Promise.race([
+          promise,
+          new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+        ]);
+        syncToastId = toast.loading('同步关键词中...');
+
+        const cloudRef = (capsule.cloud_id || '').toString().trim();
+        if (!cloudRef) {
+          throw new Error('缺少 cloud_id，无法同步关键词');
+        }
+
+        // 1) 读取本地该胶囊 tags（源数据）
+        const tagsResp = await authFetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/tags`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
         });
-
-        if (!response.ok && response.status !== 207) {
-          throw new Error(`关键词同步失败: ${response.status}`);
+        const tagsJson = await tagsResp.json().catch(() => ({}));
+        if (!tagsResp.ok || !tagsJson?.success) {
+          throw new Error(tagsJson?.error || `读取本地 tags 失败: HTTP ${tagsResp.status}`);
         }
 
-        const result = await response.json();
-        if (result.success || response.status === 207) {
-          toast.success(t('librarySync.syncedCloudData'));
-          window.dispatchEvent(new CustomEvent('sync-completed'));
-          onSyncComplete && onSyncComplete();
-        } else {
-          toast.error(t('librarySync.syncFailedError', { message: result.error || t('librarySync.unknownError') }));
+        const tagsObj = tagsJson?.tags || {};
+
+        // 2) 先走云端 capsule 级 sync-tags；失败再回退本地 sidecar sync-tags
+        let syncOk = false;
+        let syncErrMsg = '';
+
+        try {
+          const cloudSyncResp = await withTimeout(
+            authFetch(`${CLOUD_API_BASE}/cloud/capsules/${encodeURIComponent(cloudRef)}/sync-tags`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                tags: tagsObj,
+                keywords: capsule.keywords || '',
+                local_capsule_id: capsule.id,
+              }),
+            }),
+            8000,
+            '云端关键词同步超时'
+          );
+          const cloudSyncJson = await cloudSyncResp.json().catch(() => ({}));
+          if (cloudSyncResp.ok && cloudSyncJson?.success) {
+            syncOk = true;
+          } else {
+            syncErrMsg = cloudSyncJson?.error || `云端关键词同步失败: HTTP ${cloudSyncResp.status}`;
+          }
+        } catch (cloudErr) {
+          syncErrMsg = cloudErr?.message || '云端关键词同步网络错误';
         }
+
+        if (!syncOk) {
+          try {
+            const localSyncResp = await withTimeout(
+              authFetch(`${LOCAL_API_BASE}/sync/sync-tags`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  capsule_ids: [capsule.id],
+                  cloud_api_origin: CLOUD_API_BASE.replace(/\/api$/, ''),
+                }),
+              }),
+              12000,
+              '本地关键词同步超时'
+            );
+            const localSyncJson = await localSyncResp.json().catch(() => ({}));
+            if (localSyncResp.ok && localSyncJson?.success) {
+              syncOk = true;
+            } else {
+              const detailedErr = localSyncJson?.data?.errors?.[0];
+              const msg = detailedErr || localSyncJson?.error || `本地关键词同步失败: HTTP ${localSyncResp.status}`;
+              syncErrMsg = syncErrMsg ? `${syncErrMsg}; ${msg}` : msg;
+            }
+          } catch (localErr) {
+            const msg = localErr?.message || '本地关键词同步网络错误';
+            syncErrMsg = syncErrMsg ? `${syncErrMsg}; ${msg}` : msg;
+          }
+        }
+
+        if (!syncOk) {
+          throw new Error(syncErrMsg || '关键词同步失败');
+        }
+
+        // 3) 云端成功后，清理本地 pending，确保刷新后图标不回弹
+        const clearResp = await authFetch(`${LOCAL_API_BASE}/sync/clear-tags-pending`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ capsule_ids: [capsule.id] }),
+        });
+        const clearJson = await clearResp.json().catch(() => ({}));
+        if (!clearResp.ok || !clearJson?.success) {
+          throw new Error(clearJson?.error || `清理本地 pending 失败: HTTP ${clearResp.status}`);
+        }
+
+        setCloudSyncOverrides(prev => ({
+          ...prev,
+          [capsule.id]: {
+            ...(prev[capsule.id] || {}),
+            cloud_exists: true,
+            cloud_keyword_outdated: false,
+          },
+        }));
+        toast.update(syncToastId, t('librarySync.syncedCloudData'), 'success');
+        window.dispatchEvent(new CustomEvent('sync-completed'));
+        onSyncComplete && onSyncComplete();
       } catch (error) {
         console.error('关键词同步失败:', error);
-        toast.error(t('librarySync.syncFailedError', { message: error.message }));
+        if (syncToastId) {
+          toast.update(syncToastId, t('librarySync.syncFailedError', { message: error.message }), 'error');
+        } else {
+          toast.error(t('librarySync.syncFailedError', { message: error.message }));
+        }
       }
     } else if (status === 'synced') {
       // 状态 3: 云端与本地一致 -> 无需操作
@@ -1210,7 +1494,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           {/* Phase G: 云同步状态图标 */}
           <div className="absolute -top-2 -left-2 z-40">
             <CloudSyncIcon 
-              capsule={capsule} 
+              capsule={getCapsuleForCloudSync(capsule)} 
               onClick={handleCloudSync}
             />
           </div>
@@ -1277,6 +1561,26 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 onClick={() => handleSmartClick(capsule)}
                 className="w-full"
               />
+              {pluginBackfillRetryMap[capsule.id] && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await syncPluginMetadataBackfill(capsule, pluginBackfillRetryMap[capsule.id]?.cloudId);
+                      setPluginBackfillRetryMap(prev => {
+                        const next = { ...prev };
+                        delete next[capsule.id];
+                        return next;
+                      });
+                      toast.success('插件信息补齐成功');
+                    } catch (e) {
+                      toast.warning(`插件信息补齐失败：${e.message}`);
+                    }
+                  }}
+                  className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg bg-blue-900/20 hover:bg-blue-900/40 text-xs text-blue-300 transition-colors border border-blue-700/40"
+                >
+                  <Cloud size={14} /> <span>补插件信息</span>
+                </button>
+              )}
               {isAdmin && (
                 <button
                   onClick={() => onDelete && onDelete(capsule)}
@@ -1366,11 +1670,12 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     const typeInfo = getTypeColors(capsule.capsule_type);
     const Icon = getTypeIcon(capsule.capsule_type);
     const userInfo = extractUserInfo(capsule);
-    const metadata = metadataCache[capsule.id];
+    const metadata = metadataCache[capsule.id] || capsule.metadata || null;
     const tags = tagsCache[capsule.id];
     const isActive = nowPlaying?.id === capsule.id;
     const fileStatus = getFileStatusBadge(capsule);
     const StatusIcon = fileStatus.icon;
+    const { pluginList } = getPluginInfoFromCapsule(metadata);
 
     // 棱镜名称映射
     const lensNames = {
@@ -1440,7 +1745,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 <span className={`text-[8px] font-medium ${fileStatus.textColor}`}>{fileStatus.text}</span>
               </div>
               {/* Phase G: 云同步图标 */}
-              <CloudSyncIcon capsule={capsule} onClick={handleCloudSync} />
+              <CloudSyncIcon capsule={getCapsuleForCloudSync(capsule)} onClick={handleCloudSync} />
             </div>
             <div className="flex items-center gap-2 text-[10px] text-zinc-500 mt-1">
               <span className="px-1.5 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-400 font-mono uppercase">
@@ -1459,16 +1764,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         <div className="flex-1 hidden md:flex flex-col justify-center gap-2 px-4 border-l border-zinc-800/50">
           {/* 插件列表 */}
           <div className="flex flex-wrap items-center gap-1.5">
-            {metadata && metadata.plugins && metadata.plugins.list && metadata.plugins.list.length > 0 ? (
+            {pluginList.length > 0 ? (
               <>
                 <Activity size={12} className="text-zinc-600 mr-1" />
-                {metadata.plugins.list.slice(0, 3).map((plugin, i) => (
+                {pluginList.slice(0, 3).map((plugin, i) => (
                   <span key={i} className="text-[10px] px-2 py-0.5 bg-blue-900/10 text-blue-300/80 border border-blue-900/20 rounded-full truncate max-w-[100px]">
-                    {plugin.trim()}
+                    {String(plugin || '').trim()}
                   </span>
                 ))}
-                {metadata.plugins.list.length > 3 && (
-                  <span className="text-[9px] text-zinc-500">+{metadata.plugins.list.length - 3}</span>
+                {pluginList.length > 3 && (
+                  <span className="text-[9px] text-zinc-500">+{pluginList.length - 3}</span>
                 )}
               </>
             ) : (
@@ -1540,6 +1845,27 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             status={assetStatusCache[capsule.id]?.asset_status || capsule.asset_status || capsule.cloud_status || 'cloud_only'}
             onClick={() => handleSmartClick(capsule)}
           />
+          {pluginBackfillRetryMap[capsule.id] && (
+            <button
+              onClick={async () => {
+                try {
+                  await syncPluginMetadataBackfill(capsule, pluginBackfillRetryMap[capsule.id]?.cloudId);
+                  setPluginBackfillRetryMap(prev => {
+                    const next = { ...prev };
+                    delete next[capsule.id];
+                    return next;
+                  });
+                  toast.success('插件信息补齐成功');
+                } catch (e) {
+                  toast.warning(`插件信息补齐失败：${e.message}`);
+                }
+              }}
+              className="p-2 rounded-lg bg-blue-900/20 hover:bg-blue-900/40 text-blue-300 border border-blue-700/40 transition-colors"
+              title="补插件信息"
+            >
+              <Cloud size={16} />
+            </button>
+          )}
           {isAdmin && (
             <button
               onClick={() => onDelete && onDelete(capsule)}
@@ -1640,10 +1966,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 <User size={12} />
                 {isAdmin ? 'ADMIN' : 'USER'}
               </button>
-
-              <span className="h-4 w-[1px] bg-zinc-800 mx-2 hidden sm:block"></span>
-
-              <SyncIndicator />
 
               <span className="h-4 w-[1px] bg-zinc-800 mx-2 hidden sm:block"></span>
 

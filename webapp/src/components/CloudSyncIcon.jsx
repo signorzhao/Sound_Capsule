@@ -51,8 +51,9 @@ const CloudSyncIcon = ({ capsule, onClick, className = '' }) => {
       };
     }
 
-    // 规则 4：本地有数据、云端也有且关键词有更新 -> 作者显示云同步图标
-    if (capsule.cloud_exists === true && capsule.cloud_keyword_outdated === true) {
+    // 规则 4：本地有数据、关键词有更新 -> 作者显示云同步图标
+    // 不强依赖 cloud_exists，避免云端状态瞬时不可达导致图标不出现
+    if (hasCloudId && capsule.cloud_keyword_outdated === true) {
       return {
         icon: Cloud,
         color: 'text-blue-400',

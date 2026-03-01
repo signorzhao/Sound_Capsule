@@ -212,6 +212,11 @@ ON capsules(cloud_status);
 CREATE INDEX IF NOT EXISTS idx_capsules_cloud_id 
 ON capsules(cloud_id);
 
+-- 保护性唯一约束：cloud_id 非空时唯一，防止同一云胶囊映射到多条本地记录
+CREATE UNIQUE INDEX IF NOT EXISTS uq_capsules_cloud_id_nonempty
+ON capsules(cloud_id)
+WHERE cloud_id IS NOT NULL AND TRIM(cloud_id) != '';
+
 CREATE INDEX IF NOT EXISTS idx_capsules_owner_id 
 ON capsules(owner_supabase_user_id);
 

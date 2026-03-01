@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import base64
+import mimetypes
 import uuid
 import subprocess
 import argparse
@@ -16,7 +17,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 from dotenv import load_dotenv
 from werkzeug.exceptions import HTTPException
@@ -1043,27 +1044,70 @@ def stream_preview(capsule_id, filename=None):
         if not capsule:
             raise APIError(f"胶囊不存在: {capsule_id}", 404)
 
-        # 如果提供了文件名参数，使用它；否则使用数据库中的
-        preview_audio = filename or capsule.get('preview_audio')
-
-        if not preview_audio:
-            raise APIError("预览音频文件不存在", 404)
-
         # 使用 get_output_dir()（用户配置的导出目录）而不是 CAPSULE_ROOT
         # capsule['file_path'] 是相对于 output_dir 的路径
         output_dir = capsule_scanner.get_output_dir()
-        preview_file = output_dir / capsule['file_path'] / preview_audio
+        capsule_dir = output_dir / capsule['file_path']
+
+        # 优先顺序：
+        # 1) URL 指定的 filename
+        # 2) 数据库中的 preview_audio
+        # 3) metadata.json 中的 preview_audio
+        # 4) 胶囊目录内自动探测常见预览音频
+        preview_audio = (filename or capsule.get('preview_audio') or '').strip()
+        candidate_names = []
+        if preview_audio:
+            candidate_names.append(preview_audio)
+
+        metadata_file = capsule_dir / 'metadata.json'
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    meta = json.load(f) or {}
+                meta_preview = (
+                    meta.get('preview_audio') or
+                    (meta.get('files') or {}).get('preview_audio') or
+                    (meta.get('files') or {}).get('preview') or
+                    ''
+                )
+                meta_preview = str(meta_preview).strip()
+                if meta_preview and meta_preview not in candidate_names:
+                    candidate_names.append(meta_preview)
+            except Exception:
+                pass
+
+        for default_name in ('preview.ogg', 'preview.mp3', 'preview.wav'):
+            if default_name not in candidate_names:
+                candidate_names.append(default_name)
+
+        preview_file = None
+        resolved_preview_name = ''
+        for name in candidate_names:
+            test_file = capsule_dir / name
+            if test_file.exists() and test_file.is_file():
+                preview_file = test_file
+                resolved_preview_name = name
+                break
+
+        if preview_file is None and capsule_dir.exists() and capsule_dir.is_dir():
+            # 最后兜底：在目录中找第一个常见音频文件
+            for ext in ('*.ogg', '*.mp3', '*.wav'):
+                matches = sorted(capsule_dir.glob(ext))
+                if matches:
+                    preview_file = matches[0]
+                    resolved_preview_name = matches[0].name
+                    break
 
         # 调试日志
         print(f"🔍 [预览音频] 调试信息:")
         print(f"  - output_dir: {output_dir}")
         print(f"  - capsule['file_path']: {capsule['file_path']}")
-        print(f"  - preview_audio: {preview_audio}")
-        print(f"  - 拼接后的路径: {preview_file}")
-        print(f"  - 文件存在: {preview_file.exists()}")
+        print(f"  - preview_audio(输入): {preview_audio}")
+        print(f"  - 命中预览文件: {preview_file}")
+        print(f"  - 文件存在: {bool(preview_file and preview_file.exists())}")
 
         # 如果文件不存在，尝试其他可能的位置
-        if not preview_file.exists():
+        if not preview_file or not preview_file.exists():
             print(f"  ⚠️ 文件不存在，尝试其他位置...")
             
             # 收集可能的导出目录
@@ -1087,15 +1131,56 @@ def stream_preview(capsule_id, filename=None):
             possible_dirs = list(set(possible_dirs))
             
             for try_dir in possible_dirs:
-                try_file = try_dir / capsule['file_path'] / preview_audio
-                print(f"  🔍 尝试: {try_file}")
-                if try_file.exists():
-                    preview_file = try_file
-                    print(f"  ✓ 找到文件: {preview_file}")
+                base_dir = try_dir / capsule['file_path']
+                if not base_dir.exists() or not base_dir.is_dir():
+                    continue
+
+                # 优先按候选名查找
+                for name in candidate_names:
+                    try_file = base_dir / name
+                    print(f"  🔍 尝试: {try_file}")
+                    if try_file.exists() and try_file.is_file():
+                        preview_file = try_file
+                        resolved_preview_name = name
+                        print(f"  ✓ 找到文件: {preview_file}")
+                        break
+                if preview_file and preview_file.exists():
+                    break
+
+                # 再按扩展名兜底
+                for ext in ('*.ogg', '*.mp3', '*.wav'):
+                    matches = sorted(base_dir.glob(ext))
+                    if matches:
+                        preview_file = matches[0]
+                        resolved_preview_name = matches[0].name
+                        print(f"  ✓ 按扩展名兜底找到文件: {preview_file}")
+                        break
+                if preview_file and preview_file.exists():
                     break
         
-        if not preview_file.exists():
-            raise APIError(f"预览音频文件不存在: {preview_audio}", 404)
+        if not preview_file or not preview_file.exists():
+            raise APIError("预览音频文件不存在", 404)
+
+        # 如果自动探测到可用预览文件，回写数据库，避免下次仍出现同样 404
+        try:
+            if resolved_preview_name and str(capsule.get('preview_audio') or '').strip() != resolved_preview_name:
+                conn = db.connect()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        UPDATE capsules
+                        SET preview_audio = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (resolved_preview_name, capsule_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+        except Exception:
+            pass
 
         # 转换为绝对路径
         preview_file = preview_file.resolve()
@@ -1162,6 +1247,166 @@ def get_capsule_metadata(capsule_id):
         raise
     except Exception as e:
         raise APIError(f"获取 metadata 失败: {e}", 500)
+
+
+@app.route('/api/capsules/<int:capsule_id>/uploadable-files', methods=['GET'])
+def get_capsule_uploadable_files(capsule_id):
+    """
+    返回胶囊可上传文件清单（供签名直传流程使用）。
+    """
+    try:
+        db = get_database()
+        capsule = db.get_capsule(capsule_id)
+        if not capsule:
+            raise APIError('胶囊不存在', 404)
+
+        file_path = capsule.get('file_path')
+        if not file_path:
+            raise APIError('胶囊 file_path 缺失', 400)
+
+        pm = PathManager.get_instance()
+        capsule_dir = Path(pm.export_dir) / file_path
+        if not capsule_dir.exists():
+            return jsonify({'success': True, 'data': {'files': []}})
+
+        files = []
+
+        def _append_if_exists(relative_path: str, file_type: str, fallback_content_type: str):
+            target = capsule_dir / relative_path
+            if not target.exists() or not target.is_file():
+                return
+            content_type = mimetypes.guess_type(str(target))[0] or fallback_content_type
+            files.append({
+                'file_type': file_type,
+                'filename': target.name,
+                'relative_path': relative_path.replace('\\', '/'),
+                'content_type': content_type,
+                'size': target.stat().st_size,
+            })
+
+        _append_if_exists('metadata.json', 'metadata', 'application/json')
+
+        preview_name = capsule.get('preview_audio')
+        if preview_name:
+            _append_if_exists(preview_name, 'preview', 'audio/ogg')
+
+        rpp_name = capsule.get('rpp_file')
+        if rpp_name:
+            _append_if_exists(rpp_name, 'rpp', 'application/octet-stream')
+        else:
+            rpp_candidates = list(capsule_dir.glob('*.rpp'))
+            if rpp_candidates:
+                _append_if_exists(rpp_candidates[0].name, 'rpp', 'application/octet-stream')
+
+        audio_dir = capsule_dir / 'Audio'
+        if audio_dir.exists() and audio_dir.is_dir():
+            for wav in audio_dir.iterdir():
+                if not wav.is_file() or wav.suffix.lower() != '.wav':
+                    continue
+                _append_if_exists(f"Audio/{wav.name}", 'audio', 'audio/wav')
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'capsule_id': capsule_id,
+                'capsule_folder_name': Path(file_path).name,
+                'files': files,
+            }
+        })
+    except APIError:
+        raise
+    except Exception as e:
+        raise APIError(f"获取可上传文件清单失败: {e}", 500)
+
+
+@app.route('/api/capsules/<int:capsule_id>/file-content', methods=['GET'])
+def get_capsule_file_content(capsule_id):
+    """
+    按相对路径读取胶囊文件二进制（供签名直传 PUT body 使用）。
+    """
+    try:
+        relative_path = (request.args.get('relative_path') or '').strip()
+        if not relative_path:
+            raise APIError('缺少 relative_path', 400)
+
+        db = get_database()
+        capsule = db.get_capsule(capsule_id)
+        if not capsule:
+            raise APIError('胶囊不存在', 404)
+
+        file_path = capsule.get('file_path')
+        if not file_path:
+            raise APIError('胶囊 file_path 缺失', 400)
+
+        pm = PathManager.get_instance()
+        capsule_dir = (Path(pm.export_dir) / file_path).resolve()
+        target = (capsule_dir / relative_path).resolve()
+        if not str(target).startswith(str(capsule_dir)):
+            raise APIError('非法 relative_path', 400)
+        if not target.exists() or not target.is_file():
+            raise APIError('文件不存在', 404)
+
+        mimetype = mimetypes.guess_type(str(target))[0] or 'application/octet-stream'
+        return send_file(str(target), mimetype=mimetype, as_attachment=False)
+    except APIError:
+        raise
+    except Exception as e:
+        raise APIError(f"读取文件内容失败: {e}", 500)
+
+
+@app.route('/api/capsules/<int:capsule_id>/link-cloud', methods=['POST'])
+def link_capsule_cloud_record(capsule_id):
+    """
+    将本地胶囊与云端记录绑定（写入 cloud_id/cloud_status）。
+    用于签名 URL 直传流程在刷新后保持正确图标状态。
+    """
+    try:
+        payload = request.get_json(silent=True) or {}
+        cloud_id = str(payload.get('cloud_id') or '').strip()
+        if not cloud_id:
+            raise APIError('缺少 cloud_id', 400)
+
+        db = get_database()
+        capsule = db.get_capsule(capsule_id)
+        if not capsule:
+            raise APIError('胶囊不存在', 404)
+
+        auth_header = request.headers.get('Authorization', '')
+        owner_supabase_user_id = _extract_supabase_sub_from_bearer(auth_header)
+
+        conn = db.connect()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE capsules
+                SET cloud_id = ?,
+                    cloud_status = 'synced',
+                    owner_supabase_user_id = CASE
+                        WHEN owner_supabase_user_id IS NULL OR owner_supabase_user_id = '' THEN ?
+                        ELSE owner_supabase_user_id
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (cloud_id, owner_supabase_user_id, capsule_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'capsule_id': capsule_id,
+                'cloud_id': cloud_id,
+                'cloud_status': 'synced',
+            }
+        })
+    except APIError:
+        raise
+    except Exception as e:
+        raise APIError(f"绑定云端记录失败: {e}", 500)
 
 
 @app.route('/api/capsules/<int:capsule_id>/open', methods=['POST'])
@@ -3530,9 +3775,58 @@ def get_asset_status(capsule_id):
     try:
         db = get_database()
         asset_status = db.get_capsule_asset_status(capsule_id)
+        capsule = db.get_capsule(capsule_id)
 
-        if not asset_status:
+        if not asset_status or not capsule:
             raise APIError('胶囊不存在', 404)
+
+        # 磁盘真相对账：若 Audio/*.wav 被手动删掉，状态应恢复为 cloud_only 可下载
+        file_path = capsule.get('file_path')
+        has_wav = False
+        if file_path:
+            try:
+                pm = PathManager.get_instance()
+                audio_dir = Path(pm.export_dir) / file_path / 'Audio'
+                if audio_dir.exists() and audio_dir.is_dir():
+                    has_wav = any(
+                        p.is_file() and p.suffix.lower() == '.wav'
+                        for p in audio_dir.iterdir()
+                    )
+            except Exception:
+                has_wav = False
+
+        desired_asset_status = asset_status.get('asset_status')
+        desired_files_downloaded = int(capsule.get('files_downloaded') or 0)
+        if has_wav:
+            desired_asset_status = 'synced'
+            desired_files_downloaded = 1
+        elif capsule.get('cloud_id'):
+            desired_asset_status = 'cloud_only'
+            desired_files_downloaded = 0
+
+        if (
+            desired_asset_status != asset_status.get('asset_status') or
+            desired_files_downloaded != int(capsule.get('files_downloaded') or 0)
+        ):
+            conn = db.connect()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE capsules
+                    SET asset_status = ?,
+                        files_downloaded = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (desired_asset_status, desired_files_downloaded, capsule_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            asset_status['asset_status'] = desired_asset_status
+
+        asset_status['files_downloaded'] = desired_files_downloaded
 
         return jsonify(asset_status)
 

@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Layers, Zap, Maximize, Hash, Copy, Eraser, Sparkles, Check, CircleDot, Save, Package } from 'lucide-react';
+import { Layers, Zap, Maximize, Hash, Copy, Eraser, Sparkles, Check, CircleDot, Save, Package, ArrowLeft } from 'lucide-react';
 import { clsx } from 'clsx';
 import CapsuleExportWizard from './components/CapsuleExportWizard';
 import SaveCapsuleHome from './components/SaveCapsuleHome';
 import CapsuleLibrary from './components/CapsuleLibrary';
 import DebugStatePanel from './components/DebugStatePanel';
-import UserMenu from './components/UserMenu';
-import SyncIndicator from './components/SyncIndicator';
 import InitialSetup from './components/InitialSetup';
 import BootSync from './components/BootSync'; // Phase G2: 启动同步
 import { useToast } from './components/Toast';
@@ -1165,10 +1163,15 @@ export default function App() {
               </p>
             </div>
 
-            {/* 同步指示器 + 用户菜单 */}
+            {/* 关键词页操作 */}
             <div className="flex items-center gap-3">
-              <SyncIndicator />
-              <UserMenu />
+              <button
+                onClick={() => setCurrentView('library')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800/80 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                返回胶囊库
+              </button>
             </div>
           </div>
         </header>

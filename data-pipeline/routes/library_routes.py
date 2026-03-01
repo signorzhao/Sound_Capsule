@@ -64,6 +64,24 @@ def _extract_cloud_keywords(cloud_record):
     return None
 
 
+def _has_local_wav_audio(export_base: Path, file_path: str) -> bool:
+    """
+    判断胶囊目录下是否存在 Audio/*.wav（磁盘真相）。
+    """
+    if not file_path:
+        return False
+    audio_dir = export_base / file_path / 'Audio'
+    if not audio_dir.exists() or not audio_dir.is_dir():
+        return False
+    try:
+        for p in audio_dir.iterdir():
+            if p.is_file() and p.suffix.lower() == '.wav':
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _extract_supabase_sub_from_bearer(auth_header: str) -> str:
     """
     轻量提取 JWT payload.sub（不验签）。
@@ -149,6 +167,43 @@ def get_capsules():
             offset=offset
         )
 
+        # 去重：同一个 cloud_id 可能因历史导入/同步问题在本地出现多条记录。
+        # 优先保留插件信息更完整的那条，避免库里出现“同一云胶囊一条有插件一条无插件”。
+        def _plugin_len(cap):
+            meta = cap.get('metadata') if isinstance(cap.get('metadata'), dict) else {}
+            plugins_obj = meta.get('plugins')
+            if isinstance(plugins_obj, dict) and isinstance(plugins_obj.get('list'), list):
+                return len(plugins_obj.get('list') or [])
+            if isinstance(meta.get('plugin_list'), list):
+                return len(meta.get('plugin_list') or [])
+            return 0
+
+        best_by_cloud_id = {}
+        for cap in capsules:
+            cid = str(cap.get('cloud_id') or '').strip()
+            if not cid:
+                continue
+            score = (_plugin_len(cap), int(cap.get('id') or 0))
+            prev = best_by_cloud_id.get(cid)
+            if not prev or score > prev['score']:
+                best_by_cloud_id[cid] = {'score': score, 'id': cap.get('id')}
+
+        deduped = []
+        emitted_cloud_ids = set()
+        for cap in capsules:
+            cid = str(cap.get('cloud_id') or '').strip()
+            if not cid:
+                deduped.append(cap)
+                continue
+            if cid in emitted_cloud_ids:
+                continue
+            winner = best_by_cloud_id.get(cid, {}).get('id')
+            if winner and cap.get('id') != winner:
+                continue
+            emitted_cloud_ids.add(cid)
+            deduped.append(cap)
+        capsules = deduped
+
         # 一次性批量拉取云端记录，避免每个胶囊单独请求
         cloud_capsule_map = {}
         cloud_ids = list({str(c.get('cloud_id')) for c in capsules if c.get('cloud_id')})
@@ -170,6 +225,26 @@ def get_capsules():
             except Exception as e:
                 logger.warning(f"[CAPSULES] 云端状态批量查询失败: {e}")
 
+        # 读取本地关键词待同步状态（优先用于云同步图标判定）
+        pending_tag_capsule_ids = set()
+        try:
+            conn = db.connect()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT record_id
+                    FROM sync_status
+                    WHERE table_name = 'capsule_tags'
+                      AND sync_state = 'pending'
+                    """
+                )
+                pending_tag_capsule_ids = {int(r[0]) for r in (cursor.fetchall() or [])}
+            finally:
+                conn.close()
+        except Exception as e:
+            logger.warning(f"[CAPSULES] 读取关键词待同步状态失败: {e}")
+
         # Phase G: 获取当前用户 ID 以判断所有权
         current_user_id = None
         auth_header = request.headers.get('Authorization')
@@ -188,6 +263,15 @@ def get_capsules():
                 rpp_path = export_base / capsule['file_path'] / capsule['rpp_file']
                 capsule['local_rpp_path'] = str(rpp_path.resolve())
 
+            # 磁盘状态对账（防止“下载后刷新又回退”）
+            has_wav = _has_local_wav_audio(export_base, capsule.get('file_path'))
+            if has_wav:
+                capsule['asset_status'] = 'synced'
+                capsule['files_downloaded'] = 1
+            elif capsule.get('cloud_id'):
+                capsule['asset_status'] = 'cloud_only'
+                capsule['files_downloaded'] = 0
+
             # Phase G: 添加所有权标识
             owner_id = capsule.get('owner_supabase_user_id')
             capsule['is_mine'] = bool(
@@ -197,19 +281,18 @@ def get_capsules():
                 )
             )
 
-            # 云端存在性与关键词差异（前端图标判定的单一可信来源）
+            # 云端存在性（用于上传/同步图标判定）
             cloud_id = capsule.get('cloud_id')
             cloud_record = cloud_capsule_map.get(str(cloud_id)) if cloud_id else None
             capsule['cloud_exists'] = bool(cloud_record)
 
-            if cloud_record:
-                local_keywords = capsule.get('keywords')
-                cloud_keywords = _extract_cloud_keywords(cloud_record)
-                capsule['cloud_keyword_outdated'] = (
-                    _normalize_keywords(local_keywords) != _normalize_keywords(cloud_keywords)
-                )
-            else:
-                capsule['cloud_keyword_outdated'] = False
+            # 关键词同步图标只由本地 pending 状态驱动：
+            # - 改关键词后立即出现
+            # - 同步后清除 pending，刷新不回弹
+            has_cloud_id = bool(cloud_id and str(cloud_id).strip())
+            capsule['cloud_keyword_outdated'] = bool(
+                has_cloud_id and capsule.get('id') in pending_tag_capsule_ids
+            )
 
         # Phase G: 应用过滤器
         if filter_type == 'mine':

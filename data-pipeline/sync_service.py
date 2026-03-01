@@ -5,6 +5,7 @@
 """
 
 import sqlite3
+import os
 import hashlib
 import json
 import logging
@@ -417,7 +418,7 @@ class SyncService:
             'errors': errors
         }
 
-    def sync_tags_only(self, user_id: str) -> Dict[str, Any]:
+    def sync_tags_only(self, user_id: str, capsule_ids: Optional[List[int]] = None) -> Dict[str, Any]:
         """
         只同步关键词数据（capsule_tags）
         
@@ -448,15 +449,24 @@ class SyncService:
             db = get_database()
             tags_service = get_tags_service(db, supabase)
             
-            # 1. 获取所有本地胶囊及其 cloud_id
+            # 1. 获取需要同步的本地胶囊及其 cloud_id
             conn = self._get_connection()
             try:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, name, cloud_id, updated_at
-                    FROM capsules
-                    WHERE cloud_id IS NOT NULL AND cloud_id != ''
-                """)
+                if capsule_ids:
+                    placeholders = ','.join('?' * len(capsule_ids))
+                    cursor.execute(f"""
+                        SELECT id, name, cloud_id, updated_at
+                        FROM capsules
+                        WHERE cloud_id IS NOT NULL AND cloud_id != ''
+                          AND id IN ({placeholders})
+                    """, tuple(capsule_ids))
+                else:
+                    cursor.execute("""
+                        SELECT id, name, cloud_id, updated_at
+                        FROM capsules
+                        WHERE cloud_id IS NOT NULL AND cloud_id != ''
+                    """)
                 local_capsules = cursor.fetchall()
             finally:
                 conn.close()
@@ -557,7 +567,7 @@ class SyncService:
                     logger.warning(f"   ⚠️ 同步标签失败 {cap_name}: {e}")
 
             # 5. 清除 pending 状态（标签已同步）
-            self._clear_tags_pending_status()
+            self._clear_tags_pending_status(capsule_ids)
 
             logger.info(f"🏷️  关键词同步完成: 上传 {uploaded}, 下载 {downloaded}")
 
@@ -579,18 +589,30 @@ class SyncService:
                 'errors': [str(e)]
             }
 
-    def _clear_tags_pending_status(self):
+    def _clear_tags_pending_status(self, capsule_ids: Optional[List[int]] = None):
         """清除标签相关的 pending 状态"""
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
-            cursor.execute("""
-                UPDATE sync_status
-                SET sync_state = 'synced',
-                    last_sync_at = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE table_name = 'capsule_tags' AND sync_state = 'pending'
-            """)
+            if capsule_ids:
+                placeholders = ','.join('?' * len(capsule_ids))
+                cursor.execute(f"""
+                    UPDATE sync_status
+                    SET sync_state = 'synced',
+                        last_sync_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE table_name = 'capsule_tags'
+                      AND sync_state = 'pending'
+                      AND record_id IN ({placeholders})
+                """, tuple(capsule_ids))
+            else:
+                cursor.execute("""
+                    UPDATE sync_status
+                    SET sync_state = 'synced',
+                        last_sync_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE table_name = 'capsule_tags' AND sync_state = 'pending'
+                """)
             conn.commit()
         finally:
             conn.close()
@@ -1061,9 +1083,18 @@ class SyncService:
                             if not local_capsule:
                                 local_capsule = self._get_local_capsule_by_name(cloud_capsule['name'])
                                 if local_capsule:
-                                    # 关联 cloud_id
-                                    self._set_capsule_cloud_id(local_capsule['id'], cloud_capsule['id'])
-                                    logger.info(f"   ℹ️ 通过名称匹配并关联 cloud_id: {cloud_capsule['name']}")
+                                    # 关联 cloud_id（带防重保护，避免同一个 cloud_id 绑定到多条本地记录）
+                                    bound_local_id = self._set_capsule_cloud_id(local_capsule['id'], cloud_capsule['id'])
+                                    if bound_local_id:
+                                        local_capsule = self._get_local_capsule_by_cloud_id(cloud_capsule['id']) or local_capsule
+                                        logger.info(f"   ℹ️ 通过名称匹配并关联 cloud_id: {cloud_capsule['name']}")
+                                    else:
+                                        # 绑定失败（通常为冲突），优先使用已绑定该 cloud_id 的记录继续流程
+                                        local_capsule = self._get_local_capsule_by_cloud_id(cloud_capsule['id']) or local_capsule
+                                        logger.warning(
+                                            f"   ⚠️ cloud_id 关联被跳过（可能已被其他本地胶囊占用）: "
+                                            f"name={cloud_capsule['name']}, cloud_id={cloud_capsule['id']}"
+                                        )
 
                             if local_capsule:
                                 # 更新本地元数据（不覆盖本地修改）
@@ -2107,7 +2138,7 @@ class SyncService:
         finally:
             conn.close()
 
-    def _set_capsule_cloud_id(self, local_id: int, cloud_id: str) -> bool:
+    def _set_capsule_cloud_id(self, local_id: int, cloud_id: str) -> Optional[int]:
         """
         设置胶囊的 cloud_id（关联本地扫描的胶囊与云端记录）
         
@@ -2116,11 +2147,29 @@ class SyncService:
             cloud_id: 云端胶囊 ID
             
         Returns:
-            是否成功
+            成功时返回最终绑定的本地胶囊 ID（可能不是入参 local_id）；
+            失败返回 None。
         """
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
+
+            # 防重保护：若 cloud_id 已被其他本地记录占用，则不再重复绑定
+            cursor.execute("""
+                SELECT id FROM capsules
+                WHERE cloud_id = ? AND id != ?
+                LIMIT 1
+            """, (cloud_id, local_id))
+            existing = cursor.fetchone()
+            if existing:
+                occupied_id = existing[0]
+                logger.warning(
+                    f"[SYNC] 跳过重复 cloud_id 绑定: cloud_id={cloud_id}, "
+                    f"target_local_id={local_id}, occupied_local_id={occupied_id}"
+                )
+                conn.commit()
+                return occupied_id
+
             # 🔥 同时设置 audio_uploaded = 1，因为云端已有完整数据
             cursor.execute("""
                 UPDATE capsules
@@ -2128,11 +2177,11 @@ class SyncService:
                 WHERE id = ?
             """, (cloud_id, local_id))
             conn.commit()
-            return True
+            return local_id
         except Exception as e:
             conn.rollback()
             print(f"❌ 设置 cloud_id 失败: {e}")
-            return False
+            return None
         finally:
             conn.close()
 
