@@ -1105,15 +1105,31 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         toastId = toast.loading(t('librarySync.uploadingCapsule', { name: capsule.name }));
         const { authFetch } = await import('../utils/apiClient.js');
         
+        const normalizeFolderName = (raw) => {
+          const text = String(raw || '').trim();
+          if (!text) return '';
+          const normalized = text.replace(/\\/g, '/');
+          const parts = normalized.split('/').filter(Boolean);
+          // 若误传了绝对路径（Windows/macOS），仅保留最后一级目录名作为云端 folder
+          return parts.length > 0 ? parts[parts.length - 1] : normalized;
+        };
+        const normalizeLocalId = (raw) => {
+          const n = Number(raw);
+          return Number.isInteger(n) && n >= 0 ? n : null;
+        };
+
+        const folderName = normalizeFolderName(capsule.file_path || capsule.name);
+        const localCapsuleId = normalizeLocalId(capsule.id);
+
         const uploadPayload = {
-          capsule_folder_name: capsule.file_path || capsule.name,
+          capsule_folder_name: folderName,
           capsule: {
-            id: capsule.id,
-            name: capsule.name,
-            file_path: capsule.file_path || capsule.name,
+            id: localCapsuleId,
+            name: capsule.name || folderName,
+            file_path: folderName,
             capsule_type: capsule.capsule_type || 'magic',
-            keywords: capsule.keywords || '',
-            description: capsule.description || '',
+            keywords: String(capsule.keywords || ''),
+            description: String(capsule.description || ''),
             // 兼容旧口径：要求写 metadata 顶层
             preview_audio: capsule.preview_audio || null,
             rpp_file: capsule.rpp_file || null,
@@ -1128,12 +1144,37 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         };
         // 固定新链路：受控元数据 + 签名URL直传文件（不再走 /sync/lightweight）
         // Step 1) 先走受控 API 上送元数据/标签/坐标
-        const metaResp = await authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(uploadPayload),
-        });
-        const metaJson = await metaResp.json().catch(() => ({}));
+        const postUploadCapsule = async (payload) => {
+          const resp = await authFetch(`${CLOUD_API_BASE}/cloud/upload-capsule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const json = await resp.json().catch(() => ({}));
+          return { resp, json };
+        };
+
+        let { resp: metaResp, json: metaJson } = await postUploadCapsule(uploadPayload);
+
+        // 云端 5xx 常见于网关/代理或字段兼容问题；失败时做一次保守重试
+        if ((!metaResp.ok || !metaJson?.success) && metaResp.status >= 500) {
+          console.warn('[upload-capsule] first attempt failed, retry with conservative payload', {
+            status: metaResp.status,
+            error: metaJson?.error,
+          });
+          const retryPayload = {
+            ...uploadPayload,
+            capsule: {
+              ...uploadPayload.capsule,
+              // 避免部分云端对 local_id 类型严格校验导致写入失败
+              id: localCapsuleId,
+            },
+          };
+          const second = await postUploadCapsule(retryPayload);
+          metaResp = second.resp;
+          metaJson = second.json;
+        }
+
         if (!metaResp.ok || !metaJson?.success) {
           throw new Error(metaJson?.error || `upload-capsule HTTP ${metaResp.status}`);
         }
