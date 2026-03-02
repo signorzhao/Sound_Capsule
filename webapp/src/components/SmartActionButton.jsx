@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Cloud, Check, Loader2, AlertTriangle, Play } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 
 /**
  * SmartActionButton - JIT 智能按钮组件
@@ -17,10 +17,10 @@ const SmartActionButton = ({ status, onClick, className = '' }) => {
 
   const config = {
     cloud_only: {
-      icon: AlertTriangle,
-      text: t('smartAction.fetch'),
-      style: 'bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30',
-      tooltip: t('smartAction.cloudOnlyTooltip')
+      icon: Play,
+      text: t('smartAction.open'),
+      style: 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30',
+      tooltip: t('smartAction.openMissingTooltip', '打开工程（缺失媒体）')
     },
     downloading: {
       icon: Loader2,
@@ -48,10 +48,10 @@ const SmartActionButton = ({ status, onClick, className = '' }) => {
       tooltip: t('smartAction.openTooltip')
     },
     partial: {
-      icon: AlertTriangle,
-      text: t('smartAction.fix'),
-      style: 'bg-orange-500/20 text-orange-400 border-orange-500/30 hover:bg-orange-500/30',
-      tooltip: t('smartAction.partialTooltip')
+      icon: Play,
+      text: t('smartAction.open'),
+      style: 'bg-blue-500/20 text-blue-300 border-blue-500/30 hover:bg-blue-500/30',
+      tooltip: t('smartAction.openMissingTooltip', '打开工程（缺失媒体）')
     }
   };
 

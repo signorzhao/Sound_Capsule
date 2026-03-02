@@ -5,7 +5,7 @@ import {
   Download, HeadphonesIcon, User, Flame, Zap,
   Sparkles, Music, Activity, Box, Volume2, Maximize2, MousePointer2,
   Radio, Headphones, Guitar, Piano, Mic, Bell, Signal, Heart, Timer, Clock,
-  Target, Star, Sun, Moon, Snowflake, Cloud, CheckCircle, Loader, HardDrive
+  Target, Star, Sun, Moon, Snowflake, Cloud, Loader
 } from 'lucide-react';
 import { useToast } from './Toast';
 import UserMenu from './UserMenu';
@@ -205,77 +205,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     } catch (error) {
       console.error('获取资产状态失败:', error);
       return { asset_status: 'local', file_sync_status: 'full' };
-    }
-  };
-
-  // Phase B.3: 获取文件状态徽章配置
-  const getFileStatusBadge = (capsule) => {
-    const status = assetStatusCache[capsule.id];
-    if (!status) {
-      return {
-        icon: HardDrive,
-        color: 'gray',
-        text: t('assetStatus.local'),
-        bgColor: 'bg-gray-900/50',
-        borderColor: 'border-gray-700',
-        textColor: 'text-gray-400'
-      };
-    }
-
-    const assetStatus = status.asset_status || 'local';
-    const downloadProgress = status.download_progress || 0;
-
-    if (downloadProgress > 0 && downloadProgress < 100 && assetStatus === 'downloading') {
-      return {
-        icon: Loader,
-        color: 'blue',
-        text: t('assetStatus.downloadingPct', { pct: downloadProgress }),
-        bgColor: 'bg-blue-900/30',
-        borderColor: 'border-blue-700',
-        textColor: 'text-blue-400',
-        animated: true
-      };
-    }
-
-    switch (assetStatus) {
-      case 'full':
-        return {
-          icon: CheckCircle,
-          color: 'green',
-          text: t('assetStatus.downloaded'),
-          bgColor: 'bg-green-900/30',
-          borderColor: 'border-green-700',
-          textColor: 'text-green-400'
-        };
-      case 'downloading':
-        return {
-          icon: Loader,
-          color: 'blue',
-          text: t('assetStatus.downloading'),
-          bgColor: 'bg-blue-900/30',
-          borderColor: 'border-blue-700',
-          textColor: 'text-blue-400',
-          animated: true
-        };
-      case 'cloud_only':
-        return {
-          icon: Cloud,
-          color: 'blue',
-          text: t('assetStatus.cloud'),
-          bgColor: 'bg-blue-900/20',
-          borderColor: 'border-blue-800',
-          textColor: 'text-blue-400'
-        };
-      case 'local':
-      default:
-        return {
-          icon: HardDrive,
-          color: 'gray',
-          text: t('assetStatus.local'),
-          bgColor: 'bg-gray-900/50',
-          borderColor: 'border-gray-700',
-          textColor: 'text-gray-400'
-        };
     }
   };
 
@@ -755,8 +684,9 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
       return;
     }
 
-    // 3. 否则 (cloud_only 或 partial)，直接下载 WAV，不弹二级菜单
-    await startWavDownload(capsule);
+    // 3. 资源不完整 (cloud_only / partial)：直接打开 RPP（允许缺失媒体）
+    // 下载动作仍由左上云图标触发，避免与右侧按钮功能重复。
+    await openCapsuleInReaper(capsule, true);
   };
 
   // 直接下载 WAV（不自动打开）
@@ -1713,8 +1643,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     const userInfo = extractUserInfo(capsule);
     const tagCount = capsule.tag_count || 0;
     const isActive = nowPlaying?.id === capsule.id;
-    const fileStatus = getFileStatusBadge(capsule);
-    const StatusIcon = fileStatus.icon;
 
     return (
       <div
@@ -1736,12 +1664,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
           onClick={() => onClick(capsule.id)}
           className="relative w-36 h-64 cursor-pointer transition-transform duration-500 ease-out hover:scale-105"
         >
-          {/* Phase B.3: 文件状态徽章 */}
-          <div className={`absolute -top-2 -right-2 z-40 ${fileStatus.bgColor} ${fileStatus.borderColor} border px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg ${fileStatus.animated ? 'animate-pulse' : ''}`}>
-            <StatusIcon size={10} className={fileStatus.textColor} />
-            <span className={`text-[8px] font-bold ${fileStatus.textColor}`}>{fileStatus.text}</span>
-          </div>
-
           {/* Phase G: 云同步状态图标 */}
           <div className="absolute -top-2 -left-2 z-40">
             <CloudSyncIcon 
@@ -1924,8 +1846,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     const metadata = metadataCache[capsule.id] || capsule.metadata || null;
     const tags = tagsCache[capsule.id];
     const isActive = nowPlaying?.id === capsule.id;
-    const fileStatus = getFileStatusBadge(capsule);
-    const StatusIcon = fileStatus.icon;
     const { pluginList } = getPluginInfoFromCapsule(metadata);
 
     // 棱镜名称映射
@@ -1990,11 +1910,6 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
               <h3 className={`font-bold text-sm tracking-wide transition-colors ${isActive ? 'text-white' : 'text-zinc-200'}`}>
                 {capsule.name || capsule.capsule_type}
               </h3>
-              {/* Phase B.3: 文件状态徽章 */}
-              <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${fileStatus.bgColor} ${fileStatus.borderColor} ${fileStatus.animated ? 'animate-pulse' : ''}`}>
-                <StatusIcon size={8} className={fileStatus.textColor} />
-                <span className={`text-[8px] font-medium ${fileStatus.textColor}`}>{fileStatus.text}</span>
-              </div>
               {/* Phase G: 云同步图标 */}
               <CloudSyncIcon capsule={getCapsuleForCloudSync(capsule)} onClick={handleCloudSync} />
             </div>

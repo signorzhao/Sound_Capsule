@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Package, Sparkles, Flame, Music, Activity, Settings, X } from 'lucide-react';
+import { Package, Sparkles, Flame, Music, Activity, Settings } from 'lucide-react';
 import CapsuleCard from './CapsuleCard';
 import CapsuleTypeManager from './CapsuleTypeManager';
 import UserMenu from './UserMenu';
@@ -296,6 +296,7 @@ function SaveCapsuleHome({ onSave, saveStatus, saveProgress, onShowLibrary }) {
             }}
           />
         )}
+
       </div>
     </div>
   );

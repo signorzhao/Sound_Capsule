@@ -2283,6 +2283,13 @@ def scan_and_import_capsules():
 # 胶囊类型管理
 # ============================================
 
+def _capsule_type_mutation_enabled() -> bool:
+    """
+    胶囊类型库是否允许写操作（增删改）。
+    默认关闭，仅管理员部署时通过环境变量显式开启。
+    """
+    return str(os.getenv('CAPSULE_TYPE_ADMIN_ENABLED', 'false')).strip().lower() in ('1', 'true', 'yes', 'on')
+
 @app.route('/api/capsule-types', methods=['GET'])
 def get_capsule_types():
     """获取所有胶囊类型"""
@@ -2324,6 +2331,8 @@ def get_capsule_type(type_id):
 def create_capsule_type():
     """创建新的胶囊类型"""
     try:
+        if not _capsule_type_mutation_enabled():
+            raise APIError("胶囊类型库为只读模式，仅管理员可维护", 403)
         data = request.get_json()
 
         # 验证必填字段
@@ -2358,6 +2367,8 @@ def create_capsule_type():
 def update_capsule_type(type_id):
     """更新胶囊类型"""
     try:
+        if not _capsule_type_mutation_enabled():
+            raise APIError("胶囊类型库为只读模式，仅管理员可维护", 403)
         data = request.get_json()
 
         db = get_database()
@@ -2386,6 +2397,8 @@ def update_capsule_type(type_id):
 def delete_capsule_type(type_id):
     """删除胶囊类型"""
     try:
+        if not _capsule_type_mutation_enabled():
+            raise APIError("胶囊类型库为只读模式，仅管理员可维护", 403)
         db = get_database()
 
         # 检查类型是否存在
