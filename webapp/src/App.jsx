@@ -146,6 +146,7 @@ export default function App() {
   const previewAudioRef = useRef(null);
   const dragStartedInsideRef = useRef(false); // 标记拖拽是否在棱镜内部开始
   const prevActiveLensRef = useRef(activeLens);
+  const isHydratingEditRef = useRef(false); // 编辑初始化期间，避免切镜回写覆盖历史标签
 
   // Phase 5.4: 多棱镜管理（已完成嵌入直接保存，不再弹二级菜单）
 
@@ -369,7 +370,9 @@ export default function App() {
     // 切换棱镜前，将上一个棱镜的 selectedTags 保存到 allSelectedTags
     const prevLens = prevActiveLensRef.current;
     if (prevLens !== activeLens) {
-      setAllSelectedTags(prev => ({ ...prev, [prevLens]: selectedTags }));
+      if (!isHydratingEditRef.current) {
+        setAllSelectedTags(prev => ({ ...prev, [prevLens]: selectedTags }));
+      }
       prevActiveLensRef.current = activeLens;
     }
 
@@ -414,6 +417,11 @@ export default function App() {
     } else {
       // 如果没有保存的标签，清空当前选择
       setSelectedTags([]);
+    }
+
+    // 编辑初始化完成后，恢复正常的切镜回写逻辑
+    if (isHydratingEditRef.current) {
+      isHydratingEditRef.current = false;
     }
   }, [activeLens, allSelectedTags]);
 
@@ -707,6 +715,9 @@ export default function App() {
         setCurrentCapsule(capsuleData);
         setIsEditMode(true);
 
+        // 标记编辑初始化阶段，避免 useEffect 把旧 selectedTags 覆盖到新加载的数据
+        isHydratingEditRef.current = true;
+
         // 标准化标签数据并加载到 allSelectedTags
         const normalizedTags = {};
         // 动态遍历所有棱镜，而不是硬编码4个
@@ -754,6 +765,8 @@ export default function App() {
 
         // 跳转到第一个有标签的棱镜，或默认到 texture
         const firstLens = completed.length > 0 ? completed[0] : 'texture';
+        prevActiveLensRef.current = firstLens;
+        setSelectedTags(normalizedTags[firstLens] || []);
         setActiveLens(firstLens);
         setCurrentView('lens');
 
