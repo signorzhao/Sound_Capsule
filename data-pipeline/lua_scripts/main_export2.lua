@@ -56,6 +56,32 @@ function FindParentTracks(track, keepTracks)
     return parents
 end
 
+-- 辅助函数：查找所有 Receive 源轨道（发送到当前轨道的轨道），返回新加入的源轨道列表
+function FindReceiveSourceTracks(track, keepTracks)
+    local added = {}
+    if track == nil then
+        return added
+    end
+    -- category -1 = 接收（Receive）
+    local rcvCount = reaper.GetTrackNumSends(track, -1)
+    if rcvCount == 0 then
+        return added
+    end
+    for i = 0, rcvCount - 1 do
+        -- P_SRCTRACK = 源轨道（发送到本轨的轨道）
+        local srcTrack = reaper.GetTrackSendInfo_Value(track, -1, i, "P_SRCTRACK")
+        if srcTrack ~= nil and type(srcTrack) == "userdata" then
+            local trackNum = reaper.GetMediaTrackInfo_Value(srcTrack, "IP_TRACKNUMBER")
+            if trackNum ~= nil then
+                AddTrackToKeep(keepTracks, srcTrack)
+                FindParentTracks(srcTrack, keepTracks)
+                table.insert(added, srcTrack)
+            end
+        end
+    end
+    return added
+end
+
 -- 辅助函数：查找所有Send目标轨道
 function FindSendTargetTracks(track, keepTracks)
     if track == nil then
@@ -147,11 +173,11 @@ function GetRelatedTracks(item)
         end
     end
 
-    -- 处理队列中的每个轨道
+    -- 处理队列中的每个轨道（只沿信号流方向：Send 目标及父级，不保留发送到本轨的 Receive 源）
     while #queue > 0 do
         local currentTrack = table.remove(queue, 1)
 
-        -- 查找当前轨道的Send目标（只追踪Send，不追踪Receive）
+        -- 查找当前轨道的 Send 目标（只追踪“本轨发送到谁”，不追踪“谁发到本轨”）
         local sendCount = reaper.GetTrackNumSends(currentTrack, 0)
         if sendCount > 0 then
             local currentTrackName = reaper.GetSetMediaTrackInfo_String(currentTrack, "P_NAME", "", false) or "未命名"
@@ -663,6 +689,7 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
     sourceFile:close()
 
     -- 收集需要保留的轨道（依赖追踪）
+    -- RPP 中 <TRACK> 块顺序与 REAPER 轨道顺序一致，currentTrackNum 1 = 第 1 个 TRACK 块，对应 API 轨道号 1
     reaper.ShowConsoleMsg("收集需要保留的轨道...\n")
     local keepTrackNumbers = {}
     local numItems = reaper.CountSelectedMediaItems(0)
@@ -679,7 +706,7 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         end
     end
 
-    -- 删除不相关的 TRACK 块
+    -- 删除不相关的 TRACK 块，并建立旧轨道号 -> 新轨道号 映射
     reaper.ShowConsoleMsg("清理不相关的轨道...\n")
     local newContent = ""
     local inTrack = false
@@ -687,6 +714,8 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
     local trackDepth = 0
     local currentTrackNum = 0
     local removedTrackCount = 0
+    local keptCount = 0
+    local oldIndexToNewIndex = {}  -- 修剪后 SEND/RECEIVE 中的轨道号需重映射
     for line in content:gmatch("([^\r\n]*)\r?\n?") do
         if line:match("^%s*<TRACK") then
             inTrack = true
@@ -695,18 +724,23 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
             trackContent = line .. "\n"
         elseif inTrack then
             trackContent = trackContent .. line .. "\n"
+            if line:match("^%s*</TRACK>") then trackDepth = 0 end  -- 兼容 </TRACK> 结束格式
             if line:match("^%s*<") and not line:match("^%s*<[^>]*>%s*$") then trackDepth = trackDepth + 1 end
             if line:match("^%s*>%s*$") then
                 trackDepth = trackDepth - 1
-                if trackDepth == 0 then
-                    if keepTrackNumbers[currentTrackNum] then
-                        newContent = newContent .. trackContent
-                    else
-                        removedTrackCount = removedTrackCount + 1
-                    end
-                    inTrack = false
-                    trackContent = ""
+            end
+            if trackDepth == 0 then
+                -- 轨道块结束（可能是 > 或 </TRACK>），提交当前轨道
+                if keepTrackNumbers[currentTrackNum] then
+                    keptCount = keptCount + 1
+                    local fileIdx0 = currentTrackNum - 1
+                    oldIndexToNewIndex[fileIdx0] = keptCount - 1
+                    newContent = newContent .. trackContent
+                else
+                    removedTrackCount = removedTrackCount + 1
                 end
+                inTrack = false
+                trackContent = ""
             end
         else
             newContent = newContent .. line .. "\n"
@@ -714,6 +748,26 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
     end
     content = newContent
     reaper.ShowConsoleMsg("  删除了 " .. removedTrackCount .. " 个不相关的轨道\n")
+
+    -- 重映射轨道路由号：RPP 使用 AUXRECV（receive）、SEND/AUXRENDER（send），均为 0-based（State Chunk 文档）
+    if keptCount > 0 and next(oldIndexToNewIndex) then
+        reaper.ShowConsoleMsg("重映射轨道路由号 (AUXRECV/SEND/AUXRENDER 0-based)...\n")
+        local oldIndices = {}
+        for oldIdx, _ in pairs(oldIndexToNewIndex) do
+            table.insert(oldIndices, oldIdx)
+        end
+        table.sort(oldIndices, function(a, b) return a > b end)
+        local trail = "([^%d]?)"
+        for _, oldIdx in ipairs(oldIndices) do
+            local newIdx = oldIndexToNewIndex[oldIdx]
+            if newIdx ~= nil and oldIdx ~= newIdx then
+                content = content:gsub("AUXRECV%s+" .. oldIdx .. trail, "AUXRECV " .. newIdx .. "%1")
+                content = content:gsub("SEND%s+" .. oldIdx .. trail, "SEND " .. newIdx .. "%1")
+                content = content:gsub("AUXRENDER%s+" .. oldIdx .. trail, "AUXRENDER " .. newIdx .. "%1")
+            end
+        end
+        reaper.ShowConsoleMsg("  轨道路由号重映射完成\n")
+    end
 
     -- 删除未选中的 ITEM 块
     reaper.ShowConsoleMsg("清理未选中的 Items...\n")
@@ -734,23 +788,22 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
             itemContent = line .. "\n"
         elseif inItem then
             itemContent = itemContent .. line .. "\n"
+            if line:match("^%s*</ITEM>") then itemDepth = 0 end  -- 兼容 </ITEM> 结束格式（MIDI 等）
             if line:match("^%s*<") then itemDepth = itemDepth + 1 end
-            if line:match("^%s*>") then
-                itemDepth = itemDepth - 1
-                if itemDepth == 0 then
-                    local keepItem = false
-                    if itemContent:lower():find("source midi", 1, true) then
-                        keepItem = true
-                    else
-                        for mediaName, _ in pairs(selectedMediaNames) do
-                            if itemContent:lower():find(mediaName, 1, true) then keepItem = true; break end
-                        end
+            if line:match("^%s*>") then itemDepth = itemDepth - 1 end
+            if itemDepth == 0 then
+                local keepItem = false
+                if itemContent:lower():find("source midi", 1, true) then
+                    keepItem = true
+                else
+                    for mediaName, _ in pairs(selectedMediaNames) do
+                        if itemContent:lower():find(mediaName, 1, true) then keepItem = true; break end
                     end
-                    if keepItem then newContent = newContent .. itemContent
-                    else removedCount = removedCount + 1 end
-                    inItem = false
-                    itemContent = ""
                 end
+                if keepItem then newContent = newContent .. itemContent
+                else removedCount = removedCount + 1 end
+                inItem = false
+                itemContent = ""
             end
         else
             newContent = newContent .. line .. "\n"
@@ -788,13 +841,14 @@ function GenerateCapsuleRPP(outputDir, capsuleName, pathMapping, renderPreview, 
         content = content:gsub('RENDER_1X%s+[^\n]*\n?', '')
         content = content:gsub('%s*<RENDER_CFG%s*\n%s*[%w%+%/=]+%s*\n%s*>', '')
         local render1x = hasMidiItems and 2 or 0
+        -- RENDER_RANGE 2 = 时间选区，后两参为 start/end，必须与 SELECTION 一致，否则渲染范围错误（MIDI/音频会错或无声）
         local renderSettings = string.format([[RENDER_FILE %s
 RENDER_PATTERN %s
 RENDER_FMT 0 2 44100
-RENDER_RANGE 2 0 0 0 1000
+RENDER_RANGE 2 %.6f %.6f 0 1000
 RENDER_STEMS 0
 RENDER_1X %d
-]], renderDir, capsuleName, render1x)
+]], renderDir, capsuleName, actualStartTime, actualEndTime, render1x)
         content = content:gsub('(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
         local renderCfgBlock = "\n  <RENDER_CFG\n    dmdnbwAAAD8AgAAAAIAAAAAgAAAAAAEAAA==\n  >"
         content = content:gsub('(SAMPLERATE%s+[^\n]+\n)', '%1' .. renderCfgBlock .. '\n')
@@ -804,6 +858,9 @@ RENDER_1X %d
         if content:match("SELECTION%s+[%d%.%-]+%s+[%d%.%-]+") then content = content:gsub("SELECTION%s+[%d%.%-]+%s+[%d%.%-]+", selectionStr) end
         if content:match('RECORD_PATH "[^"]*"') then content = content:gsub('RECORD_PATH "[^"]*"', 'RECORD_PATH "Audio"') end
     end
+
+    -- 不写入 VZOOMEX，REAPER 会自动使用默认（归零）纵向滚动
+    content = content:gsub("VZOOMEX%s+[^\n]*\n?", "")
 
     local targetRPP = JoinPath(outputDir, capsuleName .. ".rpp")
     reaper.ShowConsoleMsg("写入新 RPP: " .. targetRPP .. "\n")
@@ -1792,6 +1849,9 @@ RENDER_1X %d
     -- 在 <REAPER_PROJECT> 行后插入渲染设置
     content = string.gsub(content, '(<REAPER_PROJECT[^\n]*\n)', '%1' .. renderSettings)
     modified = true
+
+    -- 不写入 VZOOMEX，REAPER 会自动使用默认（归零）纵向滚动
+    content = content:gsub("VZOOMEX%s+[^\n]*\n?", "")
 
     -- 如果内容被修改，写回文件
     if modified then
