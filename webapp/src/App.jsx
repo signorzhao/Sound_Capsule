@@ -940,16 +940,18 @@ export default function App() {
       });
 
       if (matchIndex !== -1) {
-        // 找到匹配项，移除它
-        console.log(`删除标签:`, prev[matchIndex], `索引: ${matchIndex}`);
-        return prev.filter((_, idx) => idx !== matchIndex);
+        // 找到匹配项，移除它；同时同步 allSelectedTags[activeLens]，避免 effect 用旧数据覆盖导致已删关键词复现
+        const next = prev.filter((_, idx) => idx !== matchIndex);
+        setAllSelectedTags(a => ({ ...a, [activeLens]: next }));
+        return next;
       } else {
         // 没找到，添加新标签
-        console.log(`添加标签:`, item);
-        return [...prev, item];
+        const next = [...prev, item];
+        setAllSelectedTags(a => ({ ...a, [activeLens]: next }));
+        return next;
       }
     });
-  }, []);
+  }, [activeLens]);
 
   const copyTags = useCallback(() => {
     const text = selectedTags
@@ -976,7 +978,7 @@ export default function App() {
     });
   }, [lensConfig]);
 
-  // 从指定棱镜移除标签
+  // 从指定棱镜移除标签（当前棱镜与 allSelectedTags 都同步更新，避免 effect 用旧数据覆盖导致已删关键词复现）
   const removeTagFromLens = useCallback((tag, lensId) => {
     const matchTag = (a, b) => {
       const aKey = a.word_id || a.id || a.word;
@@ -984,12 +986,17 @@ export default function App() {
       if (aKey && bKey) return aKey === bKey;
       return (a.word_cn || a.zh) === (b.word_cn || b.zh) && (a.word_en || a.en) === (b.word_en || b.en);
     };
+    const filtered = (list) => (list || []).filter(t => !matchTag(t, tag));
     if (lensId === activeLens) {
-      setSelectedTags(prev => prev.filter(t => !matchTag(t, tag)));
+      setSelectedTags(prev => {
+        const next = filtered(prev);
+        setAllSelectedTags(a => ({ ...a, [lensId]: next }));
+        return next;
+      });
     } else {
       setAllSelectedTags(prev => ({
         ...prev,
-        [lensId]: (prev[lensId] || []).filter(t => !matchTag(t, tag))
+        [lensId]: filtered(prev[lensId])
       }));
     }
   }, [activeLens]);
