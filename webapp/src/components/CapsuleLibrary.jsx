@@ -247,37 +247,33 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
   };
 
-  // 组件加载时，优先使用列表返回的 metadata，只有缺失的才调用 API
-  // 🔥 添加 refreshTrigger 依赖，确保刷新时重新加载
+  // 组件加载时，优先使用列表返回的 metadata；无 info（media_count/item_count）时请求完整 metadata，用于 MIDI-only 展示
   useEffect(() => {
     const loadMetadata = async () => {
-      console.log('开始加载胶囊 metadata，胶囊数量:', capsules.length, '刷新触发器:', refreshTrigger);
-
-      // 统计来源
-      let fromList = 0;
-      let missingMetadata = [];
-
-      // 🔥 每次刷新时从空缓存开始，避免闭包问题
       const newCache = {};
-
       for (const capsule of capsules) {
-        if (capsule.metadata) {
-          // 列表已返回 metadata，直接使用
+        if (capsule.metadata && typeof capsule.metadata === 'object') {
           newCache[capsule.id] = capsule.metadata;
-          fromList++;
-        } else {
-          // 🔥 记录缺失 metadata 的胶囊
-          missingMetadata.push({ id: capsule.id, name: capsule.name });
         }
       }
-
-      // 批量更新缓存（从列表获取的）
-      setMetadataCache(newCache);
-
-      console.log(`Metadata 加载完成: 从列表=${fromList}, 缺失=${missingMetadata.length}`);
-      if (missingMetadata.length > 0) {
-        console.warn('⚠️ 以下胶囊缺少 metadata:', missingMetadata);
+      // 列表的 metadata 通常无 info，对缺少 info 的胶囊请求完整 metadata（本地 metadata.json）
+      for (const capsule of capsules) {
+        const hasInfo = newCache[capsule.id]?.info != null && typeof newCache[capsule.id].info === 'object';
+        if (!hasInfo) {
+          try {
+            const response = await fetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/metadata`);
+            if (response.ok) {
+              const data = await response.json();
+              if (data?.metadata && typeof data.metadata === 'object') {
+                newCache[capsule.id] = data.metadata;
+              }
+            }
+          } catch {
+            // 忽略单条失败
+          }
+        }
       }
+      setMetadataCache(newCache);
     };
 
     if (capsules.length > 0) {
@@ -665,10 +661,23 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     return `${LOCAL_API_BASE}/capsules/${nowPlaying.id}/preview`;
   }, [nowPlaying?.id]);
 
+  // MIDI-only 判定：metadata.info 中 media_count===0 且 item_count>0 视为无需 WAV 的完整胶囊
+  const isMidOnlyFromMetadata = (meta) => {
+    if (!meta?.info || typeof meta.info !== 'object') return false;
+    const { media_count, item_count } = meta.info;
+    return Number(media_count) === 0 && Number(item_count) > 0;
+  };
+
+  // 展示用状态：若接口返回 cloud_only 但 metadata 标明 MIDI-only，则按 synced 显示（解决云端已有 media_count 但本地/接口未刷新的情况）
+  const getResolvedAssetStatus = (capsule) => {
+    const base = assetStatusCache[capsule.id]?.asset_status ?? capsule.asset_status ?? capsule.cloud_status ?? 'cloud_only';
+    if (base === 'cloud_only' && isMidOnlyFromMetadata(metadataCache[capsule.id])) return 'synced';
+    return base;
+  };
+
   // Phase B.3: JIT 智能点击处理
   const handleSmartClick = async (capsule) => {
-    // 确定胶囊的当前状态（直接从 capsule 对象读取，不调用 API）
-    const status = capsule.asset_status || capsule.cloud_status || 'cloud_only';
+    const status = getResolvedAssetStatus(capsule);
 
     console.log('[JIT] 胶囊状态:', capsule.name, 'status:', status);
 
@@ -772,8 +781,16 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
 
   const getCapsuleForCloudSync = (capsule) => {
     const override = cloudSyncOverrides[capsule.id];
-    if (!override) return capsule;
-    return { ...capsule, ...override };
+    const statusCache = assetStatusCache[capsule.id];
+    const merged = { ...capsule, ...override };
+    const resolved = getResolvedAssetStatus(capsule);
+    merged.asset_status = resolved;
+    if (resolved === 'synced' || resolved === 'local' || resolved === 'full') {
+      merged.files_downloaded = 1;
+    } else if (statusCache?.files_downloaded != null) {
+      merged.files_downloaded = statusCache.files_downloaded;
+    }
+    return merged;
   };
 
   const syncPluginMetadataBackfill = async (capsule, cloudIdOverride = null) => {
@@ -1075,6 +1092,26 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
         const folderName = normalizeFolderName(capsule.file_path || capsule.name);
         const localCapsuleId = normalizeLocalId(capsule.id);
 
+        // 上传前请求完整 metadata（含 info.media_count / item_count），便于云端判断 MIDI-only 等
+        let fullMetadata = null;
+        try {
+          const metaResp = await authFetch(`${LOCAL_API_BASE}/capsules/${capsule.id}/metadata`);
+          const metaJson = await metaResp.json().catch(() => ({}));
+          if (metaResp.ok && metaJson?.success && metaJson?.metadata && typeof metaJson.metadata === 'object') {
+            fullMetadata = metaJson.metadata;
+          }
+        } catch (_) {
+          // 忽略：无 metadata 时仍用最小 payload 上传
+        }
+
+        const baseMetadata = {
+          preview_audio: capsule.preview_audio || null,
+          rpp_file: capsule.rpp_file || null,
+        };
+        const nestedForUpload = fullMetadata
+          ? { ...fullMetadata, ...baseMetadata }
+          : { ...baseMetadata };
+
         const uploadPayload = {
           capsule_folder_name: folderName,
           capsule: {
@@ -1084,12 +1121,12 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             capsule_type: capsule.capsule_type || 'magic',
             keywords: String(capsule.keywords || ''),
             description: String(capsule.description || ''),
-            // 兼容旧口径：要求写 metadata 顶层
             preview_audio: capsule.preview_audio || null,
             rpp_file: capsule.rpp_file || null,
+            // 服务端从 capsule.metadata.metadata 取 nested_metadata 写入云端；带完整 metadata 含 info(media_count,item_count)
             metadata: {
-              preview_audio: capsule.preview_audio || null,
-              rpp_file: capsule.rpp_file || null,
+              metadata: nestedForUpload,
+              ...baseMetadata,
             },
           },
           tags: capsule.tags || [],
@@ -1754,7 +1791,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
                 </button>
               )}
               <SmartActionButton
-                status={assetStatusCache[capsule.id]?.asset_status || capsule.asset_status || capsule.cloud_status || 'cloud_only'}
+                status={getResolvedAssetStatus(capsule)}
                 onClick={() => handleSmartClick(capsule)}
                 className="w-full"
               />
@@ -2032,7 +2069,7 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
             </button>
           )}
           <SmartActionButton
-            status={assetStatusCache[capsule.id]?.asset_status || capsule.asset_status || capsule.cloud_status || 'cloud_only'}
+            status={getResolvedAssetStatus(capsule)}
             onClick={() => handleSmartClick(capsule)}
           />
           {pluginBackfillRetryMap[capsule.id] && (

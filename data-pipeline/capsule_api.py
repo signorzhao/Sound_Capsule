@@ -3872,8 +3872,33 @@ def get_asset_status(capsule_id):
             desired_asset_status = 'synced'
             desired_files_downloaded = 1
         elif capsule.get('cloud_id'):
-            desired_asset_status = 'cloud_only'
-            desired_files_downloaded = 0
+            # 无 WAV 时区分：纯 MIDI 胶囊（无 WAV 是预期）视为已完整，不显示「下载完整数据」
+            # DB 的 capsule_metadata 没有 info.media_count/item_count，必须从 metadata.json 读取
+            is_midi_only = False
+            try:
+                info = {}
+                meta = capsule.get('metadata')
+                if isinstance(meta, dict) and isinstance(meta.get('info'), dict):
+                    info = meta.get('info') or {}
+                # 若没有 info 或缺少 media_count/item_count，从磁盘 metadata.json 读取
+                if 'media_count' not in info and 'item_count' not in info and file_path:
+                    pm = PathManager.get_instance()
+                    meta_file = Path(pm.export_dir) / file_path / 'metadata.json'
+                    if meta_file.exists() and meta_file.is_file():
+                        with open(meta_file, 'r', encoding='utf-8') as f:
+                            meta = json.load(f)
+                        info = (meta or {}).get('info') or {}
+                media_count = info.get('media_count', -1)
+                item_count = info.get('item_count', 0)
+                is_midi_only = (media_count == 0 and item_count > 0)
+            except Exception:
+                pass
+            if is_midi_only:
+                desired_asset_status = 'synced'
+                desired_files_downloaded = 1
+            else:
+                desired_asset_status = 'cloud_only'
+                desired_files_downloaded = 0
 
         if (
             desired_asset_status != asset_status.get('asset_status') or
