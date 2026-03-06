@@ -822,7 +822,8 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     }
   };
 
-  const patchCloudFileMetadata = async (cloudId, payload, capsuleSnapshot = null) => {
+  const patchCloudFileMetadata = async (cloudId, payload, capsuleSnapshot = null, options = {}) => {
+    const { skipFallback = false } = options;
     const resp = await authFetch(`${CLOUD_API_BASE}/cloud/capsules/${encodeURIComponent(cloudId)}/sync-file-metadata`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -831,6 +832,11 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     const json = await resp.json().catch(() => ({}));
     if (resp.ok && json?.success) {
       return json?.data || {};
+    }
+
+    // 批量 flush 时跳过 fallback，避免 404 时 2N 请求风暴导致卡死；单次上传后仍走 fallback
+    if (skipFallback && (resp.status === 404 || resp.status === 405)) {
+      throw new Error(json?.error || `sync-file-metadata HTTP ${resp.status}`);
     }
 
     // 云端若尚未部署新接口，回退到 upload-capsule 做幂等 metadata 回写
@@ -896,36 +902,54 @@ function CapsuleLibrary({ capsules = [], onEdit, onDelete, onBack, onImport, onI
     saveFileMetaPatchQueue(nextQueue);
   };
 
+  const FILE_META_PATCH_BATCH_SIZE = 5;
+
   const flushFileMetaPatchQueue = async () => {
     const queue = loadFileMetaPatchQueue();
     if (!queue.length) return;
     const now = Date.now();
-    const nextQueue = [];
+    const deferred = [];
+    const eligible = [];
     for (const item of queue) {
       if (!item?.cloud_id || !item?.payload) continue;
       if ((item.next_retry_at || 0) > now) {
-        nextQueue.push(item);
+        deferred.push(item);
         continue;
       }
-      try {
-        await patchCloudFileMetadata(item.cloud_id, item.payload, item.capsule_snapshot || null);
-      } catch (err) {
-        const retryCount = (item.retry_count || 0) + 1;
-        const nextRetryMs = Math.min(10 * 60 * 1000, 1000 * (2 ** Math.min(retryCount, 8)));
-        nextQueue.push({
-          ...item,
-          retry_count: retryCount,
-          next_retry_at: Date.now() + nextRetryMs,
-          last_error: err?.message || 'unknown_error',
-          updated_at: Date.now(),
-        });
+      eligible.push(item);
+    }
+    let remaining = [...eligible];
+    while (remaining.length > 0) {
+      const batch = remaining.slice(0, FILE_META_PATCH_BATCH_SIZE);
+      remaining = remaining.slice(FILE_META_PATCH_BATCH_SIZE);
+      for (const item of batch) {
+        try {
+          await patchCloudFileMetadata(item.cloud_id, item.payload, item.capsule_snapshot || null, { skipFallback: true });
+        } catch (err) {
+          const retryCount = (item.retry_count || 0) + 1;
+          const nextRetryMs = Math.min(10 * 60 * 1000, 1000 * (2 ** Math.min(retryCount, 8)));
+          deferred.push({
+            ...item,
+            retry_count: retryCount,
+            next_retry_at: Date.now() + nextRetryMs,
+            last_error: err?.message || 'unknown_error',
+            updated_at: Date.now(),
+          });
+        }
+      }
+      saveFileMetaPatchQueue([...deferred, ...remaining]);
+      if (remaining.length > 0) {
+        await new Promise((r) => setTimeout(r, 0));
       }
     }
-    saveFileMetaPatchQueue(nextQueue);
+    saveFileMetaPatchQueue(deferred);
   };
 
   useEffect(() => {
-    flushFileMetaPatchQueue().catch(() => {});
+    const id = setTimeout(() => {
+      flushFileMetaPatchQueue().catch(() => {});
+    }, 0);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
