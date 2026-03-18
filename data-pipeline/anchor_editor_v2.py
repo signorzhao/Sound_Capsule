@@ -19,6 +19,8 @@ import random
 import math
 import re
 import time
+import csv
+import io
 from pathlib import Path
 from flask import Flask, render_template_string, request, jsonify, Response
 import numpy as np
@@ -34,6 +36,16 @@ except ImportError:
     print("警告: 缺少依赖 (sentence-transformers, scipy)，核心算法将不可用")
 
 app = Flask(__name__)
+
+# 加载编辑器专用环境变量（含 SUPABASE_SERVICE_ROLE_KEY，不会被打包进客户端）
+_editor_env = Path(__file__).parent / '.env.editor'
+if _editor_env.exists():
+    with open(_editor_env) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _k, _v = _line.split('=', 1)
+                os.environ[_k.strip()] = _v.strip()
 
 # 路径配置
 BASE_DIR = Path(__file__).parent
@@ -83,7 +95,10 @@ DEFAULT_CONFIG_V2 = {
 # 核心算法：多点加权插值 (Weighted Interpolation)
 # ==========================================
 
-def rebuild_lens_v2_gen(lens_key, config, override_categories=None, model_name="paraphrase-multilingual-MiniLM-L12-v2"):
+# 临时词库存储（上传的本地文件，会话级别）
+_uploaded_lexicon = []
+
+def rebuild_lens_v2_gen(lens_key, config, override_categories=None, model_name="paraphrase-multilingual-MiniLM-L12-v2", override_words=None):
     if not ML_AVAILABLE:
         yield "data: " + json.dumps({"error": "ML 库未安装"}) + "\n\n"
         return
@@ -116,8 +131,12 @@ def rebuild_lens_v2_gen(lens_key, config, override_categories=None, model_name="
     anchor_coords = np.array(anchor_coords)
     
     # 3. 加载并过滤词库
-    lexicon_file = BASE_DIR / lens_data['lexicon_file']
-    all_words = load_lexicon(lexicon_file)
+    if override_words:
+        all_words = override_words
+        yield "data: " + json.dumps({"progress": 35, "status": f"使用上传的本地词库 ({len(all_words)} 词)..."}) + "\n\n"
+    else:
+        lexicon_file = BASE_DIR / lens_data['lexicon_file']
+        all_words = load_lexicon(lexicon_file)
 
     # 检查词库是否有 category 字段
     has_category = any(w.get('category') for w in all_words)
@@ -539,17 +558,70 @@ def rebuild(lens):
     # 如果用户直接调用这个，我们返回简短成功
     return jsonify({"success": True})
 
+@app.route('/api/lexicon/upload', methods=['POST'])
+def upload_lexicon():
+    """接收上传的 CSV 词库文件，解析后存入内存供下次重构使用"""
+    global _uploaded_lexicon
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "未找到上传的文件"}), 400
+    file = request.files['file']
+    if not file.filename or not file.filename.endswith('.csv'):
+        return jsonify({"success": False, "error": "仅支持 .csv 格式"}), 400
+
+    try:
+        content = file.read().decode('utf-8')
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader, None)
+        if not header or len(header) < 2:
+            return jsonify({"success": False, "error": "CSV 至少需要 word_cn, word_en 两列"}), 400
+
+        # 标准化列名
+        col_names = [h.strip().lower() for h in header]
+        has_hint = 'semantic_hint' in col_names
+        has_category = 'category' in col_names
+
+        words = []
+        for row in reader:
+            line_str = ','.join(row).strip()
+            if not line_str or line_str.startswith('#'):
+                continue
+            if len(row) < 2:
+                continue
+            word_obj = {
+                'cn': row[0].strip(),
+                'en': row[1].strip(),
+                'hint': row[2].strip() if has_hint and len(row) >= 3 else ''
+            }
+            if has_category and len(row) >= 4:
+                word_obj['category'] = row[3].strip()
+            words.append(word_obj)
+
+        if not words:
+            return jsonify({"success": False, "error": "CSV 文件中没有有效词条"}), 400
+
+        _uploaded_lexicon = words
+        return jsonify({"success": True, "count": len(words), "filename": file.filename})
+    except Exception as e:
+        return jsonify({"success": False, "error": f"解析 CSV 失败: {e}"}), 400
+
+
 @app.route('/api/rebuild_stream/<lens>')
 def rebuild_stream(lens):
     config = load_config_v2()
     # 从查询参数中获取选中的分类
     categories_str = request.args.get('categories', '')
     categories = categories_str.split(',') if categories_str else None
-    
+
     # 获取选中的模型
     model_name = request.args.get('model', 'paraphrase-multilingual-MiniLM-L12-v2')
 
-    return Response(rebuild_lens_v2_gen(lens, config, categories, model_name), mimetype='text/event-stream')
+    # 是否使用上传的本地词库
+    lexicon_source = request.args.get('lexicon', '')
+    override_words = None
+    if lexicon_source == 'uploaded' and _uploaded_lexicon:
+        override_words = list(_uploaded_lexicon)
+
+    return Response(rebuild_lens_v2_gen(lens, config, categories, model_name, override_words), mimetype='text/event-stream')
 
 
 @app.route('/api/lenses/<lens_id>/field', methods=['GET'])
@@ -1795,27 +1867,46 @@ HTML_TEMPLATE = r'''
                 <div class="anchor-list" id="anchorList">
                     <!-- List items -->
                 </div>
+
+                <!-- 重构设置（在可滚动区域内） -->
+                <div style="margin-top:20px; padding-top:15px; border-top:1px solid #334155;">
+                    <div class="category-selector">
+                        <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">过滤词汇类型 (仅对总库生效)</div>
+                        <label><input type="checkbox" class="cat-filter" value="adjective" checked> <span>形容词 (Adjectives)</span></label>
+                        <label><input type="checkbox" class="cat-filter" value="noun" checked> <span>名词 (Nouns)</span></label>
+                        <label><input type="checkbox" class="cat-filter" value="verb" checked> <span>动词 (Verbs)</span></label>
+                    </div>
+                    <div style="margin: 15px 0; padding: 12px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+                        <label style="display:block; font-size:11px; color:#64748b; margin-bottom:5px;">语义模型选择:</label>
+                        <select id="modelSelect" style="width:100%; background:transparent; border:1px solid #475569; color:#fff; border-radius:4px; padding:6px; font-size:12px; outline:none;">
+                            <option value="paraphrase-multilingual-MiniLM-L12-v2">Standard (Multi-lingual, Fast)</option>
+                            <option value="paraphrase-multilingual-mpnet-base-v2">High Accuracy (Large 模型，较慢)</option>
+                            <option value="sentence-transformers/all-MiniLM-L6-v2">Speed focus (English optimized)</option>
+                            <option value="shibing624/text2vec-base-chinese">Chinese Optimized (中文增强)</option>
+                        </select>
+                    </div>
+                    <div style="margin: 0 0 15px 0; padding: 12px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
+                        <label style="display:block; font-size:11px; color:#64748b; margin-bottom:8px;">词库来源:</label>
+                        <div style="display:flex; gap:10px; margin-bottom:8px;">
+                            <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px;">
+                                <input type="radio" name="lexiconSource" value="builtin" checked onchange="toggleLexiconSource()"> 内置词库
+                            </label>
+                            <label style="display:flex; align-items:center; gap:4px; cursor:pointer; font-size:12px;">
+                                <input type="radio" name="lexiconSource" value="local" onchange="toggleLexiconSource()"> 本地文件
+                            </label>
+                        </div>
+                        <div id="localLexiconPanel" style="display:none;">
+                            <input type="file" id="lexiconFileInput" accept=".csv" onchange="previewLexiconFile(this)" style="width:100%; font-size:11px; color:#94a3b8; margin-bottom:6px;">
+                            <div id="lexiconFileInfo" style="font-size:11px; color:#64748b;"></div>
+                        </div>
+                    </div>
+                    <div class="category-selector" style="margin-bottom:10px;">
+                        <label><input type="checkbox" id="showFieldKeywords" checked onchange="toggleShowFieldKeywords()"> <span>显示力场关键词分布</span></label>
+                    </div>
+                </div>
             </div>
 
             <div class="actions">
-                <div class="category-selector">
-                    <div style="font-size: 11px; color: #64748b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em;">过滤词汇类型 (仅对总库生效)</div>
-                    <label><input type="checkbox" class="cat-filter" value="adjective" checked> <span>形容词 (Adjectives)</span></label>
-                    <label><input type="checkbox" class="cat-filter" value="noun" checked> <span>名词 (Nouns)</span></label>
-                    <label><input type="checkbox" class="cat-filter" value="verb" checked> <span>动词 (Verbs)</span></label>
-                </div>
-                <div style="margin: 15px 0; padding: 12px; background: #0f172a; border-radius: 6px; border: 1px solid #334155;">
-                    <label style="display:block; font-size:11px; color:#64748b; margin-bottom:5px;">语义模型选择:</label>
-                    <select id="modelSelect" style="width:100%; background:transparent; border:1px solid #475569; color:#fff; border-radius:4px; padding:6px; font-size:12px; outline:none;">
-                        <option value="paraphrase-multilingual-MiniLM-L12-v2">Standard (Multi-lingual, Fast)</option>
-                        <option value="paraphrase-multilingual-mpnet-base-v2">High Accuracy (Large 模型，较慢)</option>
-                        <option value="sentence-transformers/all-MiniLM-L6-v2">Speed focus (English optimized)</option>
-                        <option value="shibing624/text2vec-base-chinese">Chinese Optimized (中文增强)</option>
-                    </select>
-                </div>
-                <div class="category-selector" style="margin-bottom:10px;">
-                    <label><input type="checkbox" id="showFieldKeywords" checked onchange="toggleShowFieldKeywords()"> <span>显示力场关键词分布</span></label>
-                </div>
                 <button class="btn-primary" onclick="rebuildLens()">🚀 保存并重构力场</button>
                 <button class="btn-sec" id="saveFieldBtn" onclick="saveFieldPositions()" style="margin-top:6px; display:none;">📌 保存关键词位置</button>
                 <button class="btn-sec" style="margin-top:10px; background:#2563eb;" onclick="syncToCloud()">☁️ 同步到云端 (Supabase)</button>
@@ -2321,10 +2412,37 @@ HTML_TEMPLATE = r'''
         });
         showToast('保存成功');
     }
-    
+
+    function toggleLexiconSource() {
+        const source = document.querySelector('input[name="lexiconSource"]:checked').value;
+        const panel = document.getElementById('localLexiconPanel');
+        panel.style.display = source === 'local' ? 'block' : 'none';
+        if (source === 'builtin') {
+            document.getElementById('lexiconFileInput').value = '';
+            document.getElementById('lexiconFileInfo').textContent = '';
+        }
+    }
+
+    function previewLexiconFile(input) {
+        const info = document.getElementById('lexiconFileInfo');
+        if (!input.files || !input.files[0]) {
+            info.textContent = '';
+            return;
+        }
+        const file = input.files[0];
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const lines = e.target.result.split('\\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+            const wordCount = Math.max(0, lines.length - 1); // 减去表头
+            info.textContent = `📄 ${file.name} — ${wordCount} 条词条`;
+            info.style.color = wordCount > 0 ? '#22c55e' : '#ef4444';
+        };
+        reader.readAsText(file);
+    }
+
     async function rebuildLens() {
         await saveOnly(); // 先保存
-        
+
         // 获取选中的分类
         const checkedCats = Array.from(document.querySelectorAll('.cat-filter:checked')).map(el => el.value);
         if (checkedCats.length === 0) {
@@ -2336,13 +2454,47 @@ HTML_TEMPLATE = r'''
         const overlay = document.getElementById('rebuildOverlay');
         const bar = document.getElementById('progressBar');
         const status = document.getElementById('progressStatus');
-        
-        overlay.classList.add('show');
-        bar.style.width = '0%';
-        status.textContent = '初始化请求...';
-        
+
+        // 判断词库来源
+        const lexiconSource = document.querySelector('input[name="lexiconSource"]:checked').value;
+        let lexiconParam = '';
+
+        if (lexiconSource === 'local') {
+            const fileInput = document.getElementById('lexiconFileInput');
+            if (!fileInput.files || !fileInput.files[0]) {
+                showToast('❌ 请先选择一个 CSV 词库文件', true);
+                return;
+            }
+            // 先上传文件
+            overlay.classList.add('show');
+            bar.style.width = '0%';
+            status.textContent = '正在上传词库文件...';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            try {
+                const uploadResp = await fetch('/api/lexicon/upload', { method: 'POST', body: formData });
+                const uploadResult = await uploadResp.json();
+                if (!uploadResult.success) {
+                    overlay.classList.remove('show');
+                    showToast('❌ 词库上传失败: ' + uploadResult.error, true);
+                    return;
+                }
+                status.textContent = `词库已上传 (${uploadResult.count} 词)，开始重构...`;
+                lexiconParam = '&lexicon=uploaded';
+            } catch (e) {
+                overlay.classList.remove('show');
+                showToast('❌ 词库上传出错: ' + e.message, true);
+                return;
+            }
+        } else {
+            overlay.classList.add('show');
+            bar.style.width = '0%';
+            status.textContent = '初始化请求...';
+        }
+
         const categoriesParam = checkedCats.join(',');
-        const eventSource = new EventSource(`/api/rebuild_stream/${currentLens}?categories=${categoriesParam}&model=${model}`);
+        const eventSource = new EventSource(`/api/rebuild_stream/${currentLens}?categories=${categoriesParam}&model=${model}${lexiconParam}`);
         
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
