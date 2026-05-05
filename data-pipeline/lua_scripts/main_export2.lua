@@ -1983,13 +1983,37 @@ function RenderPreviewAudioFromRPP(rppPath, outputPath, startTime, endTime)
         FixRPPRenderSettings(rppPath, tempWavPath or outputPath, startTime, endTime)
     end
 
-    -- 构建渲染命令（添加 -nosplash -ignoreerrors 参数）
-    local renderCmd = string.format('"%s" -renderproject "%s" -nosplash -ignoreerrors', reaperPath, rppPath)
-    reaper.ShowConsoleMsg("  执行渲染命令:\n")
-    reaper.ShowConsoleMsg("    " .. renderCmd .. "\n")
+    -- 构建渲染命令（通过 NSWorkspace 后台启动，完全不抢焦点）
+    local appBundle = reaperPath:match("(.+%.app)/?")
+    if appBundle then
+        local scriptDir = debug.getinfo(1, "S").source:match("@(.+)/") or "."
+        local helperBin = scriptDir .. "/../scripts/render_background_mac"
+        local probe = io.open(helperBin, "r")
+        if not probe then
+            helperBin = "/Users/ianzhao/Desktop/Sound_Capsule/synesth/data-pipeline/scripts/render_background_mac"
+            probe = io.open(helperBin, "r")
+        end
+        if probe then probe:close() end
 
-    -- 执行命令行渲染
-    local result = os.execute(renderCmd)
+        local renderCmd
+        if probe then
+            renderCmd = string.format('"%s" "%s" "%s"', helperBin, appBundle, rppPath)
+        else
+            renderCmd = string.format('"%s" -renderproject "%s" -nosplash -ignoreerrors', reaperPath, rppPath)
+        end
+        reaper.ShowConsoleMsg("  执行渲染命令:\n")
+        reaper.ShowConsoleMsg("    " .. renderCmd .. "\n")
+        local result = os.execute(renderCmd)
+        if not result and probe then
+            reaper.ShowConsoleMsg("  ⚠ NSWorkspace 渲染失败，回退到直接启动...\n")
+            os.execute(string.format('"%s" -renderproject "%s" -nosplash -ignoreerrors', reaperPath, rppPath))
+        end
+    else
+        local renderCmd = string.format('"%s" -renderproject "%s" -nosplash -ignoreerrors', reaperPath, rppPath)
+        reaper.ShowConsoleMsg("  执行渲染命令:\n")
+        reaper.ShowConsoleMsg("    " .. renderCmd .. "\n")
+        os.execute(renderCmd)
+    end
     reaper.ShowConsoleMsg("  渲染命令返回码: " .. tostring(result) .. "\n")
 
     -- 等待文件写入完成
@@ -2290,29 +2314,39 @@ function ExportCapsule()
     -- 步骤 4：生成 metadata.json
     GenerateCapsuleMetadata(outputDir, capsuleName, capsuleType, collectedItemsInfo, mediaFiles, failedFiles)
 
-    -- 步骤 5：渲染预览音频（外部 reaper -renderproject，不打开工程）
+    -- 步骤 5：渲染预览音频（在当前 Reaper 实例内完成，不启动新进程，不切换窗口）
     if exportPreview then
-        reaper.ShowConsoleMsg("\n=== 渲染预览音频 ===\n")
-        local reaperPath = nil
-        local candidates = {
-            "/Applications/REAPER.app/Contents/MacOS/REAPER",
-            "/Applications/REAPER64.app/Contents/MacOS/REAPER",
-        }
-        for _, p in ipairs(candidates) do
-            local f = io.open(p, "r")
-            if f then f:close(); reaperPath = p; break end
+        reaper.ShowConsoleMsg("\n=== 渲染预览音频（进程内渲染）===\n")
+
+        -- 记住当前工程
+        local origProj = reaper.EnumProjects(-1)
+        reaper.ShowConsoleMsg("  已记录原工程\n")
+
+        -- 先创建新标签页（空工程），再加载胶囊 RPP，避免覆盖用户的原工程
+        reaper.Main_OnCommand(41929, 0)  -- "File: New project tab (ignore default template)"
+        reaper.Main_openProject(rppPath)
+        reaper.ShowConsoleMsg("  已在新标签页打开胶囊 RPP: " .. rppPath .. "\n")
+
+        -- 用 RPP 内嵌的设置渲染，自动关闭渲染对话框（action 42230）
+        reaper.ShowConsoleMsg("  开始渲染...\n")
+        reaper.Main_OnCommand(42230, 0)
+        reaper.ShowConsoleMsg("  渲染命令已执行\n")
+
+        -- 关闭渲染用的工程标签页（不保存）
+        reaper.Main_OnCommand(40860, 0)  -- "File: Close current project tab"
+
+        -- 切回原来的工程
+        if reaper.EnumProjects(-1) ~= origProj then
+            for i = 0, 99 do
+                local proj = reaper.EnumProjects(i)
+                if not proj then break end
+                if proj == origProj then
+                    reaper.SelectProjectInstance(proj)
+                    break
+                end
+            end
         end
-        if reaperPath then
-            local escapedRpp = rppPath:gsub('"', '\\"')
-            -- 同步等待渲染完成后再返回，这样前端收到成功后再跳转棱镜时 OGG 已渲染完毕
-            local renderCmd = string.format('"%s" -renderproject "%s" -nosplash -ignoreerrors -close', reaperPath, escapedRpp)
-            reaper.ShowConsoleMsg("渲染命令: " .. reaperPath .. " -renderproject " .. rppPath .. " -nosplash -ignoreerrors -close\n")
-            reaper.ShowConsoleMsg("等待 OGG 渲染完成...\n")
-            os.execute(renderCmd)
-            reaper.ShowConsoleMsg("✓ OGG 渲染已完成\n")
-        else
-            reaper.ShowConsoleMsg("⚠ 未找到 REAPER，请手动渲染: " .. rppPath .. "\n")
-        end
+        reaper.ShowConsoleMsg("✓ OGG 渲染已完成，已切回原工程\n")
     end
 
     reaper.ShowConsoleMsg("\n========== 导出完成 ==========\n")

@@ -17,26 +17,51 @@ from typing import Dict, Any, Optional
 
 def run_lua_on_mac_safely(lua_script_path: str) -> tuple:
     """
-    在 macOS 上通过系统「打开文件」机制执行 Lua 脚本（Standard Suite，所有 App 都支持）。
-    REAPER 注册了 .lua 文件关联，open -a REAPER script.lua 会由 REAPER 打开并运行该脚本。
-    不发送代码字符串，无需 AppleScript 转义，路径用标准 Unix 路径即可。
+    在 macOS 上让 REAPER 执行 Lua 脚本，**完全不切换窗口焦点**。
+
+    使用 NSWorkspace.openURLs(activates=False)，这是 macOS 唯一能保证
+    不激活目标 App 窗口的方式。通过系统 Python3（自带 pyobjc bridge）调用。
     返回 (success: bool, stderr_or_none: Optional[str])
     """
     abs_path = os.path.abspath(lua_script_path)
-    cmd = ["open", "-a", "REAPER", abs_path]
-    print(f"macOS: 通过系统 open 命令触发: {' '.join(cmd)}")
+
+    # 用系统 /usr/bin/python3 调用 NSWorkspace（自带 AppKit bridge）
+    py_code = f'''
+import sys
+try:
+    from AppKit import NSWorkspace, NSWorkspaceOpenConfiguration, NSURL
+    config = NSWorkspaceOpenConfiguration.alloc().init()
+    config.setActivates_(False)
+    ws = NSWorkspace.sharedWorkspace()
+    file_url = NSURL.fileURLWithPath_("{abs_path}")
+    app_url = NSURL.fileURLWithPath_("/Applications/REAPER.app")
+    ws.openURLs_withApplicationAtURL_configuration_completionHandler_([file_url], app_url, config, None)
+    import time; time.sleep(0.3)
+except Exception as e:
+    print("NSWorkspace failed: " + str(e), file=sys.stderr)
+    sys.exit(1)
+'''
+    print(f"macOS: 通过 NSWorkspace(activates=False) 后台触发 Lua 脚本")
     try:
-        subprocess.run(cmd, check=True, timeout=10)
-        print("✓ 命令已发送")
-        return True, None
-    except subprocess.CalledProcessError as e:
-        err = str(e) or "open 执行失败"
-        print(f"✗ 执行失败: {err}")
-        return False, err
-    except subprocess.TimeoutExpired:
-        return False, "执行超时"
+        result = subprocess.run(
+            ["/usr/bin/python3", "-c", py_code],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            print("✓ NSWorkspace 触发成功（焦点不变）")
+            return True, None
+        # NSWorkspace 失败，回退 open -g（会短暂闪一下）
+        print(f"⚠ NSWorkspace 失败: {result.stderr.strip()}，回退 open -g")
     except Exception as e:
-        return False, str(e)
+        print(f"⚠ NSWorkspace 调用异常: {e}，回退 open -g")
+
+    # 回退方案
+    try:
+        subprocess.run(["open", "-g", "-a", "REAPER", abs_path], check=True, timeout=10)
+        print("✓ 回退 open -g 已发送")
+        return True, None
+    except Exception as e2:
+        return False, str(e2)
 
 
 def get_export_temp_dir() -> Path:
@@ -154,7 +179,9 @@ class ReaperWebUIExporter:
                     reaper_path = config.get('reaper_path')
                     if reaper_path:
                         reaper_exe = Path(reaper_path)
-                        if reaper_exe.exists():
+                        if reaper_exe.is_dir() and reaper_exe.suffix == '.app':
+                            reaper_exe = reaper_exe / "Contents" / "MacOS" / "REAPER"
+                        if reaper_exe.exists() and reaper_exe.is_file():
                             print(f"✓ 使用用户配置的 REAPER 路径: {reaper_exe}")
                             return reaper_exe
                         else:
@@ -339,11 +366,17 @@ class ReaperWebUIExporter:
                 
                 print(f"✓ 执行命令: {' '.join(cmd)}")
                 
+                # CREATE_NO_WINDOW 防止 console 窗口闪现; SW_HIDE 进一步隐藏
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    startupinfo=startupinfo
                 )
                 
                 print(f"✓ REAPER 命令已发送")
